@@ -1,0 +1,22 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bootloader_api = "0.11.2"
+embedded-graphics = "0.8.1"
+log = { version = "0.4.22", default-features = false }
+bootloader-x86_64-common = "0.11.3"
+conquer-once = { version = "0.4.0", default-features = false }
+tinytga = "0.5.0"
+x86_64 = "0.15.1"
+lazy_static = { version = "1.5.0", features = ["spin_no_std"] }
+pic8259 = "0.11.0"
+spin = "0.9.8"
+acpi = "5.1.0"
+
+[[bin]]
+name = "kernel"
+test = false
+bench = false
