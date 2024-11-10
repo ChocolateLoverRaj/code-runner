@@ -14,14 +14,15 @@ use embedded_graphics::{
 };
 use framebuffer::Display;
 use gtd::init_gtd;
+use hlt_loop::hlt_loop;
 use interrupts::init_interrupts;
 use logger::init_logger_with_framebuffer;
 use tinytga::Tga;
-use x86_64::instructions::interrupts::int3;
 
-mod apic;
+pub mod apic;
 pub mod framebuffer;
 pub mod gtd;
+pub mod hlt_loop;
 pub mod interrupts;
 pub mod logger;
 
@@ -30,7 +31,7 @@ pub mod logger;
 fn panic(info: &PanicInfo) -> ! {
     // TODO: Blue screen with a frowny face and a QR Code
     log::error!("{}", info);
-    loop {}
+    hlt_loop()
 }
 
 bootloader_api::entry_point!(kernel_main);
@@ -65,9 +66,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     }
 
     let mut i = 0;
-    loop {
-        // log::info!("Counter: {i}");
-        // i += 1;
-        // wait(1000000);
-    }
+    // loop {
+    //     log::info!("Counter: {i}");
+    //     i += 1;
+    //     wait(1000000);
+    // }
+
+    hlt_loop();
 }

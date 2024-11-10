@@ -19,19 +19,6 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     }
 }
 
-extern "x86-interrupt" fn page_fault_handler(
-    stack_frame: InterruptStackFrame,
-    error_code: PageFaultErrorCode,
-) {
-    use x86_64::registers::control::Cr2;
-
-    log::error!("EXCEPTION: PAGE FAULT");
-    log::error!("Accessed Address: {:?}", Cr2::read());
-    log::error!("Error Code: {:?}", error_code);
-    log::error!("{:#?}", stack_frame);
-    loop {}
-}
-
 extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
@@ -54,7 +41,6 @@ lazy_static! {
             }
         }
         idt[InterruptIndex::Timer.as_u8()].set_handler_fn(timer_interrupt_handler);
-        idt.page_fault.set_handler_fn(page_fault_handler);
         idt.general_protection_fault
             .set_handler_fn(general_protection_fault_handler);
         idt

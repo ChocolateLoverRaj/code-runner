@@ -1,11 +1,33 @@
 use bootloader_api::{info::FrameBuffer, info::Optional};
 use bootloader_x86_64_common::logger::LockedLogger;
 use conquer_once::spin::OnceCell;
+use log::Log;
+use x86_64::instructions::interrupts::without_interrupts;
 
-static LOGGER: OnceCell<LockedLogger> = OnceCell::uninit();
+static LOGGER: OnceCell<LockedLoggerWithoutInterrupts> = OnceCell::uninit();
+
+struct LockedLoggerWithoutInterrupts {
+    locked_logger: LockedLogger,
+}
+
+impl Log for LockedLoggerWithoutInterrupts {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        without_interrupts(|| self.locked_logger.enabled(metadata))
+    }
+
+    fn log(&self, record: &log::Record) {
+        without_interrupts(|| self.locked_logger.log(record))
+    }
+
+    fn flush(&self) {
+        without_interrupts(|| self.locked_logger.flush())
+    }
+}
 
 fn init_logger(buffer: &'static mut [u8], info: bootloader_api::info::FrameBufferInfo) {
-    let logger = LOGGER.get_or_init(move || LockedLogger::new(buffer, info, true, false));
+    let logger = LOGGER.get_or_init(move || LockedLoggerWithoutInterrupts {
+        locked_logger: LockedLogger::new(buffer, info, true, false),
+    });
     log::set_logger(logger).expect("Logger already set");
     log::set_max_level(log::LevelFilter::Trace);
     log::info!("Logger initialized");
