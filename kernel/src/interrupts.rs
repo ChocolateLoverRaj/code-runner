@@ -13,7 +13,7 @@ extern "x86-interrupt" fn double_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    log::info!("Timer interrupt");
+    // log::info!("Timer interrupt");
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
@@ -60,9 +60,22 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     }
 }
 
+extern "x86-interrupt" fn page_fault_handler(
+    stack_frame: InterruptStackFrame,
+    error_code: PageFaultErrorCode,
+) {
+    use x86_64::registers::control::Cr2;
+
+    log::error!("EXCEPTION: PAGE FAULT");
+    log::error!("Accessed Address: {:?}", Cr2::read());
+    log::error!("Error Code: {:?}", error_code);
+    log::error!("{:#?}", stack_frame);
+    hlt_loop();
+}
+
 use lazy_static::lazy_static;
 
-use crate::gtd::DOUBLE_FAULT_IST_INDEX;
+use crate::{gtd::DOUBLE_FAULT_IST_INDEX, hlt_loop::hlt_loop};
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -78,6 +91,7 @@ lazy_static! {
         idt.general_protection_fault
             .set_handler_fn(general_protection_fault_handler);
         idt[InterruptIndex::Keyboard.as_u8()].set_handler_fn(keyboard_interrupt_handler);
+        idt.page_fault.set_handler_fn(page_fault_handler);
         idt
     };
 }

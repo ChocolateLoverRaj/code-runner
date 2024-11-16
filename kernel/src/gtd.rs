@@ -45,8 +45,6 @@ pub fn init_gtd() {
 
     GDT.0.load();
     unsafe {
-        CS::set_reg(GDT.1.code_selector);
-        load_tss(GDT.1.tss_selector);
         // https://github.com/rust-osdev/bootloader/blob/5d318bfc8afa4fb116a2c7923d5411febbe7266c/docs/migration/v0.9.md#kernel
         DS::set_reg(SegmentSelector::NULL);
         DS::set_reg(SegmentSelector::NULL);
@@ -54,5 +52,8 @@ pub fn init_gtd() {
         ES::set_reg(SegmentSelector::NULL);
         FS::set_reg(SegmentSelector::NULL);
         GS::set_reg(SegmentSelector::NULL);
+
+        CS::set_reg(GDT.1.code_selector);
+        load_tss(GDT.1.tss_selector);
     }
 }

@@ -7,6 +7,8 @@ use std::{
 
 fn main() {
     let mut qemu = Command::new("qemu-system-x86_64");
+    // qemu.arg("-m");
+    // qemu.arg("4G");
     qemu.arg("-drive");
     qemu.arg(format!("format=raw,file={}", env!("UEFI_IMAGE")));
     qemu.arg("-bios").arg(ovmf_prebuilt::ovmf_pure_efi());
