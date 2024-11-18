@@ -1,10 +1,16 @@
+use bootloader_api::info::{FrameBuffer, PixelFormat};
+use embedded_graphics::{
+    draw_target::DrawTarget,
+    geometry::{OriginDimensions, Size},
+    pixelcolor::{Rgb888, RgbColor},
+    Pixel,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
     pub x: usize,
     pub y: usize,
 }
-
-use bootloader_api::info::{FrameBuffer, PixelFormat};
 
 pub fn set_pixel_in(framebuffer: &mut FrameBuffer, position: Position, color: Rgb888) {
     let info = framebuffer.info();
@@ -41,19 +47,12 @@ pub fn set_pixel_in(framebuffer: &mut FrameBuffer, position: Position, color: Rg
     }
 }
 
-use embedded_graphics::{
-    draw_target::DrawTarget,
-    geometry::{OriginDimensions, Size},
-    pixelcolor::{Rgb888, RgbColor},
-    Pixel,
-};
-
 pub struct Display<'f> {
     framebuffer: &'f mut FrameBuffer,
 }
 
 impl<'f> Display<'f> {
-    pub fn new(framebuffer: &'f mut FrameBuffer) -> Display {
+    pub fn new(framebuffer: &mut FrameBuffer) -> Display {
         Display { framebuffer }
     }
 

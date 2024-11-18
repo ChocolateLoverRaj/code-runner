@@ -26,7 +26,7 @@ impl Log for LockedLoggerWithoutInterrupts {
 
 fn init_logger(buffer: &'static mut [u8], info: bootloader_api::info::FrameBufferInfo) {
     let logger = LOGGER.get_or_init(move || LockedLoggerWithoutInterrupts {
-        locked_logger: LockedLogger::new(buffer, info, true, false),
+        locked_logger: LockedLogger::new(buffer, info, true, true),
     });
     log::set_logger(logger).expect("Logger already set");
     log::set_max_level(log::LevelFilter::Trace);
