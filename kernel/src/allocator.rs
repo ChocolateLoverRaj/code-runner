@@ -16,9 +16,8 @@ static ALLOCATOR: LockedHeap = LockedHeap::empty();
 pub fn init_heap(
     mapper: &mut OffsetPageTable<'static>,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-    phys_mem_offset: VirtAddr,
 ) -> Result<(), MapToError<Size4KiB>> {
-    let ranges = find_used_virt_addrs::<512>(mapper.level_4_table(), phys_mem_offset);
+    let ranges = find_used_virt_addrs::<512>(mapper.level_4_table(), mapper.phys_offset());
     let heap_start = {
         // 0 cannot be used since that's reserved for a null pointer
         let mut heap_start = VirtAddr::new(1);

@@ -1,4 +1,3 @@
-use alloc::string::ToString;
 use anyhow::Context;
 use pic8259::ChainedPics;
 use spin;
