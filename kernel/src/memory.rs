@@ -33,16 +33,8 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
     &mut *page_table_ptr // unsafe
 }
 
-/// A FrameAllocator that always returns `None`.
-pub struct EmptyFrameAllocator;
-
-unsafe impl FrameAllocator<Size4KiB> for EmptyFrameAllocator {
-    fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        None
-    }
-}
-
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
+#[derive(Debug)]
 pub struct BootInfoFrameAllocator {
     memory_map: &'static mut [MemoryRegion],
     next: usize,

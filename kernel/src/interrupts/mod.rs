@@ -1,21 +1,21 @@
-use breakpoint::breakpoint_handler;
-use double_fault::double_fault_handler;
-use general_protection_fault::general_protection_fault_handler;
-use num_enum::IntoPrimitive;
-use page_fault::page_fault_handler;
-use pic::{
-    keyboard::keyboard_interrupt_handler, mouse::mouse_interrupt_handler,
-    timer::timer_interrupt_handler, PIC_1_OFFSET,
-};
-use x86_64::structures::idt::InterruptDescriptorTable;
-
 mod breakpoint;
+mod disable_pic8259;
 mod double_fault;
 mod general_protection_fault;
+mod keyboard;
 mod page_fault;
-mod pic;
+mod timer;
 
+use breakpoint::breakpoint_handler;
+use disable_pic8259::disable_pic8259;
+use double_fault::double_fault_handler;
+use general_protection_fault::general_protection_fault_handler;
+use keyboard::keyboard_interrupt_handler;
 use lazy_static::lazy_static;
+use num_enum::IntoPrimitive;
+use page_fault::page_fault_handler;
+use timer::timer_interrupt_handler;
+use x86_64::structures::idt::InterruptDescriptorTable;
 
 use crate::gtd::DOUBLE_FAULT_IST_INDEX;
 
@@ -35,7 +35,7 @@ lazy_static! {
 
         idt[u8::from(InterruptIndex::Timer)].set_handler_fn(timer_interrupt_handler);
         idt[u8::from(InterruptIndex::Keyboard)].set_handler_fn(keyboard_interrupt_handler);
-        idt[u8::from(InterruptIndex::Mouse)].set_handler_fn(mouse_interrupt_handler);
+        // idt[u8::from(InterruptIndex::Mouse)].set_handler_fn(mouse_interrupt_handler);
 
         idt
     };
@@ -43,14 +43,15 @@ lazy_static! {
 
 pub fn init_interrupts() {
     IDT.load();
-    pic::init();
+    disable_pic8259();
     x86_64::instructions::interrupts::enable();
 }
 
 #[derive(Debug, Clone, Copy, IntoPrimitive)]
 #[repr(u8)]
 pub enum InterruptIndex {
-    Timer = PIC_1_OFFSET,
+    Timer = 32,
     Keyboard,
-    Mouse = PIC_1_OFFSET + 12,
+    LocalApicError,
+    Suprious,
 }
