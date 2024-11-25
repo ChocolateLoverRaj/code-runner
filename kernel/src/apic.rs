@@ -75,14 +75,15 @@ pub unsafe fn init_apic(
                 let mut local_apic = LocalApicBuilder::new()
                     .spurious_vector(u8::from(InterruptIndex::Suprious) as usize)
                     .timer_vector(u8::from(InterruptIndex::Timer) as usize)
-                    .timer_mode(TimerMode::Periodic)
-                    .timer_divide(TimerDivide::Div16)
-                    .timer_initial(0x5000000) // This can be anything, I chose this so that it interrupts every ~1.5 seconds
+                    // .timer_mode(TimerMode::Periodic)
+                    // .timer_divide(TimerDivide::Div16)
+                    // .timer_initial(0x5000000) // This can be anything, I chose this so that it interrupts every ~1.5 seconds
                     .error_vector(u8::from(InterruptIndex::LocalApicError) as usize)
                     .set_xapic_base(local_mapping.start.start_address().as_u64())
                     .build()
                     .map_err(|e| anyhow!("{e}"))?;
                 local_apic.enable();
+                local_apic.disable_timer(); // Timer is pretty useless
                 LOCAL_APIC.init_once(|| spin::Mutex::new(local_apic));
                 Ok(())
             })?;

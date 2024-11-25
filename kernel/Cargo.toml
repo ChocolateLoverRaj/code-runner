@@ -18,11 +18,20 @@ heapless = "0.8.0"
 linked_list_allocator = "0.10.5"
 x2apic = "0.4.3"
 num_enum = { version = "0.7.3", default-features = false }
-ps2-mouse = "0.1.4"
 anyhow = { version = "1.0.93", default-features = false }
 unicode-segmentation = "1.12.0"
 bootloader_api = "0.11.8"
 bootloader-x86_64-common = "0.11.8"
+
+[dependencies.crossbeam-queue]
+version = "0.3.11"
+default-features = false
+features = ["alloc"]
+
+[dependencies.futures-util]
+version = "0.3.4"
+default-features = false
+features = ["alloc"]
 
 [[bin]]
 name = "kernel"

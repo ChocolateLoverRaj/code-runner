@@ -27,6 +27,7 @@ pub mod remove;
 pub mod serial_logger;
 pub mod set_color;
 pub mod split_draw_target;
+pub mod task;
 pub mod virt_addr_from_indexes;
 pub mod virt_mem_allocator;
 
@@ -34,10 +35,12 @@ use alloc::sync::Arc;
 use apic::init_apic;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use core::{ops::DerefMut, panic::PanicInfo};
+use futures_util::{future::join, FutureExt};
 use gtd::init_gtd;
 use hlt_loop::hlt_loop;
 use interrupts::init_interrupts;
 use logger::init_logger_with_framebuffer;
+use task::{execute_future::execute_future, keyboard::print_keypresses};
 use x86_64::VirtAddr;
 
 /// This function is called on panic.
@@ -93,7 +96,23 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     }
     .unwrap();
 
+    // let mut executor = Executor::new();
+    // executor.spawn(Task::new(example_task()));
+    // executor.spawn(Task::new(print_keypresses()));
+    // executor.run();
+
+    execute_future(join(example_task(), print_keypresses()).boxed());
+
     log::info!("It did not crash");
 
     hlt_loop();
+}
+
+async fn async_number() -> u32 {
+    42
+}
+
+async fn example_task() {
+    let number = async_number().await;
+    log::info!("async number: {}", number);
 }
