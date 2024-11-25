@@ -4,6 +4,7 @@ mod double_fault;
 mod general_protection_fault;
 mod keyboard;
 mod page_fault;
+mod rtc;
 mod timer;
 
 use breakpoint::breakpoint_handler;
@@ -14,7 +15,7 @@ use keyboard::keyboard_interrupt_handler;
 use lazy_static::lazy_static;
 use num_enum::IntoPrimitive;
 use page_fault::page_fault_handler;
-use timer::timer_interrupt_handler;
+use rtc::rtc_interrupt_handler;
 use x86_64::structures::idt::InterruptDescriptorTable;
 
 use crate::gtd::DOUBLE_FAULT_IST_INDEX;
@@ -33,8 +34,9 @@ lazy_static! {
             .set_handler_fn(general_protection_fault_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
 
-        idt[u8::from(InterruptIndex::Timer)].set_handler_fn(timer_interrupt_handler);
+        idt[u8::from(InterruptIndex::Timer)].set_handler_fn(rtc_interrupt_handler);
         idt[u8::from(InterruptIndex::Keyboard)].set_handler_fn(keyboard_interrupt_handler);
+        idt[u8::from(InterruptIndex::Rtc)].set_handler_fn(rtc_interrupt_handler);
         // idt[u8::from(InterruptIndex::Mouse)].set_handler_fn(mouse_interrupt_handler);
 
         idt
@@ -53,5 +55,6 @@ pub enum InterruptIndex {
     Timer = 32,
     Keyboard,
     LocalApicError,
-    Suprious,
+    Rtc,
+    Spurious = 0xFF,
 }

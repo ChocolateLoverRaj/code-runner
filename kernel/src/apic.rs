@@ -6,7 +6,7 @@ use anyhow::{anyhow, Context};
 use conquer_once::spin::OnceCell;
 use x2apic::{
     ioapic::{IoApic, RedirectionTableEntry},
-    lapic::{LocalApic, LocalApicBuilder, TimerDivide, TimerMode},
+    lapic::{LocalApic, LocalApicBuilder},
 };
 use x86_64::{
     instructions::interrupts::without_interrupts,
@@ -14,7 +14,16 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-use crate::{interrupts::InterruptIndex, memory::BootInfoFrameAllocator, phys_mapper::PhysMapper};
+use crate::{
+    interrupts::InterruptIndex, memory::BootInfoFrameAllocator, phys_mapper::PhysMapper,
+    pic8259_interrupts::Pic8259Interrupts,
+};
+
+static IO_APIC: OnceCell<spin::Mutex<IoApic>> = OnceCell::uninit();
+
+pub fn get_io_apic() -> Option<&'static spin::Mutex<IoApic>> {
+    IO_APIC.get()
+}
 
 pub static LOCAL_APIC: OnceCell<spin::Mutex<LocalApic>> = OnceCell::uninit();
 
@@ -24,7 +33,7 @@ pub unsafe fn init_apic(
     virt_mem_allocator: Arc<spin::Mutex<alloc::vec::Vec<Range<VirtAddr>>>>,
     frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
 ) -> anyhow::Result<()> {
-    log::info!("RSDP: {:?}", rsdp_addr);
+    log::debug!("RSDP: {:?}", rsdp_addr);
     let phys_mapper = PhysMapper::new(mapper, virt_mem_allocator, frame_allocator);
     let acpi_tables = unsafe { AcpiTables::from_rsdp(phys_mapper.clone(), rsdp_addr) }
         .map_err(|e| anyhow!("{e:?}"))
@@ -52,13 +61,19 @@ pub unsafe fn init_apic(
                 );
                 let mut io_apic = IoApic::new(io_mapping.start.start_address().as_u64());
                 // Enable keyboard interrupts
-                io_apic.set_table_entry(1, {
+                io_apic.set_table_entry(Pic8259Interrupts::Keyboard.into(), {
                     let mut entry = RedirectionTableEntry::default();
                     entry.set_vector(InterruptIndex::Keyboard.into());
                     entry
                 });
-                io_apic.enable_irq(1);
-                phys_mapper.unmap(io_mapping);
+                io_apic.disable_irq(Pic8259Interrupts::Keyboard.into());
+                io_apic.set_table_entry(Pic8259Interrupts::Rtc.into(), {
+                    let mut entry = RedirectionTableEntry::default();
+                    entry.set_vector(InterruptIndex::Rtc.into());
+                    entry
+                });
+                io_apic.enable_irq(Pic8259Interrupts::Rtc.into());
+                IO_APIC.init_once(|| spin::Mutex::new(io_apic));
 
                 let local_mapping = phys_mapper.map_to_phys(
                     {
@@ -73,7 +88,7 @@ pub unsafe fn init_apic(
                         | PageTableFlags::NO_EXECUTE,
                 );
                 let mut local_apic = LocalApicBuilder::new()
-                    .spurious_vector(u8::from(InterruptIndex::Suprious) as usize)
+                    .spurious_vector(u8::from(InterruptIndex::Spurious) as usize)
                     .timer_vector(u8::from(InterruptIndex::Timer) as usize)
                     // .timer_mode(TimerMode::Periodic)
                     // .timer_divide(TimerDivide::Div16)

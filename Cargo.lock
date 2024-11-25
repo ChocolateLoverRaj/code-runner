@@ -293,6 +293,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "chrono"
+version = "0.4.38"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a21f936df1771bf62b77f047b726c4625ff2e8aa607c01ec06e5a05bd8463401"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "code-runner"
 version = "0.1.0"
 dependencies = [
@@ -740,6 +749,7 @@ dependencies = [
  "anyhow",
  "bootloader-x86_64-common",
  "bootloader_api",
+ "chrono",
  "conquer-once 0.4.0",
  "crossbeam-queue",
  "embedded-graphics",
@@ -756,6 +766,7 @@ dependencies = [
  "unicode-segmentation",
  "x2apic",
  "x86_64 0.15.1",
+ "x86_rtc",
 ]
 
 [[package]]
@@ -1090,6 +1101,11 @@ checksum = "7b363d4f6370f88d62bf586c80405657bde0f0e1b8945d47d2ad59b906cb4f54"
 dependencies = [
  "rand_core",
 ]
+
+[[package]]
+name = "range_check"
+version = "0.2.0"
+source = "git+https://github.com/ChocolateLoverRaj/rust-range-check?branch=no-std#0ef6178432f66277c255009e65790514915d0578"
 
 [[package]]
 name = "raw-cpuid"
@@ -1725,6 +1741,16 @@ dependencies = [
  "bitflags 2.6.0",
  "rustversion",
  "volatile",
+]
+
+[[package]]
+name = "x86_rtc"
+version = "0.1.1"
+source = "git+https://github.com/ChocolateLoverRaj/x86_rtc?branch=interrupts#ee80ee63fc2eacb55727493be435eee472e3279f"
+dependencies = [
+ "cfg-if",
+ "range_check",
+ "x86_64 0.15.1",
 ]
 
 [[package]]

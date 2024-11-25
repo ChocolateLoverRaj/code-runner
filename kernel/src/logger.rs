@@ -38,5 +38,5 @@ pub fn init_logger_with_framebuffer(frame_buffer_optional: &'static mut Optional
     });
     log::set_logger(logger).expect("Logger already set");
     log::set_max_level(log::LevelFilter::Info);
-    log::info!("Logger initialized");
+    log::debug!("Logger initialized");
 }

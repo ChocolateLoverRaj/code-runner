@@ -5,8 +5,9 @@ use core::{
 
 use conquer_once::spin::OnceCell;
 use crossbeam_queue::ArrayQueue;
-use futures_util::{task::AtomicWaker, Stream, StreamExt};
-use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet1};
+use futures_util::{task::AtomicWaker, Stream};
+
+use crate::keyboard_interrupt_mutex::{KeyboardInterruptLock, KEYBOARD_INTERRUPT_MUTEX};
 
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static WAKER: AtomicWaker = AtomicWaker::new();
@@ -31,15 +32,28 @@ pub(crate) fn add_scancode(scancode: u8) {
 }
 
 pub struct ScancodeStream {
-    _private: (),
+    _keyboard_interrupt_lock: KeyboardInterruptLock,
 }
 
 impl ScancodeStream {
-    pub fn new() -> Self {
-        SCANCODE_QUEUE
-            .try_init_once(|| ArrayQueue::new(100))
-            .expect("ScancodeStream::new should only be called once");
-        ScancodeStream { _private: () }
+    pub fn new() -> Option<Self> {
+        KEYBOARD_INTERRUPT_MUTEX
+            .try_lock()
+            .map(|mut keyboard_interrupt_lock| {
+                match SCANCODE_QUEUE.get() {
+                    Some(scancode_queue) => loop {
+                        let popped_value = scancode_queue.pop();
+                        if popped_value.is_none() {
+                            break;
+                        }
+                    },
+                    None => SCANCODE_QUEUE.init_once(|| ArrayQueue::new(100)),
+                };
+                keyboard_interrupt_lock.enable();
+                ScancodeStream {
+                    _keyboard_interrupt_lock: keyboard_interrupt_lock,
+                }
+            })
     }
 }
 
@@ -63,21 +77,6 @@ impl Stream for ScancodeStream {
                 Poll::Ready(Some(scancode))
             }
             None => Poll::Pending,
-        }
-    }
-}
-
-pub async fn print_keypresses() {
-    let mut scancodes = ScancodeStream::new();
-    let mut keyboard = Keyboard::new(
-        ScancodeSet1::new(),
-        layouts::Us104Key,
-        HandleControl::Ignore,
-    );
-
-    while let Some(scancode) = scancodes.next().await {
-        if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-            log::info!("{key_event:?}");
         }
     }
 }

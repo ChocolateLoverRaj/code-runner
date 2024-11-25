@@ -33,7 +33,10 @@ pub fn init_heap(
         let heap_end_page_exclusive = Page::containing_address(heap_start + HEAP_SIZE as u64);
         Page::range(heap_start_page, heap_end_page_exclusive)
     };
-    log::info!("Pages used for heap: {page_range:?}");
+    log::debug!(
+        "Pages used for heap: {:?}",
+        page_range.start..page_range.end
+    );
 
     let mut flush = None;
     for page in page_range {
