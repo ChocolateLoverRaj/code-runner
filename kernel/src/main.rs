@@ -6,6 +6,7 @@
 #[macro_use]
 extern crate alloc;
 
+pub mod acpi;
 pub mod allocator;
 pub mod apic;
 pub mod change_stream;
@@ -36,7 +37,6 @@ pub mod virt_addr_from_indexes;
 pub mod virt_mem_allocator;
 
 use alloc::sync::Arc;
-use apic::init_apic;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use change_stream::StreamChanges;
 use chrono::DateTime;
@@ -47,6 +47,7 @@ use hlt_loop::hlt_loop;
 use interrupts::init_interrupts;
 use logger::init_logger_with_framebuffer;
 use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet1};
+use phys_mapper::PhysMapper;
 use stream_with_initial::StreamWithInitial;
 use task::{execute_future::execute_future, keyboard::ScancodeStream, rtc::RtcStream};
 use x86_64::VirtAddr;
@@ -68,7 +69,6 @@ pub static BOOTLOADER_CONFIG: BootloaderConfig = {
 
 entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 
-// ↓ this replaces the `_start` function ↓
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // let frame_buffer = boot_info.framebuffer.as_mut().unwrap();
     // draw_rust::draw_rust(frame_buffer);
@@ -92,16 +92,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let mapper = Arc::new(spin::Mutex::new(mapper));
     let virt_mem_allocator = Arc::new(spin::Mutex::new(used_virt_mem_ranges.to_vec()));
     let frame_allocator = Arc::new(spin::Mutex::new(frame_allocator));
-
-    unsafe {
-        init_apic(
+    let phys_mapper = PhysMapper::new(mapper, virt_mem_allocator, frame_allocator);
+    let acpi_tables = unsafe {
+        acpi::init(
             boot_info.rsdp_addr.take().expect("No rsdp address!") as usize,
-            mapper,
-            virt_mem_allocator,
-            frame_allocator,
+            phys_mapper.clone(),
         )
     }
-    .unwrap();
+    .expect("Error getting ACPI tables");
+    unsafe { apic::init(phys_mapper, acpi_tables) }.unwrap();
 
     let rtc = Arc::new(Rtc::new());
 

@@ -27,17 +27,10 @@ pub fn get_io_apic() -> Option<&'static spin::Mutex<IoApic>> {
 
 pub static LOCAL_APIC: OnceCell<spin::Mutex<LocalApic>> = OnceCell::uninit();
 
-pub unsafe fn init_apic(
-    rsdp_addr: usize,
-    mapper: Arc<spin::Mutex<OffsetPageTable<'static>>>,
-    virt_mem_allocator: Arc<spin::Mutex<alloc::vec::Vec<Range<VirtAddr>>>>,
-    frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
+pub unsafe fn init(
+    phys_mapper: PhysMapper,
+    acpi_tables: AcpiTables<PhysMapper>,
 ) -> anyhow::Result<()> {
-    log::debug!("RSDP: {:?}", rsdp_addr);
-    let phys_mapper = PhysMapper::new(mapper, virt_mem_allocator, frame_allocator);
-    let acpi_tables = unsafe { AcpiTables::from_rsdp(phys_mapper.clone(), rsdp_addr) }
-        .map_err(|e| anyhow!("{e:?}"))
-        .context("Error reading ACPI tables")?;
     let platform_info = acpi_tables.platform_info().map_err(|e| anyhow!("{e:?}"))?;
     let interrupt_model = platform_info.interrupt_model;
     log::debug!("ACPI Tables: {:#?}", interrupt_model);
