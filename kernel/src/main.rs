@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(abi_x86_interrupt)]
 #![feature(allocator_api)]
+#![feature(int_roundings)]
 
 #[allow(unused)]
 #[macro_use]
@@ -16,6 +17,7 @@ pub mod combined_logger;
 pub mod demo_async;
 pub mod demo_async_keyboard_drop;
 pub mod demo_async_rtc_drop;
+pub mod demo_maze_roller_game;
 pub mod draw_rust;
 pub mod embedded_graphics_writer;
 pub mod execute_future;
@@ -49,6 +51,7 @@ use demo_async::demo_async;
 use demo_async_keyboard_drop::demo_async_keyboard_drop;
 #[allow(unused)]
 use demo_async_rtc_drop::demo_asyc_rtc_drop;
+use demo_maze_roller_game::demo_maze_roller_game;
 #[allow(unused)]
 use draw_rust::draw_rust;
 use execute_future::execute_future;
@@ -246,13 +249,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             // demo_async(&mut async_keyboard, &mut async_rtc).await;
             // demo_async_keyboard_drop(&mut async_keyboard).await;
             // demo_asyc_rtc_drop(&mut async_rtc).await;
+            demo_maze_roller_game(frame_buffer_for_drawing, &mut async_keyboard).await;
         }
         .boxed(),
     );
 
     log::info!("It did not crash");
 
-    draw_rust(frame_buffer_for_drawing);
+    // draw_rust(frame_buffer_for_drawing);
 
     hlt_loop();
 }

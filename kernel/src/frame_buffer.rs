@@ -156,8 +156,8 @@ impl<'f> DrawTarget for Display<'f> {
                 let buffer = self.framebuffer.buffer_mut();
                 let top_left_pixel =
                     &mut buffer[top_left_pixel_index..top_left_pixel_index + info.bytes_per_pixel];
-                top_left_pixel[0] = color.g();
-                top_left_pixel[1] = color.b();
+                top_left_pixel[0] = color.b();
+                top_left_pixel[1] = color.g();
                 top_left_pixel[2] = color.r();
                 // For testing
                 // top_left_pixel[0] = 50;
