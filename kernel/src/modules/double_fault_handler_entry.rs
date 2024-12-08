@@ -1,22 +1,18 @@
 use core::cell::UnsafeCell;
 
 use x86_64::{
-    structures::idt::{self, DivergingHandlerFuncWithErrCode, InterruptStackFrame},
+    structures::idt::{self, DivergingHandlerFuncWithErrCode},
     VirtAddr,
 };
 
 use super::tss::TssBuilder;
 
-extern "x86-interrupt" fn double_fault_handler(
-    stack_frame: InterruptStackFrame,
-    _error_code: u64,
-) -> ! {
-    panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
-}
-
-pub fn get_double_fault_entry(tss: &mut TssBuilder) -> idt::Entry<DivergingHandlerFuncWithErrCode> {
-    let mut entry = idt::Entry::<DivergingHandlerFuncWithErrCode>::missing();
-    let entry_options = entry.set_handler_fn(double_fault_handler);
+pub fn get_double_fault_entry(
+    tss: &mut TssBuilder,
+    handler: DivergingHandlerFuncWithErrCode,
+) -> idt::Entry<DivergingHandlerFuncWithErrCode> {
+    let mut entry = idt::Entry::missing();
+    let entry_options = entry.set_handler_fn(handler);
     let stack_index = tss
         .add_interrupt_stack_table_entry({
             const STACK_SIZE: usize = 4096 * 5;

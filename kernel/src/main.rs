@@ -46,13 +46,24 @@ use futures_util::{future::join, FutureExt, StreamExt};
 use hlt_loop::hlt_loop;
 use logger::init_logger_with_framebuffer;
 use modules::{
-    double_fault_handler::get_double_fault_entry, gtd::Gdt, idt::IdtBuilder, tss::TssBuilder,
+    double_fault_handler_entry::get_double_fault_entry, gtd::Gdt, idt::IdtBuilder,
+    logging_breakpoint_handler::logging_breakpoint_handler,
+    panicking_double_fault_handler::panicking_double_fault_handler,
+    panicking_general_protection_fault_handler::panicking_general_protection_fault_handler,
+    panicking_page_fault_handler::panicking_page_fault_handler, tss::TssBuilder,
 };
 use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet1};
 use phys_mapper::PhysMapper;
 use stream_with_initial::StreamWithInitial;
 use task::{execute_future::execute_future, keyboard::ScancodeStream, rtc::RtcStream};
-use x86_64::{structures::tss::TaskStateSegment, VirtAddr};
+use x86_64::{
+    instructions::interrupts::int3,
+    structures::{
+        idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
+        tss::TaskStateSegment,
+    },
+    VirtAddr,
+};
 use x86_rtc::{interrupts::DividerValue, Rtc};
 
 /// This function is called on panic.
@@ -92,7 +103,30 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             let mut tss = TssBuilder::new();
             // let gdt = Gdt::new(&tss);
             let mut idt = IdtBuilder::new();
-            idt.add_double_fault_handler(get_double_fault_entry(&mut tss));
+            idt.set_double_fault_entry(get_double_fault_entry(
+                &mut tss,
+                panicking_double_fault_handler,
+            ))
+            .unwrap();
+            idt.set_breakpoint_entry({
+                let mut entry = idt::Entry::<HandlerFunc>::missing();
+                entry.set_handler_fn(logging_breakpoint_handler);
+                entry
+            })
+            .unwrap();
+            idt.set_general_protection_fault_entry({
+                let mut entry = idt::Entry::<HandlerFuncWithErrCode>::missing();
+                entry.set_handler_fn(panicking_general_protection_fault_handler);
+                entry
+            })
+            .unwrap();
+            idt.set_page_fault_entry({
+                let mut entry = idt::Entry::<PageFaultHandlerFunc>::missing();
+                entry.set_handler_fn(panicking_page_fault_handler);
+                entry
+            })
+            .unwrap();
+
             StaticStuff {
                 tss: tss.get_tss(),
                 // gdt,
@@ -100,17 +134,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             }
         })
         .unwrap();
-    // let tss = TSS.try_get_or_init(|| get_tss()).unwrap();
     let gdt = GDT.try_get_or_init(|| Gdt::new(&static_stuff.tss)).unwrap();
     gdt.init();
     static_stuff.idt_builder.init();
-    // let idt_builder = IDT.try_get_or_init(|| IdtBuilder::new()).unwrap();
-    // idt_builder.init();
-    // init_interrupts();
-    fn stack_overflow() {
-        stack_overflow()
-    }
-    stack_overflow();
     let phys_mem_offset = VirtAddr::new(
         *boot_info
             .physical_memory_offset

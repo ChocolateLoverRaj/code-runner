@@ -1,6 +1,6 @@
 use x86_64::structures::idt::InterruptStackFrame;
 
-pub extern "x86-interrupt" fn general_protection_fault_handler(
+pub extern "x86-interrupt" fn panicking_general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) {
