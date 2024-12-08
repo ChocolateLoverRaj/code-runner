@@ -50,14 +50,15 @@ use modules::{
     logging_breakpoint_handler::logging_breakpoint_handler,
     panicking_double_fault_handler::panicking_double_fault_handler,
     panicking_general_protection_fault_handler::panicking_general_protection_fault_handler,
-    panicking_page_fault_handler::panicking_page_fault_handler, tss::TssBuilder,
+    panicking_page_fault_handler::panicking_page_fault_handler,
+    panicking_spurious_interrupt_handler::panicking_spurious_interrupt_handler,
+    spurious_interrupt_handler::set_spurious_interrupt_handler, tss::TssBuilder,
 };
 use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet1};
 use phys_mapper::PhysMapper;
 use stream_with_initial::StreamWithInitial;
 use task::{execute_future::execute_future, keyboard::ScancodeStream, rtc::RtcStream};
 use x86_64::{
-    instructions::interrupts::int3,
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
         tss::TaskStateSegment,
@@ -84,8 +85,8 @@ entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 
 struct StaticStuff {
     tss: TaskStateSegment,
-    // gdt: Gdt,
     idt_builder: IdtBuilder,
+    spurious_interrupt_handler_index: u8,
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
@@ -102,35 +103,44 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .try_get_or_init(|| {
             let mut tss = TssBuilder::new();
             // let gdt = Gdt::new(&tss);
-            let mut idt = IdtBuilder::new();
-            idt.set_double_fault_entry(get_double_fault_entry(
-                &mut tss,
-                panicking_double_fault_handler,
-            ))
-            .unwrap();
-            idt.set_breakpoint_entry({
-                let mut entry = idt::Entry::<HandlerFunc>::missing();
-                entry.set_handler_fn(logging_breakpoint_handler);
-                entry
-            })
-            .unwrap();
-            idt.set_general_protection_fault_entry({
-                let mut entry = idt::Entry::<HandlerFuncWithErrCode>::missing();
-                entry.set_handler_fn(panicking_general_protection_fault_handler);
-                entry
-            })
-            .unwrap();
-            idt.set_page_fault_entry({
-                let mut entry = idt::Entry::<PageFaultHandlerFunc>::missing();
-                entry.set_handler_fn(panicking_page_fault_handler);
-                entry
-            })
+            let mut idt_builder = IdtBuilder::new();
+            idt_builder
+                .set_double_fault_entry(get_double_fault_entry(
+                    &mut tss,
+                    panicking_double_fault_handler,
+                ))
+                .unwrap();
+            idt_builder
+                .set_breakpoint_entry({
+                    let mut entry = idt::Entry::<HandlerFunc>::missing();
+                    entry.set_handler_fn(logging_breakpoint_handler);
+                    entry
+                })
+                .unwrap();
+            idt_builder
+                .set_general_protection_fault_entry({
+                    let mut entry = idt::Entry::<HandlerFuncWithErrCode>::missing();
+                    entry.set_handler_fn(panicking_general_protection_fault_handler);
+                    entry
+                })
+                .unwrap();
+            idt_builder
+                .set_page_fault_entry({
+                    let mut entry = idt::Entry::<PageFaultHandlerFunc>::missing();
+                    entry.set_handler_fn(panicking_page_fault_handler);
+                    entry
+                })
+                .unwrap();
+            let spurious_interrupt_handler_index = set_spurious_interrupt_handler(
+                &mut idt_builder,
+                panicking_spurious_interrupt_handler,
+            )
             .unwrap();
 
             StaticStuff {
                 tss: tss.get_tss(),
-                // gdt,
-                idt_builder: idt,
+                idt_builder,
+                spurious_interrupt_handler_index,
             }
         })
         .unwrap();
@@ -162,7 +172,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         )
     }
     .expect("Error getting ACPI tables");
-    unsafe { apic::init(phys_mapper, acpi_tables) }.unwrap();
+    unsafe {
+        apic::init(
+            phys_mapper,
+            acpi_tables,
+            static_stuff.spurious_interrupt_handler_index,
+        )
+    }
+    .unwrap();
 
     let rtc = Arc::new(Rtc::new());
 

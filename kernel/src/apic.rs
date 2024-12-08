@@ -26,6 +26,7 @@ pub static LOCAL_APIC: OnceCell<spin::Mutex<LocalApic>> = OnceCell::uninit();
 pub unsafe fn init(
     phys_mapper: PhysMapper,
     acpi_tables: AcpiTables<PhysMapper>,
+    spurious_interrupt_index: u8,
 ) -> anyhow::Result<()> {
     let platform_info = acpi_tables.platform_info().map_err(|e| anyhow!("{e:?}"))?;
     let interrupt_model = platform_info.interrupt_model;
@@ -77,7 +78,7 @@ pub unsafe fn init(
                         | PageTableFlags::NO_EXECUTE,
                 );
                 let mut local_apic = LocalApicBuilder::new()
-                    .spurious_vector(u8::from(InterruptIndex::Spurious) as usize)
+                    .spurious_vector(spurious_interrupt_index as usize)
                     .timer_vector(u8::from(InterruptIndex::Timer) as usize)
                     // .timer_mode(TimerMode::Periodic)
                     // .timer_divide(TimerDivide::Div16)
