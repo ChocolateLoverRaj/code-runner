@@ -62,13 +62,14 @@ use modules::{
     },
     panicking_page_fault_handler::panicking_page_fault_handler,
     panicking_spurious_interrupt_handler::panicking_spurious_interrupt_handler,
+    rtc_async_handler::RtcAsyncBuilder,
     spurious_interrupt_handler::set_spurious_interrupt_handler,
     tss::TssBuilder,
 };
 use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet1};
 use phys_mapper::PhysMapper;
 use stream_with_initial::StreamWithInitial;
-use task::{execute_future::execute_future, keyboard::ScancodeStream, rtc::RtcStream};
+use task::execute_future::execute_future;
 use x2apic::lapic::LocalApic;
 use x86_64::{
     instructions::interrupts::without_interrupts,
@@ -104,6 +105,7 @@ struct StaticStuff {
     spurious_interrupt_handler_index: u8,
     timer_interrupt_index: u8,
     local_apic_error_interrupt_index: u8,
+    rtc_async: RtcAsyncBuilder,
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
@@ -170,6 +172,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                     entry
                 })
                 .unwrap();
+            let rtc_async = RtcAsyncBuilder::set_interrupt(&mut idt_builder).unwrap();
 
             StaticStuff {
                 tss: tss.get_tss(),
@@ -177,6 +180,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 spurious_interrupt_handler_index,
                 timer_interrupt_index,
                 local_apic_error_interrupt_index,
+                rtc_async,
             }
         })
         .unwrap();
@@ -209,7 +213,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     }
     .expect("Error getting ACPI tables");
     let apic = get_apic(&acpi_tables).unwrap();
-    let io_apic = get_io_apic(&apic, &mut phys_mapper.clone());
+    let mut io_apic = get_io_apic(&apic, &mut phys_mapper.clone());
     let mut local_apic = get_local_apic(
         &apic,
         &mut phys_mapper.clone(),
@@ -218,8 +222,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         static_stuff.local_apic_error_interrupt_index,
     )
     .unwrap();
+    let mut rtc_async = static_stuff
+        .rtc_async
+        .configure_io_apic(&mut io_apic)
+        .set_local_apic_getter(Box::new(|| {
+            Box::new(LOCAL_APIC.try_get().unwrap().try_lock().unwrap())
+        }));
     without_interrupts(|| {
-        local_apic.enable();
+        unsafe { local_apic.enable() };
         LOCAL_APIC
             .try_init_once(|| spin::Mutex::new(local_apic))
             .unwrap();
@@ -233,44 +243,44 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // }
     // .unwrap();
 
-    // let rtc = Arc::new(Rtc::new());
+    let rtc = Arc::new(Rtc::new());
 
-    // execute_future(
-    //     join(
-    //         async {
-    //             let mut scancodes = ScancodeStream::new().unwrap();
-    //             let mut keyboard = Keyboard::new(
-    //                 ScancodeSet1::new(),
-    //                 layouts::Us104Key,
-    //                 HandleControl::Ignore,
-    //             );
+    execute_future(
+        join(
+            async {
+                // let mut scancodes = ScancodeStream::new().unwrap();
+                // let mut keyboard = Keyboard::new(
+                //     ScancodeSet1::new(),
+                //     layouts::Us104Key,
+                //     HandleControl::Ignore,
+                // );
 
-    //             while let Some(scancode) = scancodes.next().await {
-    //                 if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-    //                     log::info!("{key_event:?}");
-    //                 }
-    //             }
-    //         },
-    //         RtcStream::new(DividerValue::new(15).unwrap())
-    //             .unwrap()
-    //             .with_initial(())
-    //             .map(move |()| rtc.get_unix_timestamp())
-    //             .changes()
-    //             .for_each(|rtc_unix_timestamp| async move {
-    //                 let now = DateTime::from_timestamp(rtc_unix_timestamp as i64, 0);
-    //                 match now {
-    //                     Some(now) => {
-    //                         let now = now.to_rfc2822();
-    //                         log::info!("Time (in UTC): {now}");
-    //                     }
-    //                     None => {
-    //                         log::warn!("Invalid RTC time: {rtc_unix_timestamp}");
-    //                     }
-    //                 }
-    //             }),
-    //     )
-    //     .boxed(),
-    // );
+                // while let Some(scancode) = scancodes.next().await {
+                //     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
+                //         log::info!("{key_event:?}");
+                //     }
+                // }
+            },
+            rtc_async
+                .stream(DividerValue::new(15).unwrap())
+                .with_initial(())
+                .map(move |()| rtc.get_unix_timestamp())
+                .changes()
+                .for_each(|rtc_unix_timestamp| async move {
+                    let now = DateTime::from_timestamp(rtc_unix_timestamp as i64, 0);
+                    match now {
+                        Some(now) => {
+                            let now = now.to_rfc2822();
+                            log::info!("Time (in UTC): {now}");
+                        }
+                        None => {
+                            log::warn!("Invalid RTC time: {rtc_unix_timestamp}");
+                        }
+                    }
+                }),
+        )
+        .boxed(),
+    );
 
     log::info!("It did not crash");
 

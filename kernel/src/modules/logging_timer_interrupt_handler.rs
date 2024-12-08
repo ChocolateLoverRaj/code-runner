@@ -1,17 +1,13 @@
-use core::ops::DerefMut;
-
-use alloc::boxed::Box;
 use conquer_once::noblock::OnceCell;
-use x2apic::lapic::LocalApic;
 use x86_64::structures::idt::{HandlerFunc, InterruptStackFrame};
 
-type LocalApicGetter = Box<dyn Fn() -> Box<dyn DerefMut<Target = LocalApic>> + Send + Sync>;
+use super::local_apic_getter::LocalApicGetter;
 
 static GETTER: OnceCell<LocalApicGetter> = OnceCell::uninit();
 
 /// This is private so that the getter must be initialized before using
 extern "x86-interrupt" fn logging_timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    log::info!("Timer interrupt");
+    log::debug!("Timer interrupt");
     let mut local_apic = GETTER.try_get().unwrap()();
     unsafe { local_apic.end_of_interrupt() };
 }

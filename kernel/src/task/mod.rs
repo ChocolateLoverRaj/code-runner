@@ -1,7 +1,6 @@
 pub mod execute_future;
 pub mod executor;
 pub mod keyboard;
-pub mod rtc;
 pub mod simple_executor;
 
 use alloc::boxed::Box;

@@ -8,10 +8,6 @@ use x86_64::structures::idt::{
     InterruptDescriptorTable, PageFaultHandlerFunc,
 };
 
-use crate::interrupts::{
-    keyboard::keyboard_interrupt_handler, rtc::rtc_interrupt_handler, InterruptIndex,
-};
-
 const FLEXIBLE_ENTRIES_START: u8 = 32;
 const MAX_FLEXIBLE_ENTRIES: u8 = FLEXIBLE_ENTRIES_START.wrapping_neg();
 
@@ -27,15 +23,7 @@ pub struct IdtBuilder {
 impl IdtBuilder {
     pub fn new() -> Self {
         Self {
-            idt: {
-                let mut idt = InterruptDescriptorTable::new();
-
-                // idt[u8::from(InterruptIndex::Timer)].set_handler_fn(rtc_interrupt_handler);
-                // idt[u8::from(InterruptIndex::Keyboard)].set_handler_fn(keyboard_interrupt_handler);
-                // idt[u8::from(InterruptIndex::Rtc)].set_handler_fn(rtc_interrupt_handler);
-
-                idt
-            },
+            idt: InterruptDescriptorTable::new(),
             set_double_fault_entry: false,
             set_breakpoint_entry: false,
             set_general_protection_fault: false,
