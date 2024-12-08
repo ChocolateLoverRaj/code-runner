@@ -1,11 +1,14 @@
 pub mod double_fault_handler_entry;
 pub mod get_apic;
 pub mod get_io_apic;
+pub mod get_local_apic;
 pub mod gtd;
 pub mod idt;
 pub mod logging_breakpoint_handler;
+pub mod logging_timer_interrupt_handler;
 pub mod panicking_double_fault_handler;
 pub mod panicking_general_protection_fault_handler;
+pub mod panicking_local_apic_error_interrupt_handler;
 pub mod panicking_page_fault_handler;
 pub mod panicking_spurious_interrupt_handler;
 pub mod spurious_interrupt_handler;

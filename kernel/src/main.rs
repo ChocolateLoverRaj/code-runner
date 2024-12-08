@@ -37,7 +37,7 @@ pub mod task;
 pub mod virt_addr_from_indexes;
 pub mod virt_mem_allocator;
 
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use change_stream::StreamChanges;
 use chrono::DateTime;
@@ -47,20 +47,31 @@ use futures_util::{future::join, FutureExt, StreamExt};
 use hlt_loop::hlt_loop;
 use logger::init_logger_with_framebuffer;
 use modules::{
-    double_fault_handler_entry::get_double_fault_entry, get_apic::get_apic,
-    get_io_apic::get_io_apic, gtd::Gdt, idt::IdtBuilder,
+    double_fault_handler_entry::get_double_fault_entry,
+    get_apic::get_apic,
+    get_io_apic::get_io_apic,
+    get_local_apic::get_local_apic,
+    gtd::Gdt,
+    idt::IdtBuilder,
     logging_breakpoint_handler::logging_breakpoint_handler,
+    logging_timer_interrupt_handler::get_logging_timer_interrupt_handler,
     panicking_double_fault_handler::panicking_double_fault_handler,
     panicking_general_protection_fault_handler::panicking_general_protection_fault_handler,
+    panicking_local_apic_error_interrupt_handler::{
+        self, panicking_local_apic_error_interrupt_handler,
+    },
     panicking_page_fault_handler::panicking_page_fault_handler,
     panicking_spurious_interrupt_handler::panicking_spurious_interrupt_handler,
-    spurious_interrupt_handler::set_spurious_interrupt_handler, tss::TssBuilder,
+    spurious_interrupt_handler::set_spurious_interrupt_handler,
+    tss::TssBuilder,
 };
 use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet1};
 use phys_mapper::PhysMapper;
 use stream_with_initial::StreamWithInitial;
 use task::{execute_future::execute_future, keyboard::ScancodeStream, rtc::RtcStream};
+use x2apic::lapic::LocalApic;
 use x86_64::{
+    instructions::interrupts::without_interrupts,
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
         tss::TaskStateSegment,
@@ -85,10 +96,14 @@ pub static BOOTLOADER_CONFIG: BootloaderConfig = {
 
 entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 
+pub static LOCAL_APIC: OnceCell<spin::Mutex<LocalApic>> = OnceCell::uninit();
+
 struct StaticStuff {
     tss: TaskStateSegment,
     idt_builder: IdtBuilder,
     spurious_interrupt_handler_index: u8,
+    timer_interrupt_index: u8,
+    local_apic_error_interrupt_index: u8,
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
@@ -138,11 +153,30 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 panicking_spurious_interrupt_handler,
             )
             .unwrap();
+            let timer_interrupt_handler = get_logging_timer_interrupt_handler(Box::new(|| {
+                Box::new(LOCAL_APIC.try_get().unwrap().try_lock().unwrap())
+            }));
+            let timer_interrupt_index = idt_builder
+                .set_flexible_entry({
+                    let mut entry = idt::Entry::missing();
+                    entry.set_handler_fn(timer_interrupt_handler);
+                    entry
+                })
+                .unwrap();
+            let local_apic_error_interrupt_index = idt_builder
+                .set_flexible_entry({
+                    let mut entry = idt::Entry::<HandlerFunc>::missing();
+                    entry.set_handler_fn(panicking_local_apic_error_interrupt_handler);
+                    entry
+                })
+                .unwrap();
 
             StaticStuff {
                 tss: tss.get_tss(),
                 idt_builder,
                 spurious_interrupt_handler_index,
+                timer_interrupt_index,
+                local_apic_error_interrupt_index,
             }
         })
         .unwrap();
@@ -176,6 +210,20 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     .expect("Error getting ACPI tables");
     let apic = get_apic(&acpi_tables).unwrap();
     let io_apic = get_io_apic(&apic, &mut phys_mapper.clone());
+    let mut local_apic = get_local_apic(
+        &apic,
+        &mut phys_mapper.clone(),
+        static_stuff.spurious_interrupt_handler_index,
+        static_stuff.timer_interrupt_index,
+        static_stuff.local_apic_error_interrupt_index,
+    )
+    .unwrap();
+    without_interrupts(|| {
+        local_apic.enable();
+        LOCAL_APIC
+            .try_init_once(|| spin::Mutex::new(local_apic))
+            .unwrap();
+    });
     // unsafe {
     //     apic::init(
     //         phys_mapper,
