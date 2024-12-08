@@ -47,8 +47,9 @@ use futures_util::{future::join, FutureExt, StreamExt};
 use hlt_loop::hlt_loop;
 use logger::init_logger_with_framebuffer;
 use modules::{
-    double_fault_handler_entry::get_double_fault_entry, get_apic::get_apic, gtd::Gdt,
-    idt::IdtBuilder, logging_breakpoint_handler::logging_breakpoint_handler,
+    double_fault_handler_entry::get_double_fault_entry, get_apic::get_apic,
+    get_io_apic::get_io_apic, gtd::Gdt, idt::IdtBuilder,
+    logging_breakpoint_handler::logging_breakpoint_handler,
     panicking_double_fault_handler::panicking_double_fault_handler,
     panicking_general_protection_fault_handler::panicking_general_protection_fault_handler,
     panicking_page_fault_handler::panicking_page_fault_handler,
@@ -174,6 +175,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     }
     .expect("Error getting ACPI tables");
     let apic = get_apic(&acpi_tables).unwrap();
+    let io_apic = get_io_apic(&apic, &mut phys_mapper.clone());
     // unsafe {
     //     apic::init(
     //         phys_mapper,
@@ -183,44 +185,44 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // }
     // .unwrap();
 
-    let rtc = Arc::new(Rtc::new());
+    // let rtc = Arc::new(Rtc::new());
 
-    execute_future(
-        join(
-            async {
-                let mut scancodes = ScancodeStream::new().unwrap();
-                let mut keyboard = Keyboard::new(
-                    ScancodeSet1::new(),
-                    layouts::Us104Key,
-                    HandleControl::Ignore,
-                );
+    // execute_future(
+    //     join(
+    //         async {
+    //             let mut scancodes = ScancodeStream::new().unwrap();
+    //             let mut keyboard = Keyboard::new(
+    //                 ScancodeSet1::new(),
+    //                 layouts::Us104Key,
+    //                 HandleControl::Ignore,
+    //             );
 
-                while let Some(scancode) = scancodes.next().await {
-                    if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-                        log::info!("{key_event:?}");
-                    }
-                }
-            },
-            RtcStream::new(DividerValue::new(15).unwrap())
-                .unwrap()
-                .with_initial(())
-                .map(move |()| rtc.get_unix_timestamp())
-                .changes()
-                .for_each(|rtc_unix_timestamp| async move {
-                    let now = DateTime::from_timestamp(rtc_unix_timestamp as i64, 0);
-                    match now {
-                        Some(now) => {
-                            let now = now.to_rfc2822();
-                            log::info!("Time (in UTC): {now}");
-                        }
-                        None => {
-                            log::warn!("Invalid RTC time: {rtc_unix_timestamp}");
-                        }
-                    }
-                }),
-        )
-        .boxed(),
-    );
+    //             while let Some(scancode) = scancodes.next().await {
+    //                 if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
+    //                     log::info!("{key_event:?}");
+    //                 }
+    //             }
+    //         },
+    //         RtcStream::new(DividerValue::new(15).unwrap())
+    //             .unwrap()
+    //             .with_initial(())
+    //             .map(move |()| rtc.get_unix_timestamp())
+    //             .changes()
+    //             .for_each(|rtc_unix_timestamp| async move {
+    //                 let now = DateTime::from_timestamp(rtc_unix_timestamp as i64, 0);
+    //                 match now {
+    //                     Some(now) => {
+    //                         let now = now.to_rfc2822();
+    //                         log::info!("Time (in UTC): {now}");
+    //                     }
+    //                     None => {
+    //                         log::warn!("Invalid RTC time: {rtc_unix_timestamp}");
+    //                     }
+    //                 }
+    //             }),
+    //     )
+    //     .boxed(),
+    // );
 
     log::info!("It did not crash");
 

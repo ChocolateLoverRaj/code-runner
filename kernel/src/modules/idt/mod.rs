@@ -30,9 +30,9 @@ impl IdtBuilder {
             idt: {
                 let mut idt = InterruptDescriptorTable::new();
 
-                idt[u8::from(InterruptIndex::Timer)].set_handler_fn(rtc_interrupt_handler);
-                idt[u8::from(InterruptIndex::Keyboard)].set_handler_fn(keyboard_interrupt_handler);
-                idt[u8::from(InterruptIndex::Rtc)].set_handler_fn(rtc_interrupt_handler);
+                // idt[u8::from(InterruptIndex::Timer)].set_handler_fn(rtc_interrupt_handler);
+                // idt[u8::from(InterruptIndex::Keyboard)].set_handler_fn(keyboard_interrupt_handler);
+                // idt[u8::from(InterruptIndex::Rtc)].set_handler_fn(rtc_interrupt_handler);
 
                 idt
             },
