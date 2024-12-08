@@ -1,7 +1,7 @@
 use log::Log;
 
 pub struct CombinedLogger<'a, const N: usize> {
-    pub loggers: [&'a dyn Log; N],
+    pub loggers: &'a [&'a dyn Log],
 }
 
 impl<'a, const N: usize> Log for CombinedLogger<'a, N> {

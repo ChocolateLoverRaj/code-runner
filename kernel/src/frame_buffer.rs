@@ -121,8 +121,12 @@ impl<'f> DrawTarget for Display<'f> {
             }
         };
         let mut colors = colors.into_iter();
-        for y in area.top_left.y as usize..area.top_left.y as usize + area.size.height as usize {
-            for x in area.top_left.x as usize..area.top_left.x as usize + area.size.width as usize {
+        for y in area.top_left.y as usize
+            ..(area.top_left.y as usize + area.size.height as usize).min(info.height)
+        {
+            for x in area.top_left.x as usize
+                ..(area.top_left.x as usize + area.size.width as usize).min(info.width)
+            {
                 let start = y * info.stride + x;
                 let pixel_buffer =
                     &mut buffer[start * info.bytes_per_pixel..(start + 1) * info.bytes_per_pixel];

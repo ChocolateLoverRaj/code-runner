@@ -1,8 +1,4 @@
-use core::cell::UnsafeCell;
-
 use x86_64::{structures::tss::TaskStateSegment, VirtAddr};
-
-use crate::modules::gtd::DOUBLE_FAULT_IST_INDEX;
 
 pub struct TssBuilder {
     used_stack_table_entries: usize,

@@ -1,8 +1,9 @@
-use bootloader_api::{info::FrameBuffer, info::Optional};
+use bootloader_api::info::FrameBuffer;
 use conquer_once::spin::OnceCell;
 use embedded_graphics::{
     mono_font::iso_8859_16::FONT_10X20, pixelcolor::Rgb888, prelude::RgbColor,
 };
+use log::Log;
 
 use crate::{
     colorful_logger::ColorfulLogger, combined_logger::CombinedLogger,
@@ -14,25 +15,36 @@ use crate::{
 static SCREEN_LOGGER: OnceCell<ColorfulLogger<Rgb888, EmbeddedGraphicsWriter<Display>>> =
     OnceCell::uninit();
 static SERIAL_LOGGER: OnceCell<SerialLogger> = OnceCell::uninit();
+static LOGGERS: OnceCell<heapless::Vec<&'static dyn Log, 2>> = OnceCell::uninit();
 static LOGGER: OnceCell<LockedLoggerWithoutInterrupts<CombinedLogger<'static, 2>>> =
     OnceCell::uninit();
 
-pub fn init_logger_with_framebuffer(frame_buffer_optional: &'static mut Optional<FrameBuffer>) {
-    let logger = LOGGER.get_or_init(move || {
-        LockedLoggerWithoutInterrupts::new({
-            let screen_logger = SCREEN_LOGGER.get_or_init(|| {
+pub fn init_logger_with_framebuffer(frame_buffer: Option<&'static mut FrameBuffer>) {
+    let loggers = LOGGERS.get_or_init(|| {
+        let screen_logger = frame_buffer.map(|frame_buffer| {
+            SCREEN_LOGGER.get_or_init(|| {
                 ColorfulLogger::new(
                     EmbeddedGraphicsWriter::new(
-                        Display::new(frame_buffer_optional.as_mut().unwrap()),
+                        Display::new(frame_buffer),
                         FONT_10X20,
                         Rgb888::BLACK,
                     ),
                     GET_RGB_COLOR,
                 )
-            });
-            let serial_logger = SERIAL_LOGGER.get_or_init(|| unsafe { SerialLogger::init() });
+            })
+        });
+        let serial_logger = SERIAL_LOGGER.get_or_init(|| unsafe { SerialLogger::init() });
+        let mut vec = heapless::Vec::<&'static dyn Log, 2>::new();
+        let _ = vec.push(serial_logger);
+        if let Some(screen_logger) = screen_logger {
+            let _ = vec.push(screen_logger);
+        };
+        vec
+    });
+    let logger = LOGGER.get_or_init(move || {
+        LockedLoggerWithoutInterrupts::new({
             CombinedLogger {
-                loggers: [screen_logger, serial_logger],
+                loggers: &loggers[..loggers.len()],
             }
         })
     });

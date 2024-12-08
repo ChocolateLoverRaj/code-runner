@@ -27,7 +27,7 @@ features = ["alloc"]
 [dependencies.futures-util]
 version = "0.3.4"
 default-features = false
-features = ["alloc"]
+features = ["alloc", "async-await", "async-await-macro"]
 
 [dependencies.chrono]
 version = "0.4.38"

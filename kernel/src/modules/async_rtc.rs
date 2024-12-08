@@ -27,11 +27,11 @@ pub extern "x86-interrupt" fn rtc_interrupt_handler(_stack_frame: InterruptStack
     unsafe { local_apic.end_of_interrupt() };
 }
 
-pub struct RtcAsyncBuilder {
+pub struct AsyncRtcBuilder {
     interrupt_index: u8,
 }
 
-impl RtcAsyncBuilder {
+impl AsyncRtcBuilder {
     pub fn set_interrupt(idt_builder: &mut IdtBuilder) -> Option<Self> {
         let interrupt_index = idt_builder.set_flexible_entry({
             let mut entry = idt::Entry::<HandlerFunc>::missing();
@@ -41,7 +41,12 @@ impl RtcAsyncBuilder {
         Some(Self { interrupt_index })
     }
 
-    pub fn configure_io_apic(&'static self, io_apic: &mut IoApic) -> RtcAsyncBuilder2 {
+    pub fn configure_io_apic(
+        &'static self,
+        io_apic: &mut IoApic,
+        getter: LocalApicGetter,
+    ) -> AsyncRtc {
+        GETTER.try_init_once(|| getter).unwrap();
         unsafe {
             io_apic.set_table_entry(Pic8259Interrupts::Rtc.into(), {
                 let mut entry = RedirectionTableEntry::default();
@@ -50,22 +55,13 @@ impl RtcAsyncBuilder {
             })
         };
         unsafe { io_apic.enable_irq(Pic8259Interrupts::Rtc.into()) };
-        RtcAsyncBuilder2 {}
+        AsyncRtc {}
     }
 }
 
-pub struct RtcAsyncBuilder2 {}
+pub struct AsyncRtc {}
 
-impl RtcAsyncBuilder2 {
-    pub fn set_local_apic_getter(self, getter: LocalApicGetter) -> RtcAsync {
-        GETTER.try_init_once(|| getter).unwrap();
-        RtcAsync {}
-    }
-}
-
-pub struct RtcAsync {}
-
-impl RtcAsync {
+impl AsyncRtc {
     pub fn stream(&mut self, divider_value: DividerValue) -> RtcStream {
         log::debug!("Enabling RTC interrupts");
         x86_rtc::interrupts::enable();

@@ -13,14 +13,17 @@ pub mod apic;
 pub mod change_stream;
 pub mod colorful_logger;
 pub mod combined_logger;
+pub mod demo_async;
+pub mod demo_async_keyboard_drop;
+pub mod demo_async_rtc_drop;
 pub mod draw_rust;
 pub mod embedded_graphics_writer;
+pub mod execute_future;
 pub mod find_used_virt_addrs;
 pub mod frame_buffer;
 pub mod get_rgb_color;
 pub mod hlt_loop;
 pub mod insert;
-pub mod interrupts;
 pub mod keyboard_interrupt_mutex;
 pub mod logger;
 pub mod logger_without_interrupts;
@@ -33,20 +36,29 @@ pub mod serial_logger;
 pub mod set_color;
 pub mod split_draw_target;
 pub mod stream_with_initial;
-pub mod task;
 pub mod virt_addr_from_indexes;
 pub mod virt_mem_allocator;
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::sync::Arc;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
-use change_stream::StreamChanges;
-use chrono::DateTime;
 use conquer_once::noblock::OnceCell;
 use core::{ops::DerefMut, panic::PanicInfo};
-use futures_util::{future::join, FutureExt, StreamExt};
+#[allow(unused)]
+use demo_async::demo_async;
+#[allow(unused)]
+use demo_async_keyboard_drop::demo_async_keyboard_drop;
+#[allow(unused)]
+use demo_async_rtc_drop::demo_asyc_rtc_drop;
+#[allow(unused)]
+use draw_rust::draw_rust;
+use execute_future::execute_future;
+use futures_util::FutureExt;
 use hlt_loop::hlt_loop;
+#[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use modules::{
+    async_keyboard::AsyncKeyboardBuilder,
+    async_rtc::AsyncRtcBuilder,
     double_fault_handler_entry::get_double_fault_entry,
     get_apic::get_apic,
     get_io_apic::get_io_apic,
@@ -57,29 +69,22 @@ use modules::{
     logging_timer_interrupt_handler::get_logging_timer_interrupt_handler,
     panicking_double_fault_handler::panicking_double_fault_handler,
     panicking_general_protection_fault_handler::panicking_general_protection_fault_handler,
-    panicking_local_apic_error_interrupt_handler::{
-        self, panicking_local_apic_error_interrupt_handler,
-    },
+    panicking_local_apic_error_interrupt_handler::panicking_local_apic_error_interrupt_handler,
     panicking_page_fault_handler::panicking_page_fault_handler,
     panicking_spurious_interrupt_handler::panicking_spurious_interrupt_handler,
-    rtc_async_handler::RtcAsyncBuilder,
     spurious_interrupt_handler::set_spurious_interrupt_handler,
+    static_local_apic::{enable_and_store, get_getter},
     tss::TssBuilder,
 };
-use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet1};
 use phys_mapper::PhysMapper;
-use stream_with_initial::StreamWithInitial;
-use task::execute_future::execute_future;
-use x2apic::lapic::LocalApic;
+use spin::Mutex;
 use x86_64::{
-    instructions::interrupts::without_interrupts,
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
         tss::TaskStateSegment,
     },
     VirtAddr,
 };
-use x86_rtc::{interrupts::DividerValue, Rtc};
 
 /// This function is called on panic.
 #[panic_handler]
@@ -97,15 +102,14 @@ pub static BOOTLOADER_CONFIG: BootloaderConfig = {
 
 entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 
-pub static LOCAL_APIC: OnceCell<spin::Mutex<LocalApic>> = OnceCell::uninit();
-
 struct StaticStuff {
     tss: TaskStateSegment,
     idt_builder: IdtBuilder,
     spurious_interrupt_handler_index: u8,
     timer_interrupt_index: u8,
     local_apic_error_interrupt_index: u8,
-    rtc_async: RtcAsyncBuilder,
+    rtc_async: AsyncRtcBuilder,
+    async_keyboard: AsyncKeyboardBuilder,
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
@@ -115,9 +119,9 @@ static GDT: OnceCell<Gdt> = OnceCell::uninit();
 // static IDT: OnceCell<IdtBuilder> = OnceCell::uninit();
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
-    // let frame_buffer = boot_info.framebuffer.as_mut().unwrap();
-    // draw_rust::draw_rust(frame_buffer);
-    init_logger_with_framebuffer(&mut boot_info.framebuffer);
+    let mut frame_buffer = boot_info.framebuffer.as_mut();
+    let frame_buffer_for_drawing = frame_buffer.take().unwrap();
+    init_logger_with_framebuffer(frame_buffer);
     let static_stuff = STATIC_STUFF
         .try_get_or_init(|| {
             let mut tss = TssBuilder::new();
@@ -155,9 +159,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 panicking_spurious_interrupt_handler,
             )
             .unwrap();
-            let timer_interrupt_handler = get_logging_timer_interrupt_handler(Box::new(|| {
-                Box::new(LOCAL_APIC.try_get().unwrap().try_lock().unwrap())
-            }));
+            let timer_interrupt_handler = get_logging_timer_interrupt_handler(get_getter());
             let timer_interrupt_index = idt_builder
                 .set_flexible_entry({
                     let mut entry = idt::Entry::missing();
@@ -172,7 +174,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                     entry
                 })
                 .unwrap();
-            let rtc_async = RtcAsyncBuilder::set_interrupt(&mut idt_builder).unwrap();
+            let rtc_async = AsyncRtcBuilder::set_interrupt(&mut idt_builder).unwrap();
+            let async_keyboard = AsyncKeyboardBuilder::set_interrupt(&mut idt_builder).unwrap();
 
             StaticStuff {
                 tss: tss.get_tss(),
@@ -181,6 +184,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 timer_interrupt_index,
                 local_apic_error_interrupt_index,
                 rtc_async,
+                async_keyboard,
             }
         })
         .unwrap();
@@ -213,8 +217,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     }
     .expect("Error getting ACPI tables");
     let apic = get_apic(&acpi_tables).unwrap();
-    let mut io_apic = get_io_apic(&apic, &mut phys_mapper.clone());
-    let mut local_apic = get_local_apic(
+    let local_apic = get_local_apic(
         &apic,
         &mut phys_mapper.clone(),
         static_stuff.spurious_interrupt_handler_index,
@@ -222,67 +225,34 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         static_stuff.local_apic_error_interrupt_index,
     )
     .unwrap();
-    let mut rtc_async = static_stuff
-        .rtc_async
-        .configure_io_apic(&mut io_apic)
-        .set_local_apic_getter(Box::new(|| {
-            Box::new(LOCAL_APIC.try_get().unwrap().try_lock().unwrap())
-        }));
-    without_interrupts(|| {
-        unsafe { local_apic.enable() };
-        LOCAL_APIC
-            .try_init_once(|| spin::Mutex::new(local_apic))
-            .unwrap();
-    });
-    // unsafe {
-    //     apic::init(
-    //         phys_mapper,
-    //         acpi_tables,
-    //         static_stuff.spurious_interrupt_handler_index,
-    //     )
-    // }
-    // .unwrap();
+    enable_and_store(local_apic);
 
-    let rtc = Arc::new(Rtc::new());
+    let mut io_apic = get_io_apic(&apic, &mut phys_mapper.clone());
+
+    #[allow(unused)]
+    let mut async_rtc = static_stuff
+        .rtc_async
+        .configure_io_apic(&mut io_apic, get_getter());
+    let io_apic = Arc::new(Mutex::new(io_apic));
+    #[allow(unused)]
+    let mut async_keyboard =
+        static_stuff
+            .async_keyboard
+            .configure_io_apic(io_apic, get_getter(), 100);
+    x86_64::instructions::interrupts::enable();
 
     execute_future(
-        join(
-            async {
-                // let mut scancodes = ScancodeStream::new().unwrap();
-                // let mut keyboard = Keyboard::new(
-                //     ScancodeSet1::new(),
-                //     layouts::Us104Key,
-                //     HandleControl::Ignore,
-                // );
-
-                // while let Some(scancode) = scancodes.next().await {
-                //     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-                //         log::info!("{key_event:?}");
-                //     }
-                // }
-            },
-            rtc_async
-                .stream(DividerValue::new(15).unwrap())
-                .with_initial(())
-                .map(move |()| rtc.get_unix_timestamp())
-                .changes()
-                .for_each(|rtc_unix_timestamp| async move {
-                    let now = DateTime::from_timestamp(rtc_unix_timestamp as i64, 0);
-                    match now {
-                        Some(now) => {
-                            let now = now.to_rfc2822();
-                            log::info!("Time (in UTC): {now}");
-                        }
-                        None => {
-                            log::warn!("Invalid RTC time: {rtc_unix_timestamp}");
-                        }
-                    }
-                }),
-        )
+        async move {
+            // demo_async(&mut async_keyboard, &mut async_rtc).await;
+            // demo_async_keyboard_drop(&mut async_keyboard).await;
+            // demo_asyc_rtc_drop(&mut async_rtc).await;
+        }
         .boxed(),
     );
 
     log::info!("It did not crash");
+
+    draw_rust(frame_buffer_for_drawing);
 
     hlt_loop();
 }

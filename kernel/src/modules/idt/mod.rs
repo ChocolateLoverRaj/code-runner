@@ -111,6 +111,5 @@ impl IdtBuilder {
     pub fn init(&'static self) {
         self.idt.load();
         disable_pic8259();
-        x86_64::instructions::interrupts::enable();
     }
 }
