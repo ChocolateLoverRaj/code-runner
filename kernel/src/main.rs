@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
+#![feature(allocator_api)]
 
 #[allow(unused)]
 #[macro_use]
@@ -46,8 +47,8 @@ use futures_util::{future::join, FutureExt, StreamExt};
 use hlt_loop::hlt_loop;
 use logger::init_logger_with_framebuffer;
 use modules::{
-    double_fault_handler_entry::get_double_fault_entry, gtd::Gdt, idt::IdtBuilder,
-    logging_breakpoint_handler::logging_breakpoint_handler,
+    double_fault_handler_entry::get_double_fault_entry, get_apic::get_apic, gtd::Gdt,
+    idt::IdtBuilder, logging_breakpoint_handler::logging_breakpoint_handler,
     panicking_double_fault_handler::panicking_double_fault_handler,
     panicking_general_protection_fault_handler::panicking_general_protection_fault_handler,
     panicking_page_fault_handler::panicking_page_fault_handler,
@@ -172,14 +173,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         )
     }
     .expect("Error getting ACPI tables");
-    unsafe {
-        apic::init(
-            phys_mapper,
-            acpi_tables,
-            static_stuff.spurious_interrupt_handler_index,
-        )
-    }
-    .unwrap();
+    let apic = get_apic(&acpi_tables).unwrap();
+    // unsafe {
+    //     apic::init(
+    //         phys_mapper,
+    //         acpi_tables,
+    //         static_stuff.spurious_interrupt_handler_index,
+    //     )
+    // }
+    // .unwrap();
 
     let rtc = Arc::new(Rtc::new());
 

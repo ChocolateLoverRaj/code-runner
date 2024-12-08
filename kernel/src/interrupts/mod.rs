@@ -11,5 +11,4 @@ pub enum InterruptIndex {
     Keyboard,
     LocalApicError,
     Rtc,
-    Spurious = 0xFF,
 }

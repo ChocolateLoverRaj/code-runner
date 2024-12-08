@@ -1,4 +1,5 @@
 pub mod double_fault_handler_entry;
+pub mod get_apic;
 pub mod gtd;
 pub mod idt;
 pub mod logging_breakpoint_handler;
