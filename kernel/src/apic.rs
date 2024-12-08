@@ -1,8 +1,5 @@
-use core::ops::Range;
-
 use acpi::{AcpiTables, InterruptModel};
-use alloc::sync::Arc;
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use conquer_once::spin::OnceCell;
 use x2apic::{
     ioapic::{IoApic, RedirectionTableEntry},
@@ -10,13 +7,12 @@ use x2apic::{
 };
 use x86_64::{
     instructions::interrupts::without_interrupts,
-    structures::paging::{OffsetPageTable, PageTableFlags, PhysFrame},
-    PhysAddr, VirtAddr,
+    structures::paging::{PageTableFlags, PhysFrame},
+    PhysAddr,
 };
 
 use crate::{
-    interrupts::InterruptIndex, memory::BootInfoFrameAllocator, phys_mapper::PhysMapper,
-    pic8259_interrupts::Pic8259Interrupts,
+    interrupts::InterruptIndex, phys_mapper::PhysMapper, pic8259_interrupts::Pic8259Interrupts,
 };
 
 static IO_APIC: OnceCell<spin::Mutex<IoApic>> = OnceCell::uninit();

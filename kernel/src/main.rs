@@ -17,7 +17,6 @@ pub mod embedded_graphics_writer;
 pub mod find_used_virt_addrs;
 pub mod frame_buffer;
 pub mod get_rgb_color;
-pub mod gtd;
 pub mod hlt_loop;
 pub mod insert;
 pub mod interrupts;
@@ -25,6 +24,7 @@ pub mod keyboard_interrupt_mutex;
 pub mod logger;
 pub mod logger_without_interrupts;
 pub mod memory;
+pub mod modules;
 pub mod phys_mapper;
 pub mod pic8259_interrupts;
 pub mod remove;
@@ -40,17 +40,19 @@ use alloc::sync::Arc;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use change_stream::StreamChanges;
 use chrono::DateTime;
+use conquer_once::noblock::OnceCell;
 use core::{ops::DerefMut, panic::PanicInfo};
 use futures_util::{future::join, FutureExt, StreamExt};
-use gtd::init_gtd;
 use hlt_loop::hlt_loop;
-use interrupts::init_interrupts;
 use logger::init_logger_with_framebuffer;
+use modules::{
+    double_fault_handler::get_double_fault_entry, gtd::Gdt, idt::IdtBuilder, tss::TssBuilder,
+};
 use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet1};
 use phys_mapper::PhysMapper;
 use stream_with_initial::StreamWithInitial;
 use task::{execute_future::execute_future, keyboard::ScancodeStream, rtc::RtcStream};
-use x86_64::VirtAddr;
+use x86_64::{structures::tss::TaskStateSegment, VirtAddr};
 use x86_rtc::{interrupts::DividerValue, Rtc};
 
 /// This function is called on panic.
@@ -69,12 +71,46 @@ pub static BOOTLOADER_CONFIG: BootloaderConfig = {
 
 entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 
+struct StaticStuff {
+    tss: TaskStateSegment,
+    // gdt: Gdt,
+    idt_builder: IdtBuilder,
+}
+
+static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
+
+// static TSS: OnceCell<TaskStateSegment> = OnceCell::uninit();
+static GDT: OnceCell<Gdt> = OnceCell::uninit();
+// static IDT: OnceCell<IdtBuilder> = OnceCell::uninit();
+
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // let frame_buffer = boot_info.framebuffer.as_mut().unwrap();
     // draw_rust::draw_rust(frame_buffer);
     init_logger_with_framebuffer(&mut boot_info.framebuffer);
-    init_gtd();
-    init_interrupts();
+    let static_stuff = STATIC_STUFF
+        .try_get_or_init(|| {
+            let mut tss = TssBuilder::new();
+            // let gdt = Gdt::new(&tss);
+            let mut idt = IdtBuilder::new();
+            idt.add_double_fault_handler(get_double_fault_entry(&mut tss));
+            StaticStuff {
+                tss: tss.get_tss(),
+                // gdt,
+                idt_builder: idt,
+            }
+        })
+        .unwrap();
+    // let tss = TSS.try_get_or_init(|| get_tss()).unwrap();
+    let gdt = GDT.try_get_or_init(|| Gdt::new(&static_stuff.tss)).unwrap();
+    gdt.init();
+    static_stuff.idt_builder.init();
+    // let idt_builder = IDT.try_get_or_init(|| IdtBuilder::new()).unwrap();
+    // idt_builder.init();
+    // init_interrupts();
+    fn stack_overflow() {
+        stack_overflow()
+    }
+    stack_overflow();
     let phys_mem_offset = VirtAddr::new(
         *boot_info
             .physical_memory_offset

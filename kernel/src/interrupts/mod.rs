@@ -1,11 +1,11 @@
-mod breakpoint;
-mod disable_pic8259;
-mod double_fault;
-mod general_protection_fault;
-mod keyboard;
-mod page_fault;
-mod rtc;
-mod timer;
+pub mod breakpoint;
+pub mod disable_pic8259;
+pub mod double_fault;
+pub mod general_protection_fault;
+pub mod keyboard;
+pub mod page_fault;
+pub mod rtc;
+pub mod timer;
 
 use breakpoint::breakpoint_handler;
 use disable_pic8259::disable_pic8259;
@@ -18,7 +18,7 @@ use page_fault::page_fault_handler;
 use rtc::rtc_interrupt_handler;
 use x86_64::structures::idt::InterruptDescriptorTable;
 
-use crate::gtd::DOUBLE_FAULT_IST_INDEX;
+use crate::modules::gtd::DOUBLE_FAULT_IST_INDEX;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {

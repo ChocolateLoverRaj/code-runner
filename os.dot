@@ -1,0 +1,167 @@
+digraph {
+    uefi_firmware [label = "UEFI Firmare"]
+
+    bios_firmware [label = "BIOS Firmware"]
+
+    bootloader [label = "Bootloader"]
+    uefi_firmware -> bootloader
+    bios_firmware -> bootloader
+
+    frame_buffer [label = "Framebuffer"]
+    bootloader -> frame_buffer
+
+    serial_port [label = "Serial Port"]
+    bootloader -> serial_port
+
+    serial_logger [label = "Serial Logger"]
+    serial_port -> serial_logger
+
+    screen_logger [label = "Screen Logger"]
+    frame_buffer -> screen_logger
+
+    logging [label = "Logging"]
+    serial_logger -> logging
+    screen_logger -> logging
+
+    gdt [label = "Global Descriptor Table"]
+    bootloader -> gdt
+
+    idt [label = "Interrupt Descriptor Table"]
+    bootloader -> idt
+
+    double_fault_handler [label = "Double Fault Handler"]
+    gdt -> double_fault_handler
+    idt -> double_fault_handler
+
+    general_protection_fault_handler [label = "General Protection Fault Handler"]
+    idt -> general_protection_fault_handler
+
+    page_fault_handler [label = "Page Fault Handler"]
+    idt -> page_fault_handler
+
+    interrupt_handlers [label = "Interrupt Handlers"]
+    idt -> interrupt_handlers
+
+    pic8259 [label = "8259 PIC"]
+    bootloader -> pic8259
+
+    enable_pic8259 [label = "Enable 8259 PIC"]
+    pic8259 -> enable_pic8259
+
+    pic8259_timer_interrupt [label = "8259 PIC Timer Interrupt"]
+    enable_pic8259 -> pic8259_timer_interrupt
+    interrupt_handlers -> pic8259_timer_interrupt
+
+    pic8259_keyboard_interrupt [label = "8259 PIC Keyboard Interrupt"]
+    enable_pic8259 -> pic8259_keyboard_interrupt
+    interrupt_handlers -> pic8259_keyboard_interrupt
+
+    ps2_mouse [label = "Parse PS/2 Mouse Input"]
+    serial_port -> ps2_mouse
+
+    pic8259_ps2_mouse_interrupt [label = "8259 PIC PS/2 Mouse"]
+    enable_pic8259 -> pic8259_ps2_mouse_interrupt
+    interrupt_handlers -> pic8259_ps2_mouse_interrupt
+
+    read_page_tables [label = "Read Page Tables"]
+    bootloader -> read_page_tables
+
+    memory_map [label = "Know Memory Map"]
+    bootloader -> memory_map
+
+    frame_allocator [label = "Frame Allocator"]
+    memory_map -> frame_allocator
+
+    read_used_virt_mem [label = "Read Used Virtual Memory"]
+    read_page_tables -> read_used_virt_mem
+
+    heap_allocator [label = "Heap Allocator"]
+    frame_allocator -> heap_allocator
+    read_used_virt_mem -> heap_allocator
+
+    alloc [label = "Rust `alloc`"]
+    heap_allocator -> alloc
+
+    memory_mapper [label = "Memory Mapper"]
+    frame_allocator -> memory_mapper
+    read_used_virt_mem -> memory_mapper
+
+    rsdp_addr [label = "RSDP Address"]
+    bootloader -> rsdp_addr
+
+    read_acpi_tables [label = "Read ACPI Tables"]
+    rsdp_addr -> read_acpi_tables
+    memory_mapper -> read_acpi_tables
+
+    read_interrupt_model [label = "Get Interrupt Model"]
+    read_acpi_tables -> read_interrupt_model
+
+    apic [label = "APIC"]
+    read_interrupt_model -> apic
+
+    disable_pic8259 [label = "Disable 8259 PIC"]
+    pic8259 -> disable_pic8259
+
+    io_apic [label = "IO APIC"]
+    apic -> io_apic
+
+    io_apic_legacy [label = "IO APIC Legacy IRQs"]
+    io_apic -> io_apic_legacy
+    disable_pic8259 -> io_apic_legacy
+
+    legacy_keyboard_interrupt [label = "Keyboard Interrupts IO APIC Legacy IRQ"]
+    io_apic_legacy -> legacy_keyboard_interrupt
+    interrupt_handlers -> legacy_keyboard_interrupt
+
+    keyboard_interrupt [label = "Keyboard Interrupts"]
+    pic8259_keyboard_interrupt -> keyboard_interrupt
+    legacy_keyboard_interrupt -> keyboard_interrupt
+
+    mouse_interrupt [label = "PS/2 Mouse Interrupts"]
+    pic8259_ps2_mouse_interrupt -> mouse_interrupt
+
+    rtc [label = "RTC"]
+    bootloader -> rtc
+
+    legacy_rtc_interrupt [label = "RTC Interrupts IO APIC Legacy IRQ"]
+    rtc -> legacy_rtc_interrupt
+    io_apic_legacy -> legacy_rtc_interrupt
+    interrupt_handlers -> legacy_rtc_interrupt
+
+    local_apic [label = "Local APIC"]
+    apic -> local_apic
+
+    apic_timer [label = "APIC Timer"]
+    local_apic -> apic_timer
+
+    apic_timer_interrupt [label = "APIC Timer Interrupts"]
+    apic_timer -> apic_timer_interrupt
+    disable_pic8259 -> apic_timer_interrupt
+
+    draw_to_screen [label = "Draw to screen"]
+    frame_buffer -> draw_to_screen
+
+    copy_vm_logs [label = "Copy/paste logs from virtual machine"]
+    serial_logger -> copy_vm_logs
+
+    pc_keyboard [label = "Parse Keyboard Input"]
+    serial_port -> pc_keyboard
+
+    keyboard_input [label = "Keyboard Input"]
+    pc_keyboard -> keyboard_input
+    keyboard_interrupt -> keyboard_input
+
+    mouse_input [label = "Mouse Input"]
+    ps2_mouse -> mouse_input
+    mouse_interrupt -> mouse_input
+
+    future_executor [label = "Future Executor"]
+    alloc -> future_executor
+    interrupt_handlers -> future_executor
+
+    async_await [label = "Async/Await"]
+    future_executor -> async_await
+
+    cooperative_multitasking [label = "Cooperative Multitasking"]
+    async_await -> cooperative_multitasking
+}
