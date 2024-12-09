@@ -122,10 +122,14 @@ impl<'f> DrawTarget for Display<'f> {
         };
         let mut colors = colors.into_iter();
         for y in area.top_left.y as usize
-            ..(area.top_left.y as usize + area.size.height as usize).min(info.height)
+            ..(area.top_left.y as usize)
+                .saturating_add(area.size.height as usize)
+                .min(info.height)
         {
             for x in area.top_left.x as usize
-                ..(area.top_left.x as usize + area.size.width as usize).min(info.width)
+                ..(area.top_left.x as usize)
+                    .saturating_add(area.size.width as usize)
+                    .min(info.width)
             {
                 let start = y * info.stride + x;
                 let pixel_buffer =
