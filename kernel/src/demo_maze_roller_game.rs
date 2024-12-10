@@ -4,7 +4,7 @@ use embedded_graphics::{
     pixelcolor::Rgb888,
     prelude::{Dimensions, DrawTarget, Drawable, Point, RgbColor, Size, WebColors},
     primitives::{Circle, PrimitiveStyleBuilder, Rectangle, StyledDrawable},
-    text::{Baseline, Text, TextStyleBuilder},
+    text::{Baseline, Text},
 };
 use futures_util::StreamExt;
 use pc_keyboard::{layouts, HandleControl, KeyCode, KeyState, Keyboard, ScancodeSet1};
@@ -20,6 +20,7 @@ enum Cell {
     Wall,
     Start,
     End,
+    Lava,
 }
 
 #[derive(Debug)]
@@ -77,6 +78,7 @@ impl Cell {
             Self::Wall => Rgb888::GREEN,
             Self::Start => Rgb888::MAGENTA,
             Self::End => Rgb888::CSS_PINK,
+            Self::Lava => Rgb888::RED,
         }
     }
 
@@ -88,12 +90,96 @@ impl Cell {
     }
 }
 
-const LEVELS: &[&[&[Cell]]] = &[&[
-    &[Cell::Wall, Cell::Air, Cell::Air, Cell::End],
-    &[Cell::Wall, Cell::Air, Cell::Wall, Cell::Wall],
-    &[Cell::Start, Cell::Air, Cell::Air, Cell::Wall],
-    &[Cell::Wall, Cell::Wall, Cell::Wall, Cell::Wall],
-]];
+const LEVELS: &[&[&[Cell]]] = &[
+    &[
+        &[Cell::Wall, Cell::Air, Cell::Air, Cell::End],
+        &[Cell::Wall, Cell::Air, Cell::Wall, Cell::Wall],
+        &[Cell::Start, Cell::Air, Cell::Air, Cell::Wall],
+        &[Cell::Wall, Cell::Wall, Cell::Wall, Cell::Wall],
+    ],
+    &[
+        &[
+            Cell::Wall,
+            Cell::Lava,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+        ],
+        &[
+            Cell::Wall,
+            Cell::Air,
+            Cell::Air,
+            Cell::Air,
+            Cell::Air,
+            Cell::Air,
+            Cell::Air,
+            Cell::Lava,
+        ],
+        &[
+            Cell::Wall,
+            Cell::Air,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Air,
+            Cell::Lava,
+        ],
+        &[
+            Cell::Wall,
+            Cell::Air,
+            Cell::Wall,
+            Cell::End,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Air,
+            Cell::Wall,
+        ],
+        &[
+            Cell::Wall,
+            Cell::Air,
+            Cell::Lava,
+            Cell::Air,
+            Cell::Air,
+            Cell::Air,
+            Cell::Air,
+            Cell::Wall,
+        ],
+        &[
+            Cell::Wall,
+            Cell::Air,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Lava,
+            Cell::Wall,
+        ],
+        &[
+            Cell::Lava,
+            Cell::Air,
+            Cell::Air,
+            Cell::Air,
+            Cell::Air,
+            Cell::Air,
+            Cell::Start,
+            Cell::Lava,
+        ],
+        &[
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+            Cell::Wall,
+        ],
+    ],
+];
 
 pub async fn demo_maze_roller_game(
     frame_buffer: &mut FrameBuffer,
@@ -150,8 +236,8 @@ pub async fn demo_maze_roller_game(
         let try_get_cell = |Position { x, y }: Position| -> Option<&Cell> {
             level.get(y).and_then(|row| row.get(x))
         };
-        loop {
-            // Draw level
+        let draw_level = |display: &mut Display, current_position: Position| {
+            // Draw cells
             for y in 0..height {
                 for x in 0..width {
                     let draw_position = Position { x, y };
@@ -161,7 +247,7 @@ pub async fn demo_maze_roller_game(
                             &PrimitiveStyleBuilder::new()
                                 .fill_color(cell.get_color())
                                 .build(),
-                            &mut display,
+                            display,
                         )
                         .unwrap();
                 }
@@ -172,11 +258,12 @@ pub async fn demo_maze_roller_game(
                     &PrimitiveStyleBuilder::new()
                         .fill_color(Rgb888::BLUE)
                         .build(),
-                    &mut display,
+                    display,
                 )
                 .unwrap();
-
-            let level_before_input = current_level;
+        };
+        draw_level(&mut display, current_position);
+        loop {
             let level_change = loop {
                 #[derive(Debug)]
                 enum Input {
@@ -195,7 +282,6 @@ pub async fn demo_maze_roller_game(
                 };
                 match input {
                     Input::Move(move_direction) => {
-                        log::info!("Move to: {move_direction:?}");
                         let mut attempted_position_to_move_to = current_position.clone();
                         let new_position_valid =
                             attempted_position_to_move_to.try_move(move_direction);
@@ -205,59 +291,89 @@ pub async fn demo_maze_roller_game(
                                 .is_some()
                         {
                             current_position = attempted_position_to_move_to;
-                            break if get_cell(current_position) == &Cell::End {
-                                Text::with_baseline(
-                                    if current_level + 1 < LEVELS.len() {
-                                        "Level Complete\nPress R to replay.\nPress Enter to go to next level."
-                                    } else {
-                                        "All levels complete! Press R to replay level. Press enter to go back to first level."
-                                    },
-                                    Point::zero(),
-                                    MonoTextStyleBuilder::new()
-                                        .font(&FONT_10X20)
-                                        .text_color(Rgb888::WHITE)
-                                        .background_color(Rgb888::CSS_PINK)
-                                        .build(),
-                                    Baseline::Top,
-                                )
-                                .draw(&mut display)
-                                .unwrap();
-                                #[derive(Debug)]
-                                enum Input {
-                                    Reset,
-                                    NextLevel,
-                                }
-                                let input = loop {
-                                    match stream.next().await.unwrap().code {
-                                        KeyCode::R => break Input::Reset,
-                                        KeyCode::Return => break Input::NextLevel,
-                                        _ => {}
+                            draw_level(&mut display, current_position);
+                            break match get_cell(current_position) {
+                                &Cell::End => {
+                                    Text::with_baseline(
+                                        if current_level + 1 < LEVELS.len() {
+                                            "Level Complete\nPress R to replay.\nPress Enter to go to next level."
+                                        } else {
+                                            "All levels complete!\nPress R to replay level.\nPress enter to go back to first level."
+                                        },
+                                        Point::zero(),
+                                        MonoTextStyleBuilder::new()
+                                            .font(&FONT_10X20)
+                                            .text_color(Rgb888::WHITE)
+                                            .background_color(Rgb888::CSS_PINK)
+                                            .build(),
+                                        Baseline::Top,
+                                    )
+                                    .draw(&mut display)
+                                    .unwrap();
+                                    #[derive(Debug)]
+                                    enum Input {
+                                        Reset,
+                                        NextLevel,
                                     }
-                                };
-                                match input {
-                                    Input::Reset => {
-                                        current_position = initial_position;
-                                        false
-                                    }
-                                    Input::NextLevel => {
-                                        current_level += 1;
-                                        if current_level == LEVELS.len() {
-                                            current_level = 0;
+                                    let input = loop {
+                                        match stream.next().await.unwrap().code {
+                                            KeyCode::R => break Input::Reset,
+                                            KeyCode::Return => break Input::NextLevel,
+                                            _ => {}
                                         }
-                                        true
+                                    };
+                                    match input {
+                                        Input::Reset => {
+                                            current_position = initial_position;
+                                            draw_level(&mut display, current_position);
+                                            false
+                                        }
+                                        Input::NextLevel => {
+                                            current_level += 1;
+                                            if current_level == LEVELS.len() {
+                                                current_level = 0;
+                                            }
+                                            true
+                                        }
                                     }
                                 }
-                            } else {
-                                false
+                                &Cell::Lava => {
+                                    Text::with_baseline(
+                                        "YOU DIED!\nPress R to reset level.",
+                                        Point::zero(),
+                                        MonoTextStyleBuilder::new()
+                                            .font(&FONT_10X20)
+                                            .text_color(Rgb888::RED)
+                                            .background_color(Rgb888::CSS_GRAY)
+                                            .build(),
+                                        Baseline::Top,
+                                    )
+                                    .draw(&mut display)
+                                    .unwrap();
+                                    loop {
+                                        match stream.next().await.unwrap().code {
+                                            KeyCode::R => break,
+                                            _ => {}
+                                        }
+                                    }
+                                    current_position = initial_position;
+                                    draw_level(&mut display, current_position);
+                                    false
+                                }
+                                _ => false,
                             };
                         }
                     }
                     Input::ResetLevel => {
                         current_position = initial_position;
+                        draw_level(&mut display, current_position);
                         break false;
                     }
                 }
             };
+            if level_change {
+                break;
+            }
         }
     }
 }
