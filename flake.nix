@@ -34,6 +34,9 @@
               qemu
               cargo-binutils
               ovmf
+              gdb
+              rust-analyzer
+              lldb
             ];
             shellHook = ''
               export OVMF_PATH="${ovmf}/FV/OVMF.fd"

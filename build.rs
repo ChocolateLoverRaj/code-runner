@@ -8,7 +8,7 @@ fn main() {
 
     // set by cargo for the kernel artifact dependency
     let kernel_path = env::var("CARGO_BIN_FILE_KERNEL").unwrap();
-    let disk_builder = DiskImageBuilder::new(PathBuf::from(kernel_path));
+    let disk_builder = DiskImageBuilder::new(PathBuf::from(&kernel_path));
 
     // specify output paths
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -22,4 +22,5 @@ fn main() {
     // pass the disk image paths via environment variables
     println!("cargo:rustc-env=UEFI_IMAGE={}", uefi_path.display());
     println!("cargo:rustc-env=BIOS_IMAGE={}", bios_path.display());
+    println!("cargo:rustc-env=CARGO_BIN_FILE_KERNEL={}", kernel_path);
 }

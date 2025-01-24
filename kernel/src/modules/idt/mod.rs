@@ -17,6 +17,11 @@ pub struct IdtBuilder {
     set_breakpoint_entry: bool,
     set_general_protection_fault: bool,
     set_page_fault_entry: bool,
+    set_invalid_tss_fault_entry: bool,
+    set_security_exception_fault_entry: bool,
+    set_segment_not_present_entry: bool,
+    set_invalid_opcode_entry: bool,
+    set_stack_segment_fault_entry: bool,
     used_flexible_entries: [bool; MAX_FLEXIBLE_ENTRIES as usize],
 }
 
@@ -28,6 +33,11 @@ impl IdtBuilder {
             set_breakpoint_entry: false,
             set_general_protection_fault: false,
             set_page_fault_entry: false,
+            set_invalid_tss_fault_entry: false,
+            set_security_exception_fault_entry: false,
+            set_segment_not_present_entry: false,
+            set_invalid_opcode_entry: false,
+            set_stack_segment_fault_entry: false,
             used_flexible_entries: [false; MAX_FLEXIBLE_ENTRIES as usize],
         }
     }
@@ -75,6 +85,68 @@ impl IdtBuilder {
         if !self.set_page_fault_entry {
             self.idt.page_fault = entry;
             self.set_page_fault_entry = true;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn set_invalid_tss_fault_entry(
+        &mut self,
+        entry: idt::Entry<HandlerFuncWithErrCode>,
+    ) -> Result<(), ()> {
+        if !self.set_invalid_tss_fault_entry {
+            self.idt.invalid_tss = entry;
+            self.set_invalid_tss_fault_entry = true;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn set_security_exception_fault_entry(
+        &mut self,
+        entry: idt::Entry<HandlerFuncWithErrCode>,
+    ) -> Result<(), ()> {
+        if !self.set_security_exception_fault_entry {
+            self.idt.security_exception = entry;
+            self.set_security_exception_fault_entry = true;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn set_segment_not_present_entry(
+        &mut self,
+        entry: idt::Entry<HandlerFuncWithErrCode>,
+    ) -> Result<(), ()> {
+        if !self.set_segment_not_present_entry {
+            self.idt.segment_not_present = entry;
+            self.set_segment_not_present_entry = true;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn set_invalid_opcode_entry(&mut self, entry: idt::Entry<HandlerFunc>) -> Result<(), ()> {
+        if !self.set_invalid_opcode_entry {
+            self.idt.invalid_opcode = entry;
+            self.set_invalid_opcode_entry = true;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn set_stack_segment_fault_entry(
+        &mut self,
+        entry: idt::Entry<HandlerFuncWithErrCode>,
+    ) -> Result<(), ()> {
+        if !self.set_stack_segment_fault_entry {
+            self.idt.stack_segment_fault = entry;
+            self.set_stack_segment_fault_entry = true;
             Ok(())
         } else {
             Err(())
