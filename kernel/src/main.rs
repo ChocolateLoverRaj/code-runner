@@ -48,6 +48,7 @@ use conquer_once::noblock::OnceCell;
 use core::{
     alloc::Layout,
     arch::{asm, naked_asm},
+    cell::UnsafeCell,
     ops::DerefMut,
     panic::PanicInfo,
 };
@@ -196,6 +197,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             idt_builder
                 .set_invalid_opcode_entry({
                     let mut entry = idt::Entry::<HandlerFunc>::missing();
+                    log::info!(
+                        "Invalid opcode handler: {:?}",
+                        panicking_invalid_opcode_handler as *const ()
+                    );
                     entry.set_handler_fn(panicking_invalid_opcode_handler);
                     entry
                 })
@@ -229,6 +234,17 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 .unwrap();
             let rtc_async = AsyncRtcBuilder::set_interrupt(&mut idt_builder).unwrap();
             let async_keyboard = AsyncKeyboardBuilder::set_interrupt(&mut idt_builder).unwrap();
+
+            tss.add_privilege_stack_table_entry({
+                const STACK_SIZE: usize = 0x2000;
+                const PRIV_TSS_STACK: UnsafeCell<[u8; STACK_SIZE]> =
+                    UnsafeCell::new([0; STACK_SIZE]);
+
+                let stack_start = VirtAddr::from_ptr(PRIV_TSS_STACK.get());
+                let stack_end = stack_start + STACK_SIZE as u64;
+                stack_end
+            })
+            .unwrap();
 
             StaticStuff {
                 tss: tss.get_tss(),
@@ -378,6 +394,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         userspace_fn_in_kernel - userspace_fn_in_kernel.align_down(Size4KiB::SIZE),
     );
 
+    log::info!(
+        "Syscall handler addr: {:?}",
+        VirtAddr::from_ptr(handle_syscall as *const ())
+    );
+
     log::info!("Jumping to code address: {:?}", code);
     unsafe {
         jmp_to_usermode(
@@ -395,11 +416,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 }
 
 unsafe fn userspace_prog_1() {
-    // asm!("nop");
-    // asm!("nop");
+    asm!("nop");
+    asm!("nop");
     asm!("syscall", options(nostack));
-    // asm!("nop");
-    // asm!("nop");
+    asm!("nop");
+    asm!("nop");
 }
 
 pub unsafe fn jmp_to_usermode(gdt: &Gdt, code: VirtAddr, stack_end: VirtAddr) {
@@ -455,6 +476,6 @@ pub unsafe fn init_syscalls() {
 #[naked]
 extern "C" fn handle_syscall() {
     unsafe {
-        naked_asm!("nop");
+        naked_asm!("sysretq");
     };
 }
