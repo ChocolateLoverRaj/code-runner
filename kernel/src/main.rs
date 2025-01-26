@@ -117,6 +117,7 @@ fn panic(info: &PanicInfo) -> ! {
 pub static BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
     config.mappings.physical_memory = Some(Mapping::Dynamic);
+    // config.mappings.dynamic_range_start = Some(0xFFFF_8000_0000_0000);
     config
 };
 
@@ -261,6 +262,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     gdt.init();
     static_stuff.idt_builder.init();
     unsafe { init_syscalls() };
+
     let phys_mem_offset = VirtAddr::new(
         *boot_info
             .physical_memory_offset
@@ -362,7 +364,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         userspace_fn_phys.align_down(Size4KiB::SIZE)
     );
 
-    let stack_size = 1000;
+    let stack_size = 0x1000;
     let stack_space_virt = VirtAddr::from_ptr(unsafe {
         alloc(Layout::from_size_align(stack_size, Size4KiB::SIZE as usize).unwrap())
     });
@@ -402,7 +404,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     log::info!("Jumping to code address: {:?}", code);
     unsafe {
         jmp_to_usermode(
-            &gdt,
+            gdt,
             code,
             stack_in_userspace.start.start_address() + stack_size as u64,
         )
@@ -416,34 +418,42 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 }
 
 unsafe fn userspace_prog_1() {
-    asm!("nop");
-    asm!("nop");
-    asm!("syscall", options(nostack));
-    asm!("nop");
-    asm!("nop");
+    // asm!("nop");
+    // asm!("nop");
+    asm!(
+        "\
+        nop
+        nop
+        syscall
+        nop
+        nop",
+        options(nostack, preserves_flags)
+    );
+    // asm!("nop");
+    // asm!("nop");
 }
 
 pub unsafe fn jmp_to_usermode(gdt: &Gdt, code: VirtAddr, stack_end: VirtAddr) {
     let cs_idx = {
         let mut code_selector = gdt.user_code_selector.clone();
-        code_selector.set_rpl(PrivilegeLevel::Ring3);
+        code_selector.0 |= PrivilegeLevel::Ring3 as u16;
         code_selector.0
     };
     let ds_idx = {
         let mut data_selector = gdt.user_data_selector.clone();
-        data_selector.set_rpl(PrivilegeLevel::Ring3);
-        DS::set_reg(data_selector);
+        data_selector.0 |= PrivilegeLevel::Ring3 as u16;
+        // DS::set_reg(data_selector.clone());
         data_selector.0
     };
     flush_all();
     asm!("\
-        push rax   // stack segment
-        push rsi   // rsp
-        push 0x200 // rflags (only interrupt bit set)
-        push rdx   // code segment
-        push rdi   // ret to virtual addr
-        iretq",
-        in("rdi") code.as_u64(), in("rsi") stack_end.as_u64(), in("dx") cs_idx, in("ax") ds_idx);
+    push rax   // stack segment
+    push rsi   // rsp
+    push 0x200 // rflags (only interrupt bit set)
+    push rdx   // code segment
+    push rdi   // ret to virtual addr
+    iretq",
+    in("rdi") code.as_u64(), in("rsi") stack_end.as_u64(), in("dx") cs_idx, in("ax") ds_idx);
 }
 
 const MSR_STAR: usize = 0xc0000081;
@@ -452,6 +462,7 @@ const MSR_FMASK: usize = 0xc0000084;
 
 pub unsafe fn init_syscalls() {
     let handler_addr = handle_syscall as *const () as u64;
+    // let handler_addr = 0;
 
     log::info!("Handler address: {:?}", VirtAddr::new(handler_addr));
 
@@ -468,14 +479,20 @@ pub unsafe fn init_syscalls() {
     // write segments to use on syscall/sysret to AMD'S MSR_STAR register
     asm!("\
     xor rax, rax
-    // mov rdx, 0x230008 // use seg selectors 8, 16 for syscall and 43, 51 for sysret
-    mov rdx, 0x001000080023001B // Corrected values for syscalls
+    mov rdx, 0x230008 // use seg selectors 8, 16 for syscall and 43, 51 for sysret
     wrmsr", in("rcx") MSR_STAR, out("rax") _, out("rdx") _);
 }
 
 #[naked]
 extern "C" fn handle_syscall() {
     unsafe {
-        naked_asm!("sysretq");
+        naked_asm!(
+            "\
+            nop
+            nop
+            nop
+            sysretq
+        "
+        );
     };
 }
