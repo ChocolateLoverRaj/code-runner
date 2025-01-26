@@ -67,14 +67,7 @@ use hlt_loop::hlt_loop;
 use logger::init_logger_with_framebuffer;
 use memory::get_active_level_4_table;
 use modules::{
-    async_keyboard::AsyncKeyboardBuilder,
-    async_rtc::AsyncRtcBuilder,
-    double_fault_handler_entry::get_double_fault_entry,
-    gdt::Gdt,
-    get_apic::get_apic,
-    get_io_apic::get_io_apic,
-    get_local_apic::get_local_apic,
-    idt::IdtBuilder,
+    double_fault_handler_entry::get_double_fault_entry, gdt::Gdt, idt::IdtBuilder,
     logging_breakpoint_handler::logging_breakpoint_handler,
     logging_timer_interrupt_handler::get_logging_timer_interrupt_handler,
     panicking_double_fault_handler::panicking_double_fault_handler,
@@ -86,18 +79,13 @@ use modules::{
     panicking_segment_not_present_handler::panicking_segment_not_present_handler,
     panicking_spurious_interrupt_handler::panicking_spurious_interrupt_handler,
     panicking_stack_segment_fault_handler::panicking_stack_segment_fault_handler,
-    spurious_interrupt_handler::set_spurious_interrupt_handler,
-    static_local_apic::{enable_and_store, get_getter},
+    spurious_interrupt_handler::set_spurious_interrupt_handler, static_local_apic::get_getter,
     tss::TssBuilder,
 };
 use phys_mapper::PhysMapper;
-use spin::Mutex;
 use x86_64::{
     instructions::tlb::flush_all,
-    registers::{
-        control::Cr3,
-        segmentation::{Segment, DS},
-    },
+    registers::{control::Cr3, model_specific::Msr},
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
         paging::{frame::PhysFrameRange, PageSize, PageTable, PageTableFlags, PhysFrame, Size4KiB},
@@ -129,19 +117,14 @@ struct StaticStuff {
     spurious_interrupt_handler_index: u8,
     timer_interrupt_index: u8,
     local_apic_error_interrupt_index: u8,
-    rtc_async: AsyncRtcBuilder,
-    async_keyboard: AsyncKeyboardBuilder,
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
 
-// static TSS: OnceCell<TaskStateSegment> = OnceCell::uninit();
 static GDT: OnceCell<Gdt> = OnceCell::uninit();
-// static IDT: OnceCell<IdtBuilder> = OnceCell::uninit();
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
-    let mut frame_buffer = boot_info.framebuffer.as_mut();
-    // let frame_buffer_for_drawing = frame_buffer.take().unwrap();
+    let frame_buffer = boot_info.framebuffer.as_mut();
     init_logger_with_framebuffer(frame_buffer);
     let static_stuff = STATIC_STUFF
         .try_get_or_init(|| {
@@ -233,8 +216,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                     entry
                 })
                 .unwrap();
-            let rtc_async = AsyncRtcBuilder::set_interrupt(&mut idt_builder).unwrap();
-            let async_keyboard = AsyncKeyboardBuilder::set_interrupt(&mut idt_builder).unwrap();
 
             tss.add_privilege_stack_table_entry({
                 const STACK_SIZE: usize = 0x2000;
@@ -253,8 +234,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 spurious_interrupt_handler_index,
                 timer_interrupt_index,
                 local_apic_error_interrupt_index,
-                rtc_async,
-                async_keyboard,
             }
         })
         .unwrap();
@@ -281,36 +260,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let virt_mem_allocator = Arc::new(spin::Mutex::new(used_virt_mem_ranges.to_vec()));
     let frame_allocator = Arc::new(spin::Mutex::new(frame_allocator));
     let phys_mapper = PhysMapper::new(mapper, virt_mem_allocator, frame_allocator);
-    let acpi_tables = unsafe {
-        acpi::init(
-            boot_info.rsdp_addr.take().expect("No rsdp address!") as usize,
-            phys_mapper.clone(),
-        )
-    }
-    .expect("Error getting ACPI tables");
-    let apic = get_apic(&acpi_tables).unwrap();
-    let local_apic = get_local_apic(
-        &apic,
-        &mut phys_mapper.clone(),
-        static_stuff.spurious_interrupt_handler_index,
-        static_stuff.timer_interrupt_index,
-        static_stuff.local_apic_error_interrupt_index,
-    )
-    .unwrap();
-    enable_and_store(local_apic);
 
-    let mut io_apic = get_io_apic(&apic, &mut phys_mapper.clone());
-
-    #[allow(unused)]
-    let mut async_rtc = static_stuff
-        .rtc_async
-        .configure_io_apic(&mut io_apic, get_getter());
-    let io_apic = Arc::new(Mutex::new(io_apic));
-    #[allow(unused)]
-    let mut async_keyboard =
-        static_stuff
-            .async_keyboard
-            .configure_io_apic(io_apic, get_getter(), 100);
     x86_64::instructions::interrupts::enable();
 
     let cr3 = Cr3::read().0;
@@ -465,6 +415,11 @@ pub unsafe fn init_syscalls() {
     // let handler_addr = 0;
 
     log::info!("Handler address: {:?}", VirtAddr::new(handler_addr));
+
+    let mut efer = Msr::new(0xC0000080);
+    let mut value = efer.read();
+    value |= 0b1;
+    efer.write(value);
 
     // clear Interrupt flag on syscall with AMD's MSR_FSTAR register
     asm!("\
