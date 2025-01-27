@@ -21,11 +21,14 @@ pub mod demo_async_rtc_drop;
 pub mod demo_maze_roller_game;
 pub mod draw_rust;
 pub mod embedded_graphics_writer;
+pub mod enter_user_mode;
 pub mod execute_future;
 pub mod find_used_virt_addrs;
 pub mod frame_buffer;
 pub mod get_rgb_color;
+pub mod handle_syscall;
 pub mod hlt_loop;
+pub mod init_syscalls;
 pub mod insert;
 pub mod keyboard_interrupt_mutex;
 pub mod logger;
@@ -39,6 +42,7 @@ pub mod serial_logger;
 pub mod set_color;
 pub mod split_draw_target;
 pub mod stream_with_initial;
+pub mod userspace_program;
 pub mod virt_addr_from_indexes;
 pub mod virt_mem_allocator;
 
@@ -46,11 +50,7 @@ use alloc::{alloc::alloc, sync::Arc};
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use conquer_once::noblock::OnceCell;
 use core::{
-    alloc::Layout,
-    arch::{asm, naked_asm},
-    cell::UnsafeCell,
-    ops::DerefMut,
-    panic::PanicInfo,
+    alloc::Layout, cell::UnsafeCell, ops::DerefMut, panic::PanicInfo, sync::atomic::Ordering,
 };
 #[allow(unused)]
 use demo_async::demo_async;
@@ -62,7 +62,10 @@ use demo_async_rtc_drop::demo_asyc_rtc_drop;
 use demo_maze_roller_game::demo_maze_roller_game;
 #[allow(unused)]
 use draw_rust::draw_rust;
+use enter_user_mode::enter_user_mode;
+use handle_syscall::TEST;
 use hlt_loop::hlt_loop;
+use init_syscalls::init_syscalls;
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use memory::get_active_level_4_table;
@@ -87,23 +90,19 @@ use modules::{
     panicking_spurious_interrupt_handler::panicking_spurious_interrupt_handler,
     panicking_stack_segment_fault_handler::panicking_stack_segment_fault_handler,
     spurious_interrupt_handler::set_spurious_interrupt_handler,
-    static_local_apic::{enable_and_store, get_getter},
+    static_local_apic::{enable_and_store, LOCAL_APIC},
     tss::TssBuilder,
 };
 use phys_mapper::PhysMapper;
 use spin::Mutex;
+use userspace_program::userspace_program;
 use x86_64::{
-    instructions::tlb::flush_all,
-    registers::{
-        control::Cr3,
-        segmentation::{Segment, DS},
-    },
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
         paging::{frame::PhysFrameRange, PageSize, PageTable, PageTableFlags, PhysFrame, Size4KiB},
         tss::TaskStateSegment,
     },
-    PhysAddr, PrivilegeLevel, VirtAddr,
+    PhysAddr, VirtAddr,
 };
 
 /// This function is called on panic.
@@ -141,8 +140,8 @@ static GDT: OnceCell<Gdt> = OnceCell::uninit();
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let mut frame_buffer = boot_info.framebuffer.as_mut();
-    // let frame_buffer_for_drawing = frame_buffer.take().unwrap();
-    init_logger_with_framebuffer(frame_buffer);
+    let frame_buffer_for_drawing = frame_buffer.take().unwrap();
+    // init_logger_with_framebuffer(frame_buffer);
     let static_stuff = STATIC_STUFF
         .try_get_or_init(|| {
             let mut tss = TssBuilder::new();
@@ -198,10 +197,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             idt_builder
                 .set_invalid_opcode_entry({
                     let mut entry = idt::Entry::<HandlerFunc>::missing();
-                    log::info!(
-                        "Invalid opcode handler: {:?}",
-                        panicking_invalid_opcode_handler as *const ()
-                    );
                     entry.set_handler_fn(panicking_invalid_opcode_handler);
                     entry
                 })
@@ -218,7 +213,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 panicking_spurious_interrupt_handler,
             )
             .unwrap();
-            let timer_interrupt_handler = get_logging_timer_interrupt_handler(get_getter());
+            let timer_interrupt_handler = get_logging_timer_interrupt_handler(&LOCAL_APIC);
             let timer_interrupt_index = idt_builder
                 .set_flexible_entry({
                     let mut entry = idt::Entry::missing();
@@ -261,7 +256,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let gdt = GDT.try_get_or_init(|| Gdt::new(&static_stuff.tss)).unwrap();
     gdt.init();
     static_stuff.idt_builder.init();
-    unsafe { init_syscalls() };
+    unsafe {
+        init_syscalls(VirtAddr::from_ptr(
+            handle_syscall::handle_syscall_wrapper as *const (),
+        ));
+    };
 
     let phys_mem_offset = VirtAddr::new(
         *boot_info
@@ -297,24 +296,23 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         static_stuff.local_apic_error_interrupt_index,
     )
     .unwrap();
-    enable_and_store(local_apic);
+    // enable_and_store(local_apic);
 
     let mut io_apic = get_io_apic(&apic, &mut phys_mapper.clone());
 
     #[allow(unused)]
     let mut async_rtc = static_stuff
         .rtc_async
-        .configure_io_apic(&mut io_apic, get_getter());
+        .configure_io_apic(&mut io_apic, &LOCAL_APIC);
     let io_apic = Arc::new(Mutex::new(io_apic));
     #[allow(unused)]
     let mut async_keyboard =
         static_stuff
             .async_keyboard
-            .configure_io_apic(io_apic, get_getter(), 100);
+            .configure_io_apic(io_apic, &LOCAL_APIC, 100);
     x86_64::instructions::interrupts::enable();
 
-    let cr3 = Cr3::read().0;
-    log::info!("Cr3 (active L4 page table): {:?}", cr3);
+    TEST.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
 
     let translate_virt_to_phys = |virt_addr: VirtAddr| -> PhysAddr {
         let l4: &PageTable = unsafe { get_active_level_4_table(phys_mem_offset) };
@@ -334,7 +332,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         phys_addr
     };
 
-    let userspace_fn_in_kernel = VirtAddr::from_ptr(userspace_prog_1 as *const ());
+    let userspace_fn_in_kernel = VirtAddr::from_ptr(userspace_program as *const ());
     log::info!(
         "Userspace fn address (in kernel): {:?}",
         userspace_fn_in_kernel
@@ -346,7 +344,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         PhysFrameRange {
             start: start_frame,
             // Map 2 in case the fn takes up >1
-            end: start_frame + 2,
+            end: start_frame + 20,
         }
     };
     let userspace_fn_in_userspace = unsafe {
@@ -390,20 +388,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     let code = userspace_fn_in_userspace.start.start_address()
         + userspace_fn_in_kernel.page_offset().into();
-    log::info!(
-        "a: {:?} b: {:?}",
-        userspace_fn_in_kernel.page_offset(),
-        userspace_fn_in_kernel - userspace_fn_in_kernel.align_down(Size4KiB::SIZE),
-    );
-
-    log::info!(
-        "Syscall handler addr: {:?}",
-        VirtAddr::from_ptr(handle_syscall as *const ())
-    );
 
     log::info!("Jumping to code address: {:?}", code);
     unsafe {
-        jmp_to_usermode(
+        enter_user_mode(
             gdt,
             code,
             stack_in_userspace.start.start_address() + stack_size as u64,
@@ -415,84 +403,4 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // draw_rust(frame_buffer_for_drawing);
 
     hlt_loop();
-}
-
-unsafe fn userspace_prog_1() {
-    // asm!("nop");
-    // asm!("nop");
-    asm!(
-        "\
-        nop
-        nop
-        syscall
-        nop
-        nop",
-        options(nostack, preserves_flags)
-    );
-    // asm!("nop");
-    // asm!("nop");
-}
-
-pub unsafe fn jmp_to_usermode(gdt: &Gdt, code: VirtAddr, stack_end: VirtAddr) {
-    let cs_idx = {
-        let mut code_selector = gdt.user_code_selector.clone();
-        code_selector.0 |= PrivilegeLevel::Ring3 as u16;
-        code_selector.0
-    };
-    let ds_idx = {
-        let mut data_selector = gdt.user_data_selector.clone();
-        data_selector.0 |= PrivilegeLevel::Ring3 as u16;
-        // DS::set_reg(data_selector.clone());
-        data_selector.0
-    };
-    flush_all();
-    asm!("\
-    push rax   // stack segment
-    push rsi   // rsp
-    push 0x200 // rflags (only interrupt bit set)
-    push rdx   // code segment
-    push rdi   // ret to virtual addr
-    iretq",
-    in("rdi") code.as_u64(), in("rsi") stack_end.as_u64(), in("dx") cs_idx, in("ax") ds_idx);
-}
-
-const MSR_STAR: usize = 0xc0000081;
-const MSR_LSTAR: usize = 0xc0000082;
-const MSR_FMASK: usize = 0xc0000084;
-
-pub unsafe fn init_syscalls() {
-    let handler_addr = handle_syscall as *const () as u64;
-    // let handler_addr = 0;
-
-    log::info!("Handler address: {:?}", VirtAddr::new(handler_addr));
-
-    // clear Interrupt flag on syscall with AMD's MSR_FSTAR register
-    asm!("\
-    xor rdx, rdx
-    mov rax, 0x200
-    wrmsr", in("rcx") MSR_FMASK, out("rdx") _);
-    // write handler address to AMD's MSR_LSTAR register
-    asm!("\
-    mov rdx, rax
-    shr rdx, 32
-    wrmsr", in("rax") handler_addr, in("rcx") MSR_LSTAR, out("rdx") _);
-    // write segments to use on syscall/sysret to AMD'S MSR_STAR register
-    asm!("\
-    xor rax, rax
-    mov rdx, 0x230008 // use seg selectors 8, 16 for syscall and 43, 51 for sysret
-    wrmsr", in("rcx") MSR_STAR, out("rax") _, out("rdx") _);
-}
-
-#[naked]
-extern "C" fn handle_syscall() {
-    unsafe {
-        naked_asm!(
-            "\
-            nop
-            nop
-            nop
-            sysretq
-        "
-        );
-    };
 }

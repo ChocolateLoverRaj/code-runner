@@ -1,5 +1,9 @@
 use conquer_once::noblock::OnceCell;
-use x2apic::ioapic::{IoApic, RedirectionTableEntry};
+use spin::Mutex;
+use x2apic::{
+    ioapic::{IoApic, RedirectionTableEntry},
+    lapic::LocalApic,
+};
 use x86_64::structures::idt::{self, HandlerFunc, InterruptStackFrame};
 use x86_rtc::interrupts::read_register_c;
 
@@ -17,13 +21,13 @@ use super::{idt::IdtBuilder, local_apic_getter::LocalApicGetter};
 
 static GOT_INTERRUPT: AtomicBool = AtomicBool::new(false);
 static WAKER: AtomicWaker = AtomicWaker::new();
-static GETTER: OnceCell<LocalApicGetter> = OnceCell::uninit();
+static GETTER: OnceCell<&'static OnceCell<Mutex<LocalApic>>> = OnceCell::uninit();
 
 pub extern "x86-interrupt" fn rtc_interrupt_handler(_stack_frame: InterruptStackFrame) {
     GOT_INTERRUPT.store(true, Ordering::Relaxed);
     WAKER.wake();
     read_register_c();
-    let mut local_apic = GETTER.try_get().unwrap()();
+    let mut local_apic = GETTER.try_get().unwrap().try_get().unwrap().lock();
     unsafe { local_apic.end_of_interrupt() };
 }
 
@@ -44,7 +48,7 @@ impl AsyncRtcBuilder {
     pub fn configure_io_apic(
         &'static self,
         io_apic: &mut IoApic,
-        getter: LocalApicGetter,
+        getter: &'static OnceCell<Mutex<LocalApic>>,
     ) -> AsyncRtc {
         GETTER.try_init_once(|| getter).unwrap();
         unsafe {

@@ -9,7 +9,10 @@ use conquer_once::noblock::OnceCell;
 use crossbeam_queue::ArrayQueue;
 use futures_util::{task::AtomicWaker, Stream};
 use spin::Mutex;
-use x2apic::ioapic::{IoApic, RedirectionTableEntry};
+use x2apic::{
+    ioapic::{IoApic, RedirectionTableEntry},
+    lapic::LocalApic,
+};
 use x86_64::{
     instructions::port::Port,
     structures::idt::{self, HandlerFunc, InterruptStackFrame},
@@ -21,7 +24,7 @@ use super::{idt::IdtBuilder, local_apic_getter::LocalApicGetter};
 
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static WAKER: AtomicWaker = AtomicWaker::new();
-static GETTER: OnceCell<LocalApicGetter> = OnceCell::uninit();
+static GETTER: OnceCell<&'static OnceCell<Mutex<LocalApic>>> = OnceCell::uninit();
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
     let mut port = Port::new(0x60);
@@ -39,7 +42,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
             log::warn!("WARNING: Could not add scancode: {e:?}");
         }
     }
-    let mut local_apic = GETTER.try_get().unwrap()();
+    let mut local_apic = GETTER.try_get().unwrap().try_get().unwrap().lock();
     unsafe { local_apic.end_of_interrupt() };
 }
 
@@ -69,7 +72,7 @@ impl AsyncKeyboardBuilder {
     pub fn configure_io_apic(
         &'static self,
         io_apic: Arc<Mutex<IoApic>>,
-        local_apic_getter: LocalApicGetter,
+        local_apic_getter: &'static OnceCell<Mutex<LocalApic>>,
         queue_size: usize,
     ) -> AsyncKeyboard {
         GETTER.try_init_once(|| local_apic_getter).unwrap();
