@@ -9,12 +9,8 @@ use core::{
 
 use alloc::alloc::{alloc, dealloc};
 use bootloader_x86_64_common::serial::SerialPort;
-use conquer_once::noblock::OnceCell;
+use conquer_once::spin::OnceCell;
 use spin::Mutex;
-use x86_64::{
-    instructions,
-    structures::paging::{PageSize, Size4KiB},
-};
 
 // save the registers, handle the syscall and return to usermode
 #[naked]
@@ -60,14 +56,10 @@ unsafe extern "sysv64" fn syscall_alloc_stack(
     arg3: u64,
     syscall: u64,
 ) -> u64 {
-    static mut syscall_stack: [u8; 0x10000] = [0; 0x10000];
-    // let syscall_stack: Vec<u8> = Vec::with_capacity(0x10000);
-    // let layout = Layout::from_size_align(0x10000, Size4KiB::SIZE as usize).unwrap();
-    // let stack_ptr = alloc(layout);
-    let stack_ptr = syscall_stack.as_ptr();
+    let layout = Layout::from_size_align(0x10000, 16).unwrap();
+    let stack_ptr = alloc(layout);
     let retval = handle_syscall_with_temp_stack(arg0, arg1, arg2, arg3, syscall, stack_ptr);
-    // dealloc(stack_ptr, layout);
-    // drop(syscall_stack); // we can now drop the syscall temp stack
+    dealloc(stack_ptr, layout);
     return retval;
 }
 
@@ -81,32 +73,42 @@ extern "sysv64" fn handle_syscall_with_temp_stack(
     temp_stack: *const u8,
 ) -> u64 {
     let old_stack: *const u8;
-    unsafe {
-        asm!("\
-        mov {old_stack}, rsp
-        mov rsp, {temp_stack} // move our stack to the newly allocated one
-        // sti // enable interrupts",
-        temp_stack = in(reg) temp_stack, old_stack = out(reg) old_stack);
-    }
+    // unsafe {
+    //     asm!("\
+    //     nop
+    //     mov {old_stack}, rsp
+    //     nop
+    //     mov rsp, {temp_stack} // move our stack to the newly allocated one
+    //     nop
+    //     sti // enable interrupts
+    //     nop",
+    //     temp_stack = in(reg) temp_stack, old_stack = out(reg) old_stack);
+    // }
 
-    log::warn!("Syscalled with args: {} {} {} {}", arg0, arg1, arg2, arg3);
+    log::info!("Syscalled with args: {} {} {} {}", arg0, arg1, arg2, arg3);
 
     TEST.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
 
-    let mut s = unsafe { SerialPort::init() };
-    writeln!(
-        s,
-        "Syscalled with args: {} {} {} {}",
-        arg0, arg1, arg2, arg3
-    );
+    // static S: OnceCell<Mutex<SerialPort>> = OnceCell::uninit();
+    // let mut s = S
+    //     .get_or_init(|| Mutex::new(unsafe { SerialPort::init() }))
+    //     .lock();
+    // writeln!(
+    //     s,
+    //     "Syscalled with args: {} {} {} {}",
+    //     arg0, arg1, arg2, arg3
+    // );
 
     let retval: u64 = 4;
-    unsafe {
-        asm!("\
-        // cli // disable interrupts while restoring the stack
-        mov rsp, {old_stack} // restore the old stack
-        ",
-        old_stack = in(reg) old_stack);
-    }
+    // unsafe {
+    //     asm!("\
+    //         nop
+    //     cli // disable interrupts while restoring the stack
+    //     nop
+    //     mov rsp, {old_stack} // restore the old stack
+    //     nop
+    //     ",
+    //     old_stack = in(reg) old_stack);
+    // }
     retval
 }

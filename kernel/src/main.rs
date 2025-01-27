@@ -141,7 +141,7 @@ static GDT: OnceCell<Gdt> = OnceCell::uninit();
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let mut frame_buffer = boot_info.framebuffer.as_mut();
     let frame_buffer_for_drawing = frame_buffer.take().unwrap();
-    // init_logger_with_framebuffer(frame_buffer);
+    init_logger_with_framebuffer(frame_buffer);
     let static_stuff = STATIC_STUFF
         .try_get_or_init(|| {
             let mut tss = TssBuilder::new();
@@ -362,7 +362,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         userspace_fn_phys.align_down(Size4KiB::SIZE)
     );
 
-    let stack_size = 0x1000;
+    let stack_size = 0x2000;
     let stack_space_virt = VirtAddr::from_ptr(unsafe {
         alloc(Layout::from_size_align(stack_size, Size4KiB::SIZE as usize).unwrap())
     });
