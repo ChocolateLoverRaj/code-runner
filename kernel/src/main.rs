@@ -4,6 +4,7 @@
 #![feature(allocator_api)]
 #![feature(int_roundings)]
 #![feature(naked_functions)]
+#![feature(str_from_raw_parts)]
 
 #[allow(unused)]
 #[macro_use]
@@ -50,7 +51,7 @@ use alloc::{alloc::alloc, sync::Arc};
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use conquer_once::noblock::OnceCell;
 use core::{
-    alloc::Layout, cell::UnsafeCell, ops::DerefMut, panic::PanicInfo, sync::atomic::Ordering,
+    alloc::Layout, cell::UnsafeCell, ops::DerefMut, panic::PanicInfo, str, sync::atomic::Ordering,
 };
 #[allow(unused)]
 use demo_async::demo_async;
@@ -142,6 +143,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let mut frame_buffer = boot_info.framebuffer.as_mut();
     // let frame_buffer_for_drawing = frame_buffer.take().unwrap();
     init_logger_with_framebuffer(frame_buffer);
+    log::info!(
+        "Ramdisk len: {:?}. Ramdisk addr: {:?}",
+        boot_info.ramdisk_len,
+        boot_info.ramdisk_addr
+    );
     let static_stuff = STATIC_STUFF
         .try_get_or_init(|| {
             let mut tss = TssBuilder::new();
@@ -332,6 +338,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         phys_addr
     };
 
+    if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
+        let ptr = unsafe {
+            str::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
+        };
+        log::info!("ramdisk: {:?}", ptr);
+    }
+
     let userspace_fn_in_kernel = VirtAddr::from_ptr(userspace_program as *const ());
     log::info!(
         "Userspace fn address (in kernel): {:?}",
@@ -389,14 +402,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let code = userspace_fn_in_userspace.start.start_address()
         + userspace_fn_in_kernel.page_offset().into();
 
-    log::info!("Jumping to code address: {:?}", code);
-    unsafe {
-        enter_user_mode(
-            gdt,
-            code,
-            stack_in_userspace.start.start_address() + stack_size as u64,
-        )
-    };
+    // log::info!("Jumping to code address: {:?}", code);
+    // unsafe {
+    //     enter_user_mode(
+    //         gdt,
+    //         code,
+    //         stack_in_userspace.start.start_address() + stack_size as u64,
+    //     )
+    // };
 
     log::info!("It did not crash");
 

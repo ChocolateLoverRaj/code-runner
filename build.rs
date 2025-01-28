@@ -8,7 +8,8 @@ fn main() {
 
     // set by cargo for the kernel artifact dependency
     let kernel_path = env::var("CARGO_BIN_FILE_KERNEL").unwrap();
-    let disk_builder = DiskImageBuilder::new(PathBuf::from(&kernel_path));
+    let mut disk_builder = DiskImageBuilder::new(PathBuf::from(&kernel_path));
+    disk_builder.set_ramdisk("./Cargo.toml".into());
 
     // specify output paths
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
