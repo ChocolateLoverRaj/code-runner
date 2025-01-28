@@ -1,5 +1,9 @@
 use core::arch::asm;
-use x86_64::{instructions::tlb, PrivilegeLevel, VirtAddr};
+use x86_64::{
+    instructions::tlb,
+    registers::segmentation::{Segment, DS},
+    PrivilegeLevel, VirtAddr,
+};
 
 use crate::modules::gdt::Gdt;
 
@@ -12,7 +16,7 @@ pub unsafe fn enter_user_mode(gdt: &Gdt, code: VirtAddr, stack_end: VirtAddr) {
     let ds_idx = {
         let mut data_selector = gdt.user_data_selector.clone();
         data_selector.set_rpl(PrivilegeLevel::Ring3);
-        // DS::set_reg(data_selector.clone());
+        DS::set_reg(data_selector.clone());
         data_selector.0
     };
     tlb::flush_all();

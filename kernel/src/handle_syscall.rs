@@ -1,16 +1,10 @@
 use core::{
     alloc::Layout,
     arch::{asm, naked_asm},
-    cell::UnsafeCell,
-    fmt::Write,
-    ops::{Deref, DerefMut},
     sync::atomic::{AtomicBool, Ordering},
 };
 
 use alloc::alloc::{alloc, dealloc};
-use bootloader_x86_64_common::serial::SerialPort;
-use conquer_once::spin::OnceCell;
-use spin::Mutex;
 
 // save the registers, handle the syscall and return to usermode
 #[naked]

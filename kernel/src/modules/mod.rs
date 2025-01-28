@@ -6,7 +6,6 @@ pub mod get_apic;
 pub mod get_io_apic;
 pub mod get_local_apic;
 pub mod idt;
-pub mod local_apic_getter;
 pub mod logging_breakpoint_handler;
 pub mod logging_timer_interrupt_handler;
 pub mod panicking_double_fault_handler;

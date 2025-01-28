@@ -90,7 +90,7 @@ use modules::{
     panicking_spurious_interrupt_handler::panicking_spurious_interrupt_handler,
     panicking_stack_segment_fault_handler::panicking_stack_segment_fault_handler,
     spurious_interrupt_handler::set_spurious_interrupt_handler,
-    static_local_apic::{enable_and_store, LOCAL_APIC},
+    static_local_apic::{self, LOCAL_APIC},
     tss::TssBuilder,
 };
 use phys_mapper::PhysMapper;
@@ -296,7 +296,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         static_stuff.local_apic_error_interrupt_index,
     )
     .unwrap();
-    // enable_and_store(local_apic);
+    static_local_apic::store(local_apic);
 
     let mut io_apic = get_io_apic(&apic, &mut phys_mapper.clone());
 

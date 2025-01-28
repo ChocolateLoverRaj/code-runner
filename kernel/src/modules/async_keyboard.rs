@@ -20,11 +20,11 @@ use x86_64::{
 
 use crate::pic8259_interrupts::Pic8259Interrupts;
 
-use super::{idt::IdtBuilder, local_apic_getter::LocalApicGetter};
+use super::idt::IdtBuilder;
 
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static WAKER: AtomicWaker = AtomicWaker::new();
-static GETTER: OnceCell<&'static OnceCell<Mutex<LocalApic>>> = OnceCell::uninit();
+static LOCAL_APIC: OnceCell<&'static OnceCell<Mutex<LocalApic>>> = OnceCell::uninit();
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
     let mut port = Port::new(0x60);
@@ -42,7 +42,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
             log::warn!("WARNING: Could not add scancode: {e:?}");
         }
     }
-    let mut local_apic = GETTER.try_get().unwrap().try_get().unwrap().lock();
+    let mut local_apic = LOCAL_APIC.try_get().unwrap().try_get().unwrap().lock();
     unsafe { local_apic.end_of_interrupt() };
 }
 
@@ -72,10 +72,10 @@ impl AsyncKeyboardBuilder {
     pub fn configure_io_apic(
         &'static self,
         io_apic: Arc<Mutex<IoApic>>,
-        local_apic_getter: &'static OnceCell<Mutex<LocalApic>>,
+        local_apic: &'static OnceCell<Mutex<LocalApic>>,
         queue_size: usize,
     ) -> AsyncKeyboard {
-        GETTER.try_init_once(|| local_apic_getter).unwrap();
+        LOCAL_APIC.try_init_once(|| local_apic).unwrap();
         {
             let mut io_apic = io_apic.lock();
             unsafe {
