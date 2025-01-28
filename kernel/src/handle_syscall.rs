@@ -56,9 +56,17 @@ unsafe extern "sysv64" fn syscall_alloc_stack(
     arg3: u64,
     syscall: u64,
 ) -> u64 {
-    let layout = Layout::from_size_align(0x10000, 16).unwrap();
+    const TEMP_STACK_SIZE: usize = 0x10000;
+    let layout = Layout::from_size_align(TEMP_STACK_SIZE, 16).unwrap();
     let stack_ptr = alloc(layout);
-    let retval = handle_syscall_with_temp_stack(arg0, arg1, arg2, arg3, syscall, stack_ptr);
+    let retval = handle_syscall_with_temp_stack(
+        arg0,
+        arg1,
+        arg2,
+        arg3,
+        syscall,
+        stack_ptr.add(TEMP_STACK_SIZE),
+    );
     dealloc(stack_ptr, layout);
     return retval;
 }
@@ -70,20 +78,20 @@ extern "sysv64" fn handle_syscall_with_temp_stack(
     arg2: u64,
     arg3: u64,
     syscall: u64,
-    temp_stack: *const u8,
+    temp_stack_base_plus_stack_size: *const u8,
 ) -> u64 {
     let old_stack: *const u8;
-    // unsafe {
-    //     asm!("\
-    //     nop
-    //     mov {old_stack}, rsp
-    //     nop
-    //     mov rsp, {temp_stack} // move our stack to the newly allocated one
-    //     nop
-    //     sti // enable interrupts
-    //     nop",
-    //     temp_stack = in(reg) temp_stack, old_stack = out(reg) old_stack);
-    // }
+    unsafe {
+        asm!("\
+        nop
+        mov {old_stack}, rsp
+        nop
+        mov rsp, {temp_stack_base_plus_stack_size} // move our stack to the newly allocated one
+        nop
+        sti // enable interrupts
+        nop",
+        temp_stack_base_plus_stack_size = in(reg) temp_stack_base_plus_stack_size, old_stack = out(reg) old_stack);
+    }
 
     log::info!("Syscalled with args: {} {} {} {}", arg0, arg1, arg2, arg3);
 
@@ -100,15 +108,15 @@ extern "sysv64" fn handle_syscall_with_temp_stack(
     // );
 
     let retval: u64 = 4;
-    // unsafe {
-    //     asm!("\
-    //         nop
-    //     cli // disable interrupts while restoring the stack
-    //     nop
-    //     mov rsp, {old_stack} // restore the old stack
-    //     nop
-    //     ",
-    //     old_stack = in(reg) old_stack);
-    // }
+    unsafe {
+        asm!("\
+            nop
+        cli // disable interrupts while restoring the stack
+        nop
+        mov rsp, {old_stack} // restore the old stack
+        nop
+        ",
+        old_stack = in(reg) old_stack);
+    }
     retval
 }
