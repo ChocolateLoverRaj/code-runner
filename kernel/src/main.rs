@@ -16,6 +16,7 @@ pub mod apic;
 pub mod change_stream;
 pub mod colorful_logger;
 pub mod combined_logger;
+pub mod continuous_bool_vec;
 pub mod demo_async;
 pub mod demo_async_keyboard_drop;
 pub mod demo_async_rtc_drop;
