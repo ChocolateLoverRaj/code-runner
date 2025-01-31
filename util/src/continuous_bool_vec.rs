@@ -27,67 +27,91 @@ impl<T: Default + Insert<usize>> ContinuousBoolVec<T> {
 impl<T: DerefMut<Target = [usize]> + Insert<usize> + Remove<usize> + Splice<usize>>
     ContinuousBoolVec<T>
 {
-    pub fn set(&mut self, range: Range<usize>, value: bool) {
-        let (first_segment, first_segment_position, replace_first_segment) = {
-            let mut i = 0;
-            let mut index = 0;
-            loop {
-                let end_index = index + self.len_vec[i];
-                if end_index > range.start {
-                    break (i, index, index == range.start);
-                }
-                i += 1;
-                index = end_index;
-            }
-        };
-        let (last_segment, last_segment_end_position, replace_last_segment) = {
-            let mut i = first_segment;
-            let mut index = 0;
-            loop {
-                let end_index = index + self.len_vec[i];
-                if end_index >= range.end {
-                    break (i, end_index, end_index == range.end);
-                }
-                i += 1;
-                index = end_index;
-            }
-        };
-        let (new_segment_start, new_segment_start_offset) = {
-            let first_is_same = self.start_value ^ (first_segment % 2 == 1) == value;
-            println!("First is same: {}", first_is_same);
-            match (first_is_same, replace_first_segment) {
-                (false, false) => (first_segment, range.start - first_segment_position),
-                (false, true) => (first_segment.saturating_sub(1), 0),
-                (true, _) => (first_segment, 0),
-            }
-        };
-        let (new_segment_end, new_segment_end_offset) = {
-            let last_is_same = self.start_value ^ (last_segment % 2 == 1) == value;
-            match (last_is_same, replace_last_segment) {
-                (false, false) => (last_segment, last_segment_end_position - range.end),
-                (false, true) => (last_segment + 1, 0),
-                (true, _) => (last_segment, 0),
-            }
-        };
-        println!("First: {first_segment} {replace_first_segment}. Last: {last_segment} {replace_last_segment}");
+    pub fn set(&mut self, mut range: Range<usize>, value: bool) {
+        let mut i = 0;
+        let mut current_segment_start_pos = 0;
+        let mut current_segment_value = self.start_value;
 
-        let mut new_segments = heapless::Vec::<_, 3>::new();
-        if new_segment_start_offset > 0 {
-            new_segments.push(new_segment_start_offset);
-        }
-        new_segments.push(
-            (last_segment_end_position - new_segment_end_offset)
-                - (first_segment_position + new_segment_start_offset),
-        );
-        if new_segment_end_offset > 0 {
-            new_segments.push(new_segment_end_offset);
-        }
-        println!("{new_segment_start} {new_segment_start_offset} {new_segment_end} {new_segment_end_offset} {new_segments:?} {:?}", new_segment_start..=new_segment_end);
-
-        self.len_vec
-            .splice(new_segment_start..=new_segment_end, new_segments);
-        if new_segment_start == 0 && new_segment_start_offset == 0 {
+        if range.start == 0 {
             self.start_value = value;
+        }
+
+        loop {
+            let current_segment_len = self.len_vec[i];
+            let current_segment_end_pos = current_segment_start_pos + current_segment_len;
+            if current_segment_end_pos >= range.start {
+                // println!("Here. i: {i}. current segment value: {current_segment_value}.");
+                let mut increased_by = if current_segment_value == value {
+                    // println!("here 2");
+                    // Merge with previous
+                    range.start = current_segment_start_pos;
+                    let extend_by = range.end as isize - current_segment_end_pos as isize;
+                    if extend_by <= 0 {
+                        // No change
+                        break;
+                    } else {
+                        let extend_by = extend_by as usize;
+                        self.len_vec[i] += extend_by;
+                        i += 1;
+                        extend_by
+                    }
+                } else {
+                    // Cut off the right part of the current segment
+                    self.len_vec[i] = range.start - current_segment_start_pos;
+                    if self.len_vec[i] == 0 {
+                        self.len_vec.remove(i);
+                    } else {
+                        i += 1;
+                    }
+                    let right_part_of_cut_current_segment = current_segment_end_pos
+                        .checked_sub(range.end)
+                        .and_then(|size| match size {
+                            0 => None,
+                            size => Some(size),
+                        });
+                    self.len_vec.insert(i, range.len());
+                    i += 1;
+                    current_segment_value = !current_segment_value;
+                    if let Some(right_part_of_cut_current_segment) =
+                        right_part_of_cut_current_segment
+                    {
+                        self.len_vec.insert(i, right_part_of_cut_current_segment);
+                        i += 1;
+                        current_segment_value = !current_segment_value;
+                        break;
+                    } else {
+                        let increased_by = range.end - current_segment_end_pos;
+                        increased_by
+                    }
+                };
+                // println!("Range: {range:?}. Increased by: {increased_by}. I: {i}");
+                loop {
+                    let current_segment_len = self.len_vec[i];
+                    let decrease_by = current_segment_len.min(increased_by);
+                    self.len_vec[i] -= decrease_by;
+                    if self.len_vec[i] == 0 {
+                        self.len_vec.remove(i);
+                    } else {
+                        i += 1;
+                    }
+                    increased_by -= decrease_by;
+                    if increased_by == 0 {
+                        break;
+                    }
+                }
+                if let Some(current_segment_len) = self.len_vec.get(i) {
+                    let current_segment_len = *current_segment_len;
+                    if current_segment_value == value {
+                        self.len_vec.remove(i);
+                        self.len_vec[i - 1] += current_segment_len;
+                    }
+                }
+                break;
+            } else {
+                i += 1;
+                current_segment_start_pos = current_segment_end_pos;
+                current_segment_value = !current_segment_value;
+            }
         }
     }
 }
@@ -144,6 +168,54 @@ pub mod test {
             ContinuousBoolVec {
                 start_value: false,
                 len_vec: vec![300]
+            }
+        )
+    }
+
+    #[test]
+    fn overwrite() {
+        let mut c = ContinuousBoolVec {
+            start_value: false,
+            len_vec: vec![100, 100],
+        };
+        c.set(0..200, true);
+        assert_eq!(
+            c,
+            ContinuousBoolVec {
+                start_value: true,
+                len_vec: vec![200]
+            }
+        )
+    }
+
+    #[test]
+    fn complex() {
+        let mut c = ContinuousBoolVec {
+            start_value: false,
+            len_vec: vec![100, 100, 100, 100],
+        };
+        c.set(50..350, true);
+        assert_eq!(
+            c,
+            ContinuousBoolVec {
+                start_value: false,
+                len_vec: vec![50, 300, 50]
+            }
+        )
+    }
+
+    #[test]
+    fn complex2() {
+        let mut c = ContinuousBoolVec {
+            start_value: true,
+            len_vec: vec![100, 100, 100, 100],
+        };
+        c.set(100..300, false);
+        assert_eq!(
+            c,
+            ContinuousBoolVec {
+                start_value: true,
+                len_vec: vec![100, 300]
             }
         )
     }
