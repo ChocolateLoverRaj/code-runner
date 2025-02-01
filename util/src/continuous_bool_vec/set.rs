@@ -3,30 +3,11 @@ use core::{
     ops::{DerefMut, Range},
 };
 
-use crate::{insert::Insert, remove::Remove, splice::Splice};
+use crate::{insert::Insert, remove::Remove};
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub struct ContinuousBoolVec<T> {
-    start_value: bool,
-    len_vec: T,
-}
+use super::ContinuousBoolVec;
 
-impl<T: Default + Insert<usize>> ContinuousBoolVec<T> {
-    pub fn new(len: usize, start_value: bool) -> Self {
-        Self {
-            start_value,
-            len_vec: {
-                let mut len_vec = T::default();
-                len_vec.insert(0, len);
-                len_vec
-            },
-        }
-    }
-}
-
-impl<T: DerefMut<Target = [usize]> + Insert<usize> + Remove<usize> + Splice<usize>>
-    ContinuousBoolVec<T>
-{
+impl<T: DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> ContinuousBoolVec<T> {
     pub fn set(&mut self, mut range: Range<usize>, value: bool) {
         let mut i = 0;
         let mut current_segment_start_pos = 0;
@@ -111,27 +92,6 @@ impl<T: DerefMut<Target = [usize]> + Insert<usize> + Remove<usize> + Splice<usiz
                 i += 1;
                 current_segment_start_pos = current_segment_end_pos;
                 current_segment_value = !current_segment_value;
-            }
-        }
-    }
-
-    pub fn get_continuous_range(&self, value: bool, requested_len: usize) -> Option<Range<usize>> {
-        let mut current_segment_value = self.start_value;
-        let mut i = 0;
-        let mut current_segment_start_pos = 0;
-        loop {
-            match self.len_vec.get(i) {
-                Some(len) => {
-                    let len = *len;
-                    let current_segment_end_pos = current_segment_start_pos + len;
-                    if current_segment_value == value && len >= requested_len {
-                        break Some(current_segment_start_pos..current_segment_end_pos);
-                    }
-                    i += 1;
-                    current_segment_value = !current_segment_value;
-                    current_segment_start_pos = current_segment_end_pos;
-                }
-                None => break None,
             }
         }
     }
