@@ -114,6 +114,27 @@ impl<T: DerefMut<Target = [usize]> + Insert<usize> + Remove<usize> + Splice<usiz
             }
         }
     }
+
+    pub fn get_continuous_range(&self, value: bool, requested_len: usize) -> Option<Range<usize>> {
+        let mut current_segment_value = self.start_value;
+        let mut i = 0;
+        let mut current_segment_start_pos = 0;
+        loop {
+            match self.len_vec.get(i) {
+                Some(len) => {
+                    let len = *len;
+                    let current_segment_end_pos = current_segment_start_pos + len;
+                    if current_segment_value == value && len >= requested_len {
+                        break Some(current_segment_start_pos..current_segment_end_pos);
+                    }
+                    i += 1;
+                    current_segment_value = !current_segment_value;
+                    current_segment_start_pos = current_segment_end_pos;
+                }
+                None => break None,
+            }
+        }
+    }
 }
 
 #[cfg(test)]
