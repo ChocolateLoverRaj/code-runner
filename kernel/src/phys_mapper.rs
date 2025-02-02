@@ -74,7 +74,7 @@ impl PhysMapper {
     pub unsafe fn unmap(&self, page_range: Range<Page>) {
         let mut mapper = self.mapper.lock();
         let mut flush = None;
-        for page in page_range {
+        for page in page_range.clone() {
             flush = Some(mapper.unmap(page).unwrap().1);
         }
         flush.unwrap().flush();

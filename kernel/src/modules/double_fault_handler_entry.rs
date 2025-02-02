@@ -11,6 +11,7 @@ pub fn get_double_fault_entry(
     tss: &mut TssBuilder,
     handler: DivergingHandlerFuncWithErrCode,
 ) -> idt::Entry<DivergingHandlerFuncWithErrCode> {
+    log::info!("H");
     let mut entry = idt::Entry::missing();
     let entry_options = entry.set_handler_fn(handler);
     let stack_index = tss

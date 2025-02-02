@@ -13,14 +13,15 @@ ovmf-prebuilt = "0.1.0-alpha"
 [build-dependencies]
 kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
 userspace = { path = "userspace", artifact = "bin", target = "x86_64-unknown-none" }
-bootloader = "0.11.8"
+bootloader = "0.11.9"
 
 [patch.crates-io]
-# x2apic = { path = "../x2apic-rs" }
-# bootloader-x86_64-common = { path = "../bootloader/common" }
-x86_rtc = { git = "https://github.com/ChocolateLoverRaj/x86_rtc", branch = "interrupts" }
+x2apic = { path = "../x2apic-rs" }
+bootloader-x86_64-common = { path = "../bootloader-1/common" }
+x86_rtc = { path = "../x86_rtc" }
 
 # [patch.crates-io.x86_64]
-# path = "../x86_64"
+# # path = "../x86_64"
 # git = "https://github.com/rust-osdev/x86_64"
-# branch = "fix/step-nightly-breakage"
+# # branch = "fix/step-nightly-breakage"
+# tag = "v0.14.13"

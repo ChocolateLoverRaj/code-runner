@@ -30,6 +30,7 @@ pub fn init_heap(
     let mut virt_mem_tracker = VirtMemTracker::new(
         VirtAddr::new(FLEXIBLE_VIRT_MEM_START)..VirtAddr::new(0xFFFFFFFFFFFFFFFF),
     );
+    log::info!("Finding used virt addrs");
     find_used_virt_addrs(
         mapper.level_4_table(),
         mapper.phys_offset(),
@@ -48,8 +49,7 @@ pub fn init_heap(
     for page in page_range {
         let frame = frame_allocator
             .allocate_frame()
-            .ok_or(MapToError::FrameAllocationFailed)
-            .map_err(|_e| anyhow!("Failed to allocate frame"))?;
+            .ok_or(anyhow!("Failed to allocate frame"))?;
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
         flush = Some(unsafe {
             mapper

@@ -152,16 +152,18 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         boot_info.ramdisk_len,
         boot_info.ramdisk_addr
     );
+    log::info!("Try getting and initting");
     let static_stuff = STATIC_STUFF
         .try_get_or_init(|| {
+            log::info!("here");
             let mut tss = TssBuilder::new();
+            log::info!("here");
             let mut idt_builder = IdtBuilder::new();
-            idt_builder
-                .set_double_fault_entry(get_double_fault_entry(
-                    &mut tss,
-                    panicking_double_fault_handler,
-                ))
-                .unwrap();
+            log::info!("here");
+            let entry = get_double_fault_entry(&mut tss, panicking_double_fault_handler);
+            log::info!("got entry");
+            idt_builder.set_double_fault_entry(entry).unwrap();
+            log::info!("here");
             idt_builder
                 .set_breakpoint_entry({
                     let mut entry = idt::Entry::<HandlerFunc>::missing();
