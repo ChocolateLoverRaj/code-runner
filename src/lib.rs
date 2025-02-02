@@ -11,6 +11,7 @@ pub enum BootType {
 pub fn run_qemu(boot_type: BootType) {
     println!("{}", env!("UEFI_IMAGE"));
     println!("{}", env!("CARGO_BIN_FILE_KERNEL"));
+    println!("{}", env!("USERSPACE"));
 
     #[cfg(debug_assertions)]
     {
@@ -18,7 +19,7 @@ pub fn run_qemu(boot_type: BootType) {
         // create an lldb debug file to make debugging easy
         let content = format!(
             r#"target create {kernel_binary}
-                target modules load --file {kernel_binary} --slide 0x8000000000
+                target modules load --file {kernel_binary} --slide 0xFFFF800000000000
                 gdb-remote localhost:1234"#
         );
         std::fs::write("debug.lldb", content).expect("unable to create debug file");

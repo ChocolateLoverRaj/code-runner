@@ -1,7 +1,6 @@
 use core::{
     alloc::Layout,
     arch::{asm, naked_asm},
-    sync::atomic::{AtomicBool, Ordering},
 };
 
 use alloc::alloc::{alloc, dealloc};
@@ -37,9 +36,6 @@ pub extern "C" fn handle_syscall_wrapper() {
         syscall_alloc_stack = sym syscall_alloc_stack);
     }
 }
-
-// static SERIAL_PORT: OnceCell<Mutex<SerialPort>> = OnceCell::uninit();
-pub static TEST: AtomicBool = AtomicBool::new(false);
 
 // allocate a temp stack and call the syscall handler
 //  extern "sysv64"
@@ -87,19 +83,13 @@ extern "sysv64" fn handle_syscall_with_temp_stack(
         temp_stack_base_plus_stack_size = in(reg) temp_stack_base_plus_stack_size, old_stack = out(reg) old_stack);
     }
 
-    log::info!("Syscalled with args: {} {} {} {}", arg0, arg1, arg2, arg3);
-
-    TEST.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
-
-    // static S: OnceCell<Mutex<SerialPort>> = OnceCell::uninit();
-    // let mut s = S
-    //     .get_or_init(|| Mutex::new(unsafe { SerialPort::init() }))
-    //     .lock();
-    // writeln!(
-    //     s,
-    //     "Syscalled with args: {} {} {} {}",
-    //     arg0, arg1, arg2, arg3
-    // );
+    log::info!(
+        "Syscalled with args: {:x} {:x} {:x} {:x}",
+        arg0,
+        arg1,
+        arg2,
+        arg3
+    );
 
     let retval: u64 = 4;
     unsafe {

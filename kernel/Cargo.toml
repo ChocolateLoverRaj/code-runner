@@ -18,6 +18,8 @@ unicode-segmentation = "1.12.0"
 bootloader_api = "0.11.8"
 bootloader-x86_64-common = "0.11.8"
 x86_rtc = "0.1.1"
+elf = { version = "0.7.4", default-features = false, features = ["nightly"] }
+util = { version = "0.1.0", path = "../util" }
 
 [dependencies.crossbeam-queue]
 version = "0.3.11"

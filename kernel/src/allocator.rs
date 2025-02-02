@@ -1,15 +1,18 @@
-use core::ops::Range;
-
+use anyhow::anyhow;
 use linked_list_allocator::LockedHeap;
 use x86_64::{
     structures::paging::{
-        mapper::MapToError, FrameAllocator, Mapper, OffsetPageTable, Page, PageSize,
-        PageTableFlags, Size4KiB,
+        mapper::MapToError, FrameAllocator, Mapper, OffsetPageTable, PageSize, PageTableFlags,
+        Size4KiB,
     },
     VirtAddr,
 };
 
-use crate::{find_used_virt_addrs::find_used_virt_addrs, virt_mem_allocator::VirtMemAllocator};
+use crate::{
+    find_used_virt_addrs::find_used_virt_addrs,
+    jmp_to_elf::FLEXIBLE_VIRT_MEM_START,
+    virt_mem_allocator::{VirtMemAllocator, VirtMemTracker},
+};
 
 pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB
 
@@ -23,36 +26,47 @@ type AllocatorPageSize = Size4KiB;
 pub fn init_heap(
     mapper: &mut OffsetPageTable<'static>,
     frame_allocator: &mut impl FrameAllocator<AllocatorPageSize>,
-) -> Result<heapless::Vec<Range<VirtAddr>, N>, MapToError<AllocatorPageSize>> {
-    let mut ranges = find_used_virt_addrs(mapper.level_4_table(), mapper.phys_offset());
-    let heap_start = ranges
-        .allocate_pages::<AllocatorPageSize>((HEAP_SIZE as u64).div_ceil(AllocatorPageSize::SIZE))
-        .unwrap();
-    let page_range = {
-        let heap_start_page = Page::containing_address(heap_start);
-        let heap_end_page_exclusive = Page::containing_address(heap_start + HEAP_SIZE as u64);
-        Page::range(heap_start_page, heap_end_page_exclusive)
-    };
-    log::debug!(
-        "Pages used for heap: {:?}",
-        page_range.start..page_range.end
+) -> anyhow::Result<VirtMemTracker> {
+    let mut virt_mem_tracker = VirtMemTracker::new(
+        VirtAddr::new(FLEXIBLE_VIRT_MEM_START)..VirtAddr::new(0xFFFFFFFFFFFFFFFF),
     );
+    find_used_virt_addrs(
+        mapper.level_4_table(),
+        mapper.phys_offset(),
+        &mut virt_mem_tracker,
+    );
+    log::info!("Virt mem tracker: {:#?}", virt_mem_tracker);
+    let page_count = (HEAP_SIZE as u64).div_ceil(Size4KiB::SIZE);
+    let heap_start = virt_mem_tracker
+        .allocate_pages::<Size4KiB>(page_count)
+        .ok_or(anyhow!("Failed to allocate bytes for heap"))?;
+
+    let page_range = heap_start..heap_start + page_count;
+    log::info!("Pages used for heap: {:?}", page_range);
 
     let mut flush = None;
     for page in page_range {
         let frame = frame_allocator
             .allocate_frame()
-            .ok_or(MapToError::FrameAllocationFailed)?;
+            .ok_or(MapToError::FrameAllocationFailed)
+            .map_err(|_e| anyhow!("Failed to allocate frame"))?;
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-        flush = Some(unsafe { mapper.map_to(page, frame, flags, frame_allocator)? });
+        flush = Some(unsafe {
+            mapper
+                .map_to(page, frame, flags, frame_allocator)
+                .map_err(|_e| anyhow!("Failed to map frame"))?
+        });
     }
-    flush.unwrap().flush();
+    if let Some(flush) = flush {
+        flush.flush()
+    };
 
     unsafe {
-        ALLOCATOR
-            .lock()
-            .init(heap_start.as_ptr::<u8>() as *mut u8, HEAP_SIZE);
+        ALLOCATOR.lock().init(
+            heap_start.start_address().as_mut_ptr(),
+            (page_count * Size4KiB::SIZE) as usize,
+        );
     }
 
-    Ok(ranges)
+    Ok(virt_mem_tracker)
 }

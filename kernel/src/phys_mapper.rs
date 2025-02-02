@@ -13,24 +13,27 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-use crate::{memory::BootInfoFrameAllocator, virt_mem_allocator::VirtMemAllocator};
+use crate::{
+    memory::BootInfoFrameAllocator,
+    virt_mem_allocator::{VirtMemAllocator, VirtMemTracker},
+};
 
 /// Used to "create" a virtual address range that maps to a specified physical address range
 #[derive(Clone, Debug)]
 pub struct PhysMapper {
     mapper: Arc<spin::Mutex<OffsetPageTable<'static>>>,
-    virt_mem_allocator: Arc<spin::Mutex<alloc::vec::Vec<Range<VirtAddr>>>>,
+    virt_mem_tracker: Arc<spin::Mutex<VirtMemTracker>>,
     frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
 }
 impl PhysMapper {
     pub fn new(
         mapper: Arc<spin::Mutex<OffsetPageTable<'static>>>,
-        virt_mem_allocator: Arc<spin::Mutex<alloc::vec::Vec<Range<VirtAddr>>>>,
+        virt_mem_tracker: Arc<spin::Mutex<VirtMemTracker>>,
         frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
     ) -> Self {
         Self {
             mapper,
-            virt_mem_allocator,
+            virt_mem_tracker,
             frame_allocator,
         }
     }
@@ -42,12 +45,11 @@ impl PhysMapper {
         flags: PageTableFlags,
     ) -> PageRange {
         let page_count = phys_frame_range.end - phys_frame_range.start;
-        let virt_addr = self
-            .virt_mem_allocator
+        let start_page = self
+            .virt_mem_tracker
             .lock()
             .allocate_pages::<Size4KiB>(page_count)
             .expect("Failed to allocate virt addr");
-        let start_page = Page::<Size4KiB>::containing_address(virt_addr);
         let page_range = Page::range(start_page, start_page + page_count);
         let mut mapper = self.mapper.lock();
         let mut flush = None;
@@ -69,15 +71,15 @@ impl PhysMapper {
     }
 
     /// Only unmap pages that were mapped by this and are not already unmapped
-    pub unsafe fn unmap(&self, page_range: PageRange) {
+    pub unsafe fn unmap(&self, page_range: Range<Page>) {
         let mut mapper = self.mapper.lock();
         let mut flush = None;
         for page in page_range {
             flush = Some(mapper.unmap(page).unwrap().1);
         }
         flush.unwrap().flush();
-        let mut ranges = self.virt_mem_allocator.lock();
-        ranges.deallocate_pages(page_range);
+        let mut ranges = self.virt_mem_tracker.lock();
+        ranges.deallocate_pages_unchecked(page_range);
     }
 }
 
@@ -122,7 +124,7 @@ impl AcpiHandler for PhysMapper {
         let start_page = Page::<Size4KiB>::containing_address(VirtAddr::new(
             region.virtual_start().as_ptr() as u64,
         ));
-        let page_range = Page::range(start_page, start_page + page_count);
+        let page_range = start_page..start_page + page_count;
         log::debug!("AcpiHandler unmap: {page_range:?}");
         unsafe { mapper.unmap(page_range) };
     }

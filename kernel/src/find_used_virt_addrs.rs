@@ -1,4 +1,8 @@
-use core::ops::Range;
+use core::{
+    fmt::Debug,
+    ops::{DerefMut, Range},
+};
+use util::{continuous_bool_vec::ContinuousBoolVec, insert::Insert, remove::Remove};
 use x86_64::{
     structures::paging::{
         page_table::FrameError, PageOffset, PageSize, PageTable, PageTableIndex, Size1GiB,
@@ -7,28 +11,23 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::virt_addr_from_indexes::{
-    virt_addr_from_indexes_1_gib, virt_addr_from_indexes_2_mib, virt_addr_from_indexes_4_kib,
+use crate::{
+    jmp_to_elf::FLEXIBLE_VIRT_MEM_START,
+    virt_addr_from_indexes::{
+        virt_addr_from_indexes_1_gib, virt_addr_from_indexes_2_mib, virt_addr_from_indexes_4_kib,
+    },
+    virt_mem_allocator::VirtMemTracker,
 };
 
-pub fn find_used_virt_addrs<const N: usize>(
+pub fn find_used_virt_addrs(
     l4_page_table: &PageTable,
     phys_mem_offset: VirtAddr,
-) -> heapless::Vec<Range<VirtAddr>, N> {
-    // We keep this sorted, and we assume that there are no overlaps (because that is unsafe and should never happen)
-    let mut ranges = heapless::Vec::<Range<VirtAddr>, N>::new();
+    virt_mem_tracker: &mut VirtMemTracker,
+) {
     // We assume that this function is being called in an increasing way (0..2, 2..4, 10..16), not (10..16, 1..2)
-    let mut add_range = |range: Range<VirtAddr>| match ranges.last_mut() {
-        Some(last_range) => {
-            if last_range.end == range.start {
-                last_range.end = range.end;
-            } else {
-                ranges.push(range).unwrap();
-            }
-        }
-        None => {
-            ranges.push(range).unwrap();
-        }
+    let mut add_range = |range: Range<VirtAddr>| {
+        virt_mem_tracker.allocate_specific_bytes_unchecked(range);
+        // log::info!("ranges: {:#?}. new range: {:?}", ranges, new_range);
     };
     for (l4_index, entry) in l4_page_table.iter().enumerate() {
         match entry.frame() {
@@ -107,5 +106,4 @@ pub fn find_used_virt_addrs<const N: usize>(
             }
         }
     }
-    ranges
 }

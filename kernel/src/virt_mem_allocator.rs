@@ -3,28 +3,115 @@ use core::{
     ops::{DerefMut, Range},
 };
 
+use util::continuous_bool_vec::ContinuousBoolVec;
 use x86_64::{
-    structures::paging::{page::PageRange, PageSize},
+    structures::paging::{page::PageRange, Page, PageSize},
     VirtAddr,
 };
 
 use crate::{insert::Insert, remove::Remove};
 
+/// All "allocation" is actually just keeping track of what's being used and not used. You have to actually do the allocating.
+#[derive(Debug)]
+pub struct VirtMemTracker {
+    starting_addr: VirtAddr,
+    used_addresses: ContinuousBoolVec<heapless::Vec<usize, 1024>>,
+}
+
+impl VirtMemTracker {
+    pub fn new(addr_range: Range<VirtAddr>) -> Self {
+        Self {
+            starting_addr: addr_range.start,
+            used_addresses: ContinuousBoolVec::new(
+                (addr_range.end - addr_range.start) as usize,
+                false,
+            ),
+        }
+    }
+    /// Finds available bytes and allocates them
+    pub fn allocate_bytes(&mut self, len: u64) -> Option<VirtAddr> {
+        Some({
+            let range_start = self
+                .used_addresses
+                .get_continuous_range(false, len as usize)?;
+            self.used_addresses
+                .set(range_start..range_start + len as usize, true);
+            self.starting_addr + range_start as u64
+        })
+    }
+
+    pub fn allocate_pages<S: PageSize>(&mut self, page_count: u64) -> Option<Page<S>> {
+        Some({
+            let bytes_len = (S::SIZE * page_count) as usize;
+            let range_start = self.used_addresses.get_continuous_range_with_alignment(
+                false,
+                bytes_len,
+                S::SIZE as usize,
+            )?;
+            self.used_addresses
+                .set(range_start..range_start + bytes_len, true);
+            Page::from_start_address(VirtAddr::new(range_start as u64)).unwrap()
+        })
+    }
+
+    /// This does not check if the bytes are already allocated
+    pub fn allocate_specific_bytes_unchecked(&mut self, range: Range<VirtAddr>) {
+        let range_to_set =
+            (range.start - self.starting_addr) as usize..(range.end - self.starting_addr) as usize;
+        self.used_addresses.set(range_to_set, true);
+    }
+
+    /// This makes sure that the specific bytes are not in use before allocating
+    pub fn allocate_specific_bytes_checked(&mut self, range: Range<VirtAddr>) -> Result<(), ()> {
+        let range_to_set =
+            (range.start - self.starting_addr) as usize..(range.end - self.starting_addr) as usize;
+        if self
+            .used_addresses
+            .is_range_available(false, range_to_set.clone())
+        {
+            self.allocate_specific_bytes_unchecked(range);
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    /// This does not check if you are accidentally deallocating bytes that you didn't allocate in the first place
+    pub fn deallocate_bytes_unchecked(&mut self, range: Range<VirtAddr>) {
+        let range_to_set =
+            (range.start - self.starting_addr) as usize..(range.end - self.starting_addr) as usize;
+        self.used_addresses.set(range_to_set, false);
+    }
+
+    pub fn deallocate_pages_unchecked<S: PageSize>(&mut self, pages: Range<Page<S>>) {
+        self.deallocate_bytes_unchecked(pages.start.start_address()..pages.end.start_address());
+    }
+}
+
 // TODO: Tests (very ez and very important for this)
 pub trait VirtMemAllocator {
-    fn allocate_pages<S: PageSize>(&mut self, page_count: u64) -> Option<VirtAddr>;
+    fn allocate_pages<S: PageSize>(
+        &mut self,
+        page_count: u64,
+        start_at: VirtAddr,
+    ) -> Option<VirtAddr>;
     /// Deallocates pages, if they are allocated. It doesn't check if ur trying to deallocate unallocated pages but if you try doing that there is probably a bug in your code.
     fn deallocate_pages<S: PageSize>(&mut self, page_range: PageRange<S>);
+    fn allocate_specific(&mut self, page_range: Range<VirtAddr>) -> Option<()>;
 }
 
 impl<
         T: DerefMut<Target = [Range<VirtAddr>]> + Insert<Range<VirtAddr>> + Remove<Range<VirtAddr>>,
     > VirtMemAllocator for T
 {
-    fn allocate_pages<S: PageSize>(&mut self, page_count: u64) -> Option<VirtAddr> {
+    fn allocate_pages<S: PageSize>(
+        &mut self,
+        page_count: u64,
+        start_at: VirtAddr,
+    ) -> Option<VirtAddr> {
         let (index, start) = {
             // 0 cannot be used since that's reserved for a null pointer
-            let mut start = VirtAddr::new((0 + 1) * S::SIZE);
+            let mut start = start_at;
             let mut iter = self.iter().enumerate();
             loop {
                 match iter.next() {
@@ -114,6 +201,54 @@ impl<
             }
             if i >= self.len() {
                 break;
+            }
+        }
+    }
+
+    fn allocate_specific(&mut self, range: Range<VirtAddr>) -> Option<()> {
+        let mut i = 1;
+        loop {
+            match self.get(i) {
+                Some(existing_range) => match existing_range.start.cmp(&range.start) {
+                    Ordering::Less => match existing_range.end.cmp(&range.start) {
+                        Ordering::Less => {
+                            i += 1;
+                        }
+                        Ordering::Equal => match self.get(i + 1) {
+                            Some(next_range) => match next_range.start.cmp(&range.end) {
+                                Ordering::Less => break None,
+                                Ordering::Equal => {
+                                    self[i + 1].start = range.start;
+                                    break Some(());
+                                }
+                                Ordering::Greater => {
+                                    self.insert(i + 1, range);
+                                    break Some(());
+                                }
+                            },
+                            None => {
+                                self.insert(i + 1, range);
+                                break Some(());
+                            }
+                        },
+                        Ordering::Greater => break None,
+                    },
+                    Ordering::Equal => break None,
+                    Ordering::Greater => match existing_range.start.cmp(&range.end) {
+                        Ordering::Less => break None,
+                        Ordering::Equal => {
+                            self[i].start = range.start;
+                        }
+                        Ordering::Greater => {
+                            self.insert(i, range);
+                            break Some(());
+                        }
+                    },
+                },
+                None => {
+                    self.insert(i, range);
+                    break Some(());
+                }
             }
         }
     }

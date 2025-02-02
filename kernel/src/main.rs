@@ -16,7 +16,6 @@ pub mod apic;
 pub mod change_stream;
 pub mod colorful_logger;
 pub mod combined_logger;
-pub mod continuous_bool_vec;
 pub mod demo_async;
 pub mod demo_async_keyboard_drop;
 pub mod demo_async_rtc_drop;
@@ -32,6 +31,7 @@ pub mod handle_syscall;
 pub mod hlt_loop;
 pub mod init_syscalls;
 pub mod insert;
+pub mod jmp_to_elf;
 pub mod keyboard_interrupt_mutex;
 pub mod logger;
 pub mod logger_without_interrupts;
@@ -48,11 +48,12 @@ pub mod userspace_program;
 pub mod virt_addr_from_indexes;
 pub mod virt_mem_allocator;
 
-use alloc::{alloc::alloc, sync::Arc};
+use alloc::{alloc::alloc, sync::Arc, vec::Vec};
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use conquer_once::noblock::OnceCell;
 use core::{
-    alloc::Layout, cell::UnsafeCell, ops::DerefMut, panic::PanicInfo, str, sync::atomic::Ordering,
+    alloc::Layout, cell::UnsafeCell, ops::DerefMut, panic::PanicInfo, slice, str,
+    sync::atomic::Ordering,
 };
 #[allow(unused)]
 use demo_async::demo_async;
@@ -64,10 +65,11 @@ use demo_async_rtc_drop::demo_asyc_rtc_drop;
 use demo_maze_roller_game::demo_maze_roller_game;
 #[allow(unused)]
 use draw_rust::draw_rust;
+use elf::{endian::NativeEndian, ElfBytes};
 use enter_user_mode::enter_user_mode;
-use handle_syscall::TEST;
 use hlt_loop::hlt_loop;
 use init_syscalls::init_syscalls;
+use jmp_to_elf::{jmp_to_elf, FLEXIBLE_VIRT_MEM_START};
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use memory::get_active_level_4_table;
@@ -118,7 +120,8 @@ fn panic(info: &PanicInfo) -> ! {
 pub static BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
     config.mappings.physical_memory = Some(Mapping::Dynamic);
-    // config.mappings.dynamic_range_start = Some(0xFFFF_8000_0000_0000);
+    // Use higher half for kernel to have space in the lower parts for ELFs
+    config.mappings.dynamic_range_start = Some(FLEXIBLE_VIRT_MEM_START);
     config
 };
 
@@ -284,9 +287,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .expect("heap initialization failed");
 
     let mapper = Arc::new(spin::Mutex::new(mapper));
-    let virt_mem_allocator = Arc::new(spin::Mutex::new(used_virt_mem_ranges.to_vec()));
+    let virt_mem_tracker = Arc::new(spin::Mutex::new(used_virt_mem_ranges));
     let frame_allocator = Arc::new(spin::Mutex::new(frame_allocator));
-    let phys_mapper = PhysMapper::new(mapper, virt_mem_allocator, frame_allocator);
+    let phys_mapper = PhysMapper::new(mapper, virt_mem_tracker, frame_allocator);
     let acpi_tables = unsafe {
         acpi::init(
             boot_info.rsdp_addr.take().expect("No rsdp address!") as usize,
@@ -319,8 +322,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .configure_io_apic(io_apic, &LOCAL_APIC, 100);
     x86_64::instructions::interrupts::enable();
 
-    TEST.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
-
     let translate_virt_to_phys = |virt_addr: VirtAddr| -> PhysAddr {
         let l4: &PageTable = unsafe { get_active_level_4_table(phys_mem_offset) };
         let l3_addr = l4[virt_addr.p4_index()].addr();
@@ -340,10 +341,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     };
 
     if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
-        let ptr = unsafe {
-            str::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
+        let elf_bytes = unsafe {
+            slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
         };
-        log::info!("ramdisk: {:?}", ptr);
+        // jmp_to_elf(elf_bytes).unwrap();
     }
 
     let userspace_fn_in_kernel = VirtAddr::from_ptr(userspace_program as *const ());
