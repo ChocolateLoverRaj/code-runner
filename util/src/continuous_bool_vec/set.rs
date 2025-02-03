@@ -1,5 +1,6 @@
 use core::{
     cmp::Ordering,
+    fmt::Debug,
     ops::{DerefMut, Range},
 };
 
@@ -7,7 +8,7 @@ use crate::{insert::Insert, remove::Remove};
 
 use super::ContinuousBoolVec;
 
-impl<T: DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> ContinuousBoolVec<T> {
+impl<T: Debug + DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> ContinuousBoolVec<T> {
     pub fn set(&mut self, mut range: Range<usize>, value: bool) {
         let mut i = 0;
         let mut current_segment_start_pos = 0;
@@ -22,8 +23,8 @@ impl<T: DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> ContinuousBo
             let current_segment_end_pos = current_segment_start_pos + current_segment_len;
             if current_segment_end_pos >= range.start {
                 // println!("Here. i: {i}. current segment value: {current_segment_value}.");
+                // Start of range
                 let mut increased_by = if current_segment_value == value {
-                    // println!("here 2");
                     // Merge with previous
                     range.start = current_segment_start_pos;
                     let extend_by = range.end as isize - current_segment_end_pos as isize;
@@ -65,30 +66,37 @@ impl<T: DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> ContinuousBo
                         increased_by
                     }
                 };
-                // println!("Range: {range:?}. Increased by: {increased_by}. I: {i}");
-                loop {
+                // panic!("Range: {range:?}. Increased by: {increased_by}. I: {i}");
+                // Middle of range
+                let last_chunk_in_range_removed = loop {
                     let current_segment_len = self.len_vec[i];
                     let decrease_by = current_segment_len.min(increased_by);
                     self.len_vec[i] -= decrease_by;
-                    if self.len_vec[i] == 0 {
+                    let chunk_removed = if self.len_vec[i] == 0 {
                         self.len_vec.remove(i);
+                        true
                     } else {
                         i += 1;
-                    }
+                        false
+                    };
                     increased_by -= decrease_by;
                     if increased_by == 0 {
-                        break;
+                        break chunk_removed;
                     }
-                }
-                if let Some(current_segment_len) = self.len_vec.get(i) {
-                    let current_segment_len = *current_segment_len;
-                    if current_segment_value == value {
-                        self.len_vec.remove(i);
-                        self.len_vec[i - 1] += current_segment_len;
+                };
+                // End of range
+                if last_chunk_in_range_removed {
+                    if let Some(current_segment_len) = self.len_vec.get(i) {
+                        let current_segment_len = *current_segment_len;
+                        if current_segment_value == value {
+                            self.len_vec.remove(i);
+                            self.len_vec[i - 1] += current_segment_len;
+                        }
                     }
                 }
                 break;
             } else {
+                // Do not modify segments before the new segment
                 i += 1;
                 current_segment_start_pos = current_segment_end_pos;
                 current_segment_value = !current_segment_value;
@@ -207,7 +215,7 @@ pub mod test {
             start_value: true,
             len_vec: vec![100, 100, 100],
         };
-        c.set(100..150, false);
+        c.set(100..150, true);
         assert_eq!(
             c,
             ContinuousBoolVec {
