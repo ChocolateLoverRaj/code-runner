@@ -322,89 +322,89 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         static_stuff
             .async_keyboard
             .configure_io_apic(io_apic, &LOCAL_APIC, 100);
-    x86_64::instructions::interrupts::enable();
+    // x86_64::instructions::interrupts::enable();
 
-    let translate_virt_to_phys = |virt_addr: VirtAddr| -> PhysAddr {
-        let l4: &PageTable = unsafe { get_active_level_4_table(phys_mem_offset) };
-        let l3_addr = l4[virt_addr.p4_index()].addr();
-        let l3 = unsafe {
-            &*(VirtAddr::new(l3_addr.as_u64() + phys_mem_offset.as_u64()).as_ptr::<PageTable>())
-        };
-        let l2_addr = l3[virt_addr.p3_index()].addr();
-        let l2 = unsafe {
-            &*(VirtAddr::new(l2_addr.as_u64() + phys_mem_offset.as_u64()).as_ptr::<PageTable>())
-        };
-        let l1_addr = l2[virt_addr.p2_index()].addr();
-        let l1 = unsafe {
-            &*(VirtAddr::new(l1_addr.as_u64() + phys_mem_offset.as_u64()).as_ptr::<PageTable>())
-        };
-        let phys_addr = l1[virt_addr.p1_index()].addr() + u64::from(virt_addr.page_offset());
-        phys_addr
-    };
+    // let translate_virt_to_phys = |virt_addr: VirtAddr| -> PhysAddr {
+    //     let l4: &PageTable = unsafe { get_active_level_4_table(phys_mem_offset) };
+    //     let l3_addr = l4[virt_addr.p4_index()].addr();
+    //     let l3 = unsafe {
+    //         &*(VirtAddr::new(l3_addr.as_u64() + phys_mem_offset.as_u64()).as_ptr::<PageTable>())
+    //     };
+    //     let l2_addr = l3[virt_addr.p3_index()].addr();
+    //     let l2 = unsafe {
+    //         &*(VirtAddr::new(l2_addr.as_u64() + phys_mem_offset.as_u64()).as_ptr::<PageTable>())
+    //     };
+    //     let l1_addr = l2[virt_addr.p2_index()].addr();
+    //     let l1 = unsafe {
+    //         &*(VirtAddr::new(l1_addr.as_u64() + phys_mem_offset.as_u64()).as_ptr::<PageTable>())
+    //     };
+    //     let phys_addr = l1[virt_addr.p1_index()].addr() + u64::from(virt_addr.page_offset());
+    //     phys_addr
+    // };
 
-    if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
-        let elf_bytes = unsafe {
-            slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
-        };
-        // jmp_to_elf(elf_bytes).unwrap();
-    }
+    // if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
+    //     let elf_bytes = unsafe {
+    //         slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
+    //     };
+    //     // jmp_to_elf(elf_bytes).unwrap();
+    // }
 
-    let userspace_fn_in_kernel = VirtAddr::from_ptr(userspace_program as *const ());
-    log::info!(
-        "Userspace fn address (in kernel): {:?}",
-        userspace_fn_in_kernel
-    );
-    let userspace_fn_phys = translate_virt_to_phys(userspace_fn_in_kernel);
-    log::info!("Userspace fn phys address: {:?}", userspace_fn_phys);
-    let userspace_fn_frames = {
-        let start_frame = PhysFrame::<Size4KiB>::containing_address(userspace_fn_phys);
-        PhysFrameRange {
-            start: start_frame,
-            // Map 2 in case the fn takes up >1
-            end: start_frame + 20,
-        }
-    };
-    let userspace_fn_in_userspace = unsafe {
-        phys_mapper.map_to_phys(
-            userspace_fn_frames,
-            PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
-        )
-    };
-    log::info!(
-        "Mapped userspace fn to page range: {:?}",
-        userspace_fn_in_userspace
-    );
-    assert_eq!(
-        translate_virt_to_phys(userspace_fn_in_userspace.start.start_address()),
-        userspace_fn_phys.align_down(Size4KiB::SIZE)
-    );
+    // let userspace_fn_in_kernel = VirtAddr::from_ptr(userspace_program as *const ());
+    // log::info!(
+    //     "Userspace fn address (in kernel): {:?}",
+    //     userspace_fn_in_kernel
+    // );
+    // let userspace_fn_phys = translate_virt_to_phys(userspace_fn_in_kernel);
+    // log::info!("Userspace fn phys address: {:?}", userspace_fn_phys);
+    // let userspace_fn_frames = {
+    //     let start_frame = PhysFrame::<Size4KiB>::containing_address(userspace_fn_phys);
+    //     PhysFrameRange {
+    //         start: start_frame,
+    //         // Map 2 in case the fn takes up >1
+    //         end: start_frame + 20,
+    //     }
+    // };
+    // let userspace_fn_in_userspace = unsafe {
+    //     phys_mapper.map_to_phys(
+    //         userspace_fn_frames,
+    //         PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+    //     )
+    // };
+    // log::info!(
+    //     "Mapped userspace fn to page range: {:?}",
+    //     userspace_fn_in_userspace
+    // );
+    // assert_eq!(
+    //     translate_virt_to_phys(userspace_fn_in_userspace.start.start_address()),
+    //     userspace_fn_phys.align_down(Size4KiB::SIZE)
+    // );
 
-    let stack_size = 0x1000;
-    let stack_space_virt = VirtAddr::from_ptr(unsafe {
-        alloc(Layout::from_size_align(stack_size, Size4KiB::SIZE as usize).unwrap())
-    });
-    let stack_space_phys = translate_virt_to_phys(stack_space_virt);
-    log::info!("mapping to phys range");
-    let stack_in_userspace = unsafe {
-        phys_mapper.map_to_phys(
-            PhysFrameRange {
-                start: PhysFrame::from_start_address(stack_space_phys).unwrap(),
-                end: PhysFrame::containing_address(stack_space_phys + stack_size as u64) + 1,
-            },
-            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE,
-        )
-    };
-    log::info!(
-        "Mapped userspace stack to page range: {:?}",
-        stack_in_userspace
-    );
-    assert_eq!(
-        translate_virt_to_phys(stack_in_userspace.start.start_address()),
-        stack_space_phys
-    );
+    // let stack_size = 0x1000;
+    // let stack_space_virt = VirtAddr::from_ptr(unsafe {
+    //     alloc(Layout::from_size_align(stack_size, Size4KiB::SIZE as usize).unwrap())
+    // });
+    // let stack_space_phys = translate_virt_to_phys(stack_space_virt);
+    // log::info!("mapping to phys range");
+    // let stack_in_userspace = unsafe {
+    //     phys_mapper.map_to_phys(
+    //         PhysFrameRange {
+    //             start: PhysFrame::from_start_address(stack_space_phys).unwrap(),
+    //             end: PhysFrame::containing_address(stack_space_phys + stack_size as u64) + 1,
+    //         },
+    //         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE,
+    //     )
+    // };
+    // log::info!(
+    //     "Mapped userspace stack to page range: {:?}",
+    //     stack_in_userspace
+    // );
+    // assert_eq!(
+    //     translate_virt_to_phys(stack_in_userspace.start.start_address()),
+    //     stack_space_phys
+    // );
 
-    let code = userspace_fn_in_userspace.start.start_address()
-        + userspace_fn_in_kernel.page_offset().into();
+    // let code = userspace_fn_in_userspace.start.start_address()
+    //     + userspace_fn_in_kernel.page_offset().into();
 
     // log::info!("Jumping to code address: {:?}", code);
     // unsafe {

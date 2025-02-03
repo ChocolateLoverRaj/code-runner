@@ -15,7 +15,7 @@ use crate::{insert::Insert, remove::Remove};
 #[derive(Debug)]
 pub struct VirtMemTracker {
     starting_addr: VirtAddr,
-    used_addresses: ContinuousBoolVec<heapless::Vec<usize, 1024>>,
+    used_addresses: ContinuousBoolVec<heapless::Vec<usize, 50>>,
 }
 
 impl VirtMemTracker {
@@ -50,7 +50,7 @@ impl VirtMemTracker {
             )?;
             self.used_addresses
                 .set(range_start..range_start + bytes_len, true);
-            Page::from_start_address(VirtAddr::new(range_start as u64)).unwrap()
+            Page::from_start_address(self.starting_addr + range_start as u64).unwrap()
         })
     }
 

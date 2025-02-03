@@ -26,8 +26,9 @@ pub fn find_used_virt_addrs(
 ) {
     // We assume that this function is being called in an increasing way (0..2, 2..4, 10..16), not (10..16, 1..2)
     let mut add_range = |range: Range<VirtAddr>| {
-        virt_mem_tracker.allocate_specific_bytes_unchecked(range);
-        // log::info!("ranges: {:#?}. new range: {:?}", ranges, new_range);
+        if range.start >= VirtAddr::new(FLEXIBLE_VIRT_MEM_START) {
+            virt_mem_tracker.allocate_specific_bytes_unchecked(range);
+        }
     };
     for (l4_index, entry) in l4_page_table.iter().enumerate() {
         match entry.frame() {

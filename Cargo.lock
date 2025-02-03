@@ -238,13 +238,6 @@ dependencies = [
 [[package]]
 name = "bootloader-boot-config"
 version = "0.11.9"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "bootloader-boot-config"
-version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1efd4468bc7632e80a35b231c9694d20abff7bc5367b7dff8ce162d3b145a3dd"
 dependencies = [
@@ -252,11 +245,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "bootloader-boot-config"
+version = "0.11.9"
+source = "git+https://github.com/rust-osdev/bootloader?rev=2419f2f6bcc81839043b1a0b21c65302b34037d1#2419f2f6bcc81839043b1a0b21c65302b34037d1"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "bootloader-x86_64-common"
 version = "0.11.9"
+source = "git+https://github.com/rust-osdev/bootloader?rev=2419f2f6bcc81839043b1a0b21c65302b34037d1#2419f2f6bcc81839043b1a0b21c65302b34037d1"
 dependencies = [
- "bootloader-boot-config 0.11.9",
- "bootloader_api 0.11.9",
+ "bootloader-boot-config 0.11.9 (git+https://github.com/rust-osdev/bootloader?rev=2419f2f6bcc81839043b1a0b21c65302b34037d1)",
+ "bootloader_api 0.11.9 (git+https://github.com/rust-osdev/bootloader?rev=2419f2f6bcc81839043b1a0b21c65302b34037d1)",
  "conquer-once 0.3.2",
  "log",
  "noto-sans-mono-bitmap",
@@ -273,12 +275,13 @@ dependencies = [
 [[package]]
 name = "bootloader_api"
 version = "0.11.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57a08a674787a3711ea0ba3bd730e6ffeb74832dcf6c51caf553528b33b54f73"
 
 [[package]]
 name = "bootloader_api"
 version = "0.11.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57a08a674787a3711ea0ba3bd730e6ffeb74832dcf6c51caf553528b33b54f73"
+source = "git+https://github.com/rust-osdev/bootloader?rev=2419f2f6bcc81839043b1a0b21c65302b34037d1#2419f2f6bcc81839043b1a0b21c65302b34037d1"
 
 [[package]]
 name = "byteorder"
@@ -1763,6 +1766,7 @@ dependencies = [
 [[package]]
 name = "x2apic"
 version = "0.4.3"
+source = "git+https://github.com/ChocolateLoverRaj/x2apic-rs?rev=e275e7aaa9341b185ddd9f10bbce77c53862a618#e275e7aaa9341b185ddd9f10bbce77c53862a618"
 dependencies = [
  "bit",
  "bitflags 1.3.2",
@@ -1798,6 +1802,7 @@ dependencies = [
 [[package]]
 name = "x86_rtc"
 version = "0.1.1"
+source = "git+https://github.com/ChocolateLoverRaj/x86_rtc?rev=ee80ee63fc2eacb55727493be435eee472e3279f#ee80ee63fc2eacb55727493be435eee472e3279f"
 dependencies = [
  "cfg-if",
  "range_check",
