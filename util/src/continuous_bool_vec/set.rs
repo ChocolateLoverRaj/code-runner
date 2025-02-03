@@ -200,4 +200,20 @@ pub mod test {
             }
         )
     }
+
+    #[test]
+    fn realistic() {
+        let mut c = ContinuousBoolVec {
+            start_value: true,
+            len_vec: vec![100, 100, 100],
+        };
+        c.set(100..150, false);
+        assert_eq!(
+            c,
+            ContinuousBoolVec {
+                start_value: true,
+                len_vec: vec![150, 50, 100]
+            }
+        )
+    }
 }
