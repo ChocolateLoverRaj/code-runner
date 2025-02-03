@@ -66,7 +66,7 @@ impl<T: Debug + DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> Cont
                         increased_by
                     }
                 };
-                // panic!("Range: {range:?}. Increased by: {increased_by}. I: {i}");
+                // panic!("Range: {range:?}. Increased by: {increased_by}. I: {i}. self: {self:#?}");
                 // Middle of range
                 let last_chunk_in_range_removed = loop {
                     let current_segment_len = self.len_vec[i];
@@ -74,9 +74,10 @@ impl<T: Debug + DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> Cont
                     self.len_vec[i] -= decrease_by;
                     let chunk_removed = if self.len_vec[i] == 0 {
                         self.len_vec.remove(i);
+                        current_segment_value = !current_segment_value;
                         true
                     } else {
-                        i += 1;
+                        // i += 1;
                         false
                     };
                     increased_by -= decrease_by;
@@ -85,14 +86,18 @@ impl<T: Debug + DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> Cont
                     }
                 };
                 // End of range
-                if last_chunk_in_range_removed {
+                if last_chunk_in_range_removed || true {
                     if let Some(current_segment_len) = self.len_vec.get(i) {
                         let current_segment_len = *current_segment_len;
                         if current_segment_value == value {
+                            // panic!("Merge with last. i: {i}. current_segment_len: {current_segment_len}");
+                            // Merge with last
                             self.len_vec.remove(i);
                             self.len_vec[i - 1] += current_segment_len;
                         }
                     }
+                } else {
+                    panic!("not last removed; {self:#?}");
                 }
                 break;
             } else {
@@ -221,6 +226,48 @@ pub mod test {
             ContinuousBoolVec {
                 start_value: true,
                 len_vec: vec![150, 50, 100]
+            }
+        )
+    }
+
+    #[test]
+    fn realistic_deallocate() {
+        let mut c = ContinuousBoolVec {
+            start_value: true,
+            len_vec: vec![
+                671744,
+                549755146240,
+                81920,
+                549755727872,
+                4096000,
+                549751717888,
+                8192,
+                549755805696,
+                4294967296,
+                545460846592,
+                4096,
+                137988709281791,
+            ],
+        };
+        c.set(667648..671744, false);
+        assert_eq!(
+            c,
+            ContinuousBoolVec {
+                start_value: true,
+                len_vec: vec![
+                    667648,
+                    549755150336,
+                    81920,
+                    549755727872,
+                    4096000,
+                    549751717888,
+                    8192,
+                    549755805696,
+                    4294967296,
+                    545460846592,
+                    4096,
+                    137988709281791,
+                ],
             }
         )
     }

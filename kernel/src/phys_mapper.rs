@@ -45,10 +45,10 @@ impl PhysMapper {
         flags: PageTableFlags,
     ) -> PageRange {
         let page_count = phys_frame_range.end - phys_frame_range.start;
-        log::info!(
-            "Page count: {page_count}. Tracker: {:#?}",
-            self.virt_mem_tracker.lock()
-        );
+        // log::info!(
+        //     "Page count: {page_count}. Tracker: {:#?}",
+        //     self.virt_mem_tracker.lock()
+        // );
         let start_page = self
             .virt_mem_tracker
             .lock()

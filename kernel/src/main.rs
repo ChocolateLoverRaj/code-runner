@@ -299,6 +299,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         )
     }
     .expect("Error getting ACPI tables");
+    log::info!("Got ACPI tables");
     let apic = get_apic(&acpi_tables).unwrap();
     let local_apic = get_local_apic(
         &apic,
