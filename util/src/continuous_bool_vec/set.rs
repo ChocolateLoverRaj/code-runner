@@ -35,6 +35,7 @@ impl<T: Debug + DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> Cont
                         let extend_by = extend_by as usize;
                         self.len_vec[i] += extend_by;
                         i += 1;
+                        current_segment_value = !current_segment_value;
                         extend_by
                     }
                 } else {
@@ -68,36 +69,28 @@ impl<T: Debug + DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> Cont
                 };
                 // panic!("Range: {range:?}. Increased by: {increased_by}. I: {i}. self: {self:#?}");
                 // Middle of range
-                let last_chunk_in_range_removed = loop {
+                loop {
                     let current_segment_len = self.len_vec[i];
                     let decrease_by = current_segment_len.min(increased_by);
                     self.len_vec[i] -= decrease_by;
-                    let chunk_removed = if self.len_vec[i] == 0 {
+                    if self.len_vec[i] == 0 {
                         self.len_vec.remove(i);
                         current_segment_value = !current_segment_value;
-                        true
-                    } else {
-                        // i += 1;
-                        false
-                    };
+                    }
                     increased_by -= decrease_by;
                     if increased_by == 0 {
-                        break chunk_removed;
+                        break;
                     }
-                };
+                }
                 // End of range
-                if last_chunk_in_range_removed || true {
-                    if let Some(current_segment_len) = self.len_vec.get(i) {
-                        let current_segment_len = *current_segment_len;
-                        if current_segment_value == value {
-                            // panic!("Merge with last. i: {i}. current_segment_len: {current_segment_len}");
-                            // Merge with last
-                            self.len_vec.remove(i);
-                            self.len_vec[i - 1] += current_segment_len;
-                        }
+                if let Some(current_segment_len) = self.len_vec.get(i) {
+                    let current_segment_len = *current_segment_len;
+                    if current_segment_value == value {
+                        // panic!("Merge with last. i: {i}. current_segment_len: {current_segment_len}");
+                        // Merge with last
+                        self.len_vec.remove(i);
+                        self.len_vec[i - 1] += current_segment_len;
                     }
-                } else {
-                    panic!("not last removed; {self:#?}");
                 }
                 break;
             } else {
@@ -193,7 +186,7 @@ pub mod test {
             c,
             ContinuousBoolVec {
                 start_value: false,
-                len_vec: vec![50, 300, 50]
+                len_vec: vec![50, 350]
             }
         )
     }

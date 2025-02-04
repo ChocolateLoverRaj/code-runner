@@ -67,6 +67,8 @@ use demo_maze_roller_game::demo_maze_roller_game;
 use draw_rust::draw_rust;
 use elf::{endian::NativeEndian, ElfBytes};
 use enter_user_mode::enter_user_mode;
+use execute_future::execute_future;
+use futures_util::FutureExt;
 use hlt_loop::hlt_loop;
 use init_syscalls::init_syscalls;
 use jmp_to_elf::{jmp_to_elf, FLEXIBLE_VIRT_MEM_START};
@@ -145,25 +147,23 @@ static GDT: OnceCell<Gdt> = OnceCell::uninit();
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let mut frame_buffer = boot_info.framebuffer.as_mut();
-    // let frame_buffer_for_drawing = frame_buffer.take().unwrap();
+    let frame_buffer_for_drawing = frame_buffer.take().unwrap();
     init_logger_with_framebuffer(frame_buffer);
     log::info!(
         "Ramdisk len: {:?}. Ramdisk addr: {:?}",
         boot_info.ramdisk_len,
         boot_info.ramdisk_addr
     );
-    log::info!("Try getting and initting");
     let static_stuff = STATIC_STUFF
         .try_get_or_init(|| {
-            log::info!("here");
             let mut tss = TssBuilder::new();
-            log::info!("here");
             let mut idt_builder = IdtBuilder::new();
-            log::info!("here");
-            let entry = get_double_fault_entry(&mut tss, panicking_double_fault_handler);
-            log::info!("got entry");
-            idt_builder.set_double_fault_entry(entry).unwrap();
-            log::info!("here");
+            idt_builder
+                .set_double_fault_entry(get_double_fault_entry(
+                    &mut tss,
+                    panicking_double_fault_handler,
+                ))
+                .unwrap();
             idt_builder
                 .set_breakpoint_entry({
                     let mut entry = idt::Entry::<HandlerFunc>::missing();
@@ -299,7 +299,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         )
     }
     .expect("Error getting ACPI tables");
-    log::info!("Got ACPI tables");
     let apic = get_apic(&acpi_tables).unwrap();
     let local_apic = get_local_apic(
         &apic,
@@ -323,7 +322,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         static_stuff
             .async_keyboard
             .configure_io_apic(io_apic, &LOCAL_APIC, 100);
-    // x86_64::instructions::interrupts::enable();
+    x86_64::instructions::interrupts::enable();
 
     // let translate_virt_to_phys = |virt_addr: VirtAddr| -> PhysAddr {
     //     let l4: &PageTable = unsafe { get_active_level_4_table(phys_mem_offset) };
@@ -415,6 +414,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     //         stack_in_userspace.start.start_address() + stack_size as u64,
     //     )
     // };
+    execute_future(
+        async move {
+            // demo_async(&mut async_keyboard, &mut async_rtc).await;
+            // demo_async_keyboard_drop(&mut async_keyboard).await;
+            // demo_asyc_rtc_drop(&mut async_rtc).await;
+            // demo_maze_roller_game(frame_buffer_for_drawing, &mut async_keyboard).await;
+        }
+        .boxed_local(),
+    );
 
     log::info!("It did not crash");
 

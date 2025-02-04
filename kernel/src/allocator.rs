@@ -35,11 +35,11 @@ pub fn init_heap(
         &mut virt_mem_tracker,
     );
     let page_count = (HEAP_SIZE as u64).div_ceil(Size4KiB::SIZE);
-    log::info!(
-        "Virt mem tracker: {:#?}. Page count: {}",
-        virt_mem_tracker,
-        page_count
-    );
+    // log::info!(
+    //     "Virt mem tracker: {:#?}. Page count: {}",
+    //     virt_mem_tracker,
+    //     page_count
+    // );
     let heap_start = virt_mem_tracker
         .allocate_pages::<Size4KiB>(page_count)
         .ok_or(())?;

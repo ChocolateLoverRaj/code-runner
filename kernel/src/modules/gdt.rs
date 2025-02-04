@@ -1,4 +1,3 @@
-use log::info;
 use x86_64::instructions::tables::load_tss;
 use x86_64::registers::segmentation::{Segment, CS, DS, ES, FS, GS, SS};
 use x86_64::structures::tss::TaskStateSegment;
@@ -25,19 +24,19 @@ impl Gdt {
         let user_code_selector = gdt.append(Descriptor::user_code_segment());
         let user_data_selector = gdt.append(Descriptor::user_data_segment());
 
-        info!(
-            "kernel code: {:?} {:?}\nkernel data: {:?} {:?}\nuser code: {:?} {:?}\nuser data: {:?} {:?}\nTSS: {:?} {:?}",
-            kernel_code_selector,
-            kernel_code_selector.0,
-            kernel_data_selector,
-            kernel_data_selector.0,
-            user_code_selector,
-            user_code_selector.0,
-            user_data_selector,
-            user_data_selector.0,
-            tss_selector,
-            tss_selector.0
-        );
+        // info!(
+        //     "kernel code: {:?} {:?}\nkernel data: {:?} {:?}\nuser code: {:?} {:?}\nuser data: {:?} {:?}\nTSS: {:?} {:?}",
+        //     kernel_code_selector,
+        //     kernel_code_selector.0,
+        //     kernel_data_selector,
+        //     kernel_data_selector.0,
+        //     user_code_selector,
+        //     user_code_selector.0,
+        //     user_data_selector,
+        //     user_data_selector.0,
+        //     tss_selector,
+        //     tss_selector.0
+        // );
 
         Self {
             gdt,

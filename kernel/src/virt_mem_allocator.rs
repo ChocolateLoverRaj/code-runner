@@ -48,10 +48,10 @@ impl VirtMemTracker {
                 bytes_len,
                 S::SIZE as usize,
             )?;
-            log::info!("Before set: {:#?}", self.used_addresses);
+            // log::info!("Before set: {:#?}", self.used_addresses);
             self.used_addresses
                 .set(range_start..range_start + bytes_len, true);
-            log::info!("After set: {:#?}", self.used_addresses);
+            // log::info!("After set: {:#?}", self.used_addresses);
             Page::from_start_address(self.starting_addr + range_start as u64).unwrap()
         })
     }
@@ -82,13 +82,13 @@ impl VirtMemTracker {
     pub fn deallocate_bytes_unchecked(&mut self, range: Range<VirtAddr>) {
         let range_to_set =
             (range.start - self.starting_addr) as usize..(range.end - self.starting_addr) as usize;
-        log::info!(
-            "[deallocate] deallocating: {:?} before set: {:#?}",
-            range_to_set,
-            self.used_addresses
-        );
+        // log::info!(
+        //     "[deallocate] deallocating: {:?} before set: {:#?}",
+        //     range_to_set,
+        //     self.used_addresses
+        // );
         self.used_addresses.set(range_to_set, false);
-        log::info!("[deallocate] after set: {:#?}", self.used_addresses);
+        // log::info!("[deallocate] after set: {:#?}", self.used_addresses);
     }
 
     pub fn deallocate_pages_unchecked<S: PageSize>(&mut self, pages: Range<Page<S>>) {
