@@ -41,7 +41,7 @@ extern "C" fn _start() {
 }
 
 #[panic_handler]
-fn panic(panic_info: &PanicInfo) -> ! {
+fn panic(_panic_info: &PanicInfo) -> ! {
     unsafe {
         asm!("ud2");
         loop {}

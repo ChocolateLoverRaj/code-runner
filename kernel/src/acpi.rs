@@ -3,6 +3,9 @@ use anyhow::{anyhow, Context};
 
 use crate::phys_mapper::PhysMapper;
 
+#[allow(clippy::result_unit_err)]
+/// # Safety
+/// RSDP address must be valid
 pub unsafe fn init(
     rsdp_addr: usize,
     phys_mapper: PhysMapper,

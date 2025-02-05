@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use linked_list_allocator::LockedHeap;
 use x86_64::{
     structures::paging::{
@@ -17,10 +16,9 @@ pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-const N: usize = 512;
-
 type AllocatorPageSize = Size4KiB;
 
+#[allow(clippy::result_unit_err)]
 pub fn init_heap(
     mapper: &mut OffsetPageTable<'static>,
     frame_allocator: &mut impl FrameAllocator<AllocatorPageSize>,

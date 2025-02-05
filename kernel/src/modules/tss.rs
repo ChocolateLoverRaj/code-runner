@@ -6,15 +6,17 @@ pub struct TssBuilder {
     tss: TaskStateSegment,
 }
 
-impl TssBuilder {
-    pub fn new() -> Self {
+impl Default for TssBuilder {
+    fn default() -> Self {
         Self {
             used_interrupt_stack_table_entries: 0,
             used_privelage_stack_table_entries: 0,
             tss: TaskStateSegment::new(),
         }
     }
+}
 
+impl TssBuilder {
     /// Returns `None` if all entries are used
     pub fn add_interrupt_stack_table_entry(&mut self, address: VirtAddr) -> Option<usize> {
         // The interrupt stack table has 7 slots

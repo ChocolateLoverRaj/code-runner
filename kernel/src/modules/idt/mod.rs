@@ -1,7 +1,5 @@
 mod disable_pic8259;
 
-use core::u8;
-
 use disable_pic8259::disable_pic8259;
 use x86_64::structures::idt::{
     self, DivergingHandlerFuncWithErrCode, HandlerFunc, HandlerFuncWithErrCode,
@@ -25,8 +23,8 @@ pub struct IdtBuilder {
     used_flexible_entries: [bool; MAX_FLEXIBLE_ENTRIES as usize],
 }
 
-impl IdtBuilder {
-    pub fn new() -> Self {
+impl Default for IdtBuilder {
+    fn default() -> Self {
         Self {
             idt: InterruptDescriptorTable::new(),
             set_double_fault_entry: false,
@@ -41,7 +39,10 @@ impl IdtBuilder {
             used_flexible_entries: [false; MAX_FLEXIBLE_ENTRIES as usize],
         }
     }
+}
 
+impl IdtBuilder {
+    #[allow(clippy::result_unit_err)]
     pub fn set_double_fault_entry(
         &mut self,
         entry: idt::Entry<DivergingHandlerFuncWithErrCode>,
@@ -55,6 +56,7 @@ impl IdtBuilder {
         }
     }
 
+    #[allow(clippy::result_unit_err)]
     pub fn set_breakpoint_entry(&mut self, entry: idt::Entry<HandlerFunc>) -> Result<(), ()> {
         if !self.set_breakpoint_entry {
             self.idt.breakpoint = entry;
@@ -65,6 +67,7 @@ impl IdtBuilder {
         }
     }
 
+    #[allow(clippy::result_unit_err)]
     pub fn set_general_protection_fault_entry(
         &mut self,
         entry: idt::Entry<HandlerFuncWithErrCode>,
@@ -78,6 +81,7 @@ impl IdtBuilder {
         }
     }
 
+    #[allow(clippy::result_unit_err)]
     pub fn set_page_fault_entry(
         &mut self,
         entry: idt::Entry<PageFaultHandlerFunc>,
@@ -91,6 +95,7 @@ impl IdtBuilder {
         }
     }
 
+    #[allow(clippy::result_unit_err)]
     pub fn set_invalid_tss_fault_entry(
         &mut self,
         entry: idt::Entry<HandlerFuncWithErrCode>,
@@ -104,6 +109,7 @@ impl IdtBuilder {
         }
     }
 
+    #[allow(clippy::result_unit_err)]
     pub fn set_security_exception_fault_entry(
         &mut self,
         entry: idt::Entry<HandlerFuncWithErrCode>,
@@ -117,6 +123,7 @@ impl IdtBuilder {
         }
     }
 
+    #[allow(clippy::result_unit_err)]
     pub fn set_segment_not_present_entry(
         &mut self,
         entry: idt::Entry<HandlerFuncWithErrCode>,
@@ -130,6 +137,7 @@ impl IdtBuilder {
         }
     }
 
+    #[allow(clippy::result_unit_err)]
     pub fn set_invalid_opcode_entry(&mut self, entry: idt::Entry<HandlerFunc>) -> Result<(), ()> {
         if !self.set_invalid_opcode_entry {
             self.idt.invalid_opcode = entry;
@@ -140,6 +148,7 @@ impl IdtBuilder {
         }
     }
 
+    #[allow(clippy::result_unit_err)]
     pub fn set_stack_segment_fault_entry(
         &mut self,
         entry: idt::Entry<HandlerFuncWithErrCode>,
@@ -164,6 +173,7 @@ impl IdtBuilder {
         Some(entry_index)
     }
 
+    #[allow(clippy::result_unit_err)]
     /// Set an entry for a specific index, returning `Err` if the index already has an entry set.
     pub fn set_fixed_entry(
         &mut self,

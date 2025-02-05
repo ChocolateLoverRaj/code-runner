@@ -58,7 +58,7 @@ unsafe extern "sysv64" fn syscall_alloc_stack(
         stack_ptr.wrapping_add(TEMP_STACK_SIZE),
     );
     unsafe { dealloc(stack_ptr, layout) };
-    return retval;
+    retval
 }
 
 #[inline(never)]
@@ -67,7 +67,7 @@ extern "sysv64" fn handle_syscall_with_temp_stack(
     arg1: u64,
     arg2: u64,
     arg3: u64,
-    syscall: u64,
+    _syscall: u64,
     temp_stack_base_plus_stack_size: *const u8,
 ) -> u64 {
     let old_stack: *const u8;

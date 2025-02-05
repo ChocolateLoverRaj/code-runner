@@ -1,5 +1,7 @@
 use x86_64::{registers::model_specific::Msr, VirtAddr};
 
+/// # Safety
+/// Sets the syscall handler to a function in this code
 pub unsafe fn init_syscalls(syscall_handler: VirtAddr) {
     // Enable syscall in IA32_EFER
     // https://shell-storm.org/x86doc/SYSCALL.html

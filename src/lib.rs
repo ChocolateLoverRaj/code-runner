@@ -16,15 +16,15 @@ pub fn run_qemu(boot_type: BootType) {
     #[cfg(debug_assertions)]
     {
         let kernel_binary = env!("CARGO_BIN_FILE_KERNEL");
-        let user_space_binary = env!("USERSPACE");
         // create an lldb debug file to make debugging easy
         let content = [
             format!("target create {kernel_binary}"),
             format!("target modules load --file {kernel_binary} --slide 0xFFFF800000000000"),
-            format!("gdb-remote localhost:1234"),
+            "gdb-remote localhost:1234".into(),
         ]
         .join("\n");
         // TODO: Figure out how to debug userspace properly
+        // let user_space_binary = env!("USERSPACE");
         // let content = format!(
         //     r#"
         //         target create {user_space_binary}

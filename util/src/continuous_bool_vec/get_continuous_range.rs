@@ -1,8 +1,4 @@
-use core::{
-    cmp::Ordering,
-    num::NonZeroUsize,
-    ops::{Deref, DerefMut, Range},
-};
+use core::ops::Deref;
 
 use super::ContinuousBoolVec;
 

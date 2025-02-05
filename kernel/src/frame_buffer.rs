@@ -52,7 +52,7 @@ pub struct Display<'f> {
     framebuffer: &'f mut FrameBuffer,
 }
 
-impl<'f> Display<'f> {
+impl Display<'_> {
     pub fn new(framebuffer: &mut FrameBuffer) -> Display {
         Display { framebuffer }
     }
@@ -69,11 +69,11 @@ impl<'f> Display<'f> {
     }
 
     pub fn framebuffer(&self) -> &FrameBuffer {
-        &self.framebuffer
+        self.framebuffer
     }
 }
 
-impl<'f> DrawTarget for Display<'f> {
+impl DrawTarget for Display<'_> {
     type Color = Rgb888;
 
     /// Drawing operations can never fail.
@@ -151,7 +151,7 @@ impl<'f> DrawTarget for Display<'f> {
             PixelFormat::Bgr => {
                 let top_left_pixel_index = {
                     // use stride to calculate pixel offset of target line
-                    let line_offset = area.top_left.y as usize * info.stride as usize;
+                    let line_offset = area.top_left.y as usize * info.stride;
                     // add x position to get the absolute pixel offset in buffer
                     let pixel_offset = line_offset + area.top_left.x as usize;
                     // convert to byte offset
@@ -180,8 +180,8 @@ impl<'f> DrawTarget for Display<'f> {
                 for y in
                     area.top_left.y as usize..area.top_left.y as usize + area.size.height as usize
                 {
-                    let start_index = (y as usize * info.stride + area.top_left.x as usize)
-                        * info.bytes_per_pixel;
+                    let start_index =
+                        (y * info.stride + area.top_left.x as usize) * info.bytes_per_pixel;
                     buffer.copy_within(
                         top_left_pixel_index
                             ..top_left_pixel_index
@@ -206,7 +206,7 @@ impl<'f> DrawTarget for Display<'f> {
     }
 }
 
-impl<'f> OriginDimensions for Display<'f> {
+impl OriginDimensions for Display<'_> {
     fn size(&self) -> Size {
         let info = self.framebuffer.info();
 

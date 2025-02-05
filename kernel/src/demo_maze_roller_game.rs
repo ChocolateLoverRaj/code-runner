@@ -83,6 +83,7 @@ impl Cell {
     }
 
     pub fn can_enter(&self) -> bool {
+        #[allow(clippy::match_like_matches_macro)]
         match self {
             Cell::Wall => false,
             _ => true,
@@ -282,7 +283,7 @@ pub async fn demo_maze_roller_game(
                 };
                 match input {
                     Input::Move(move_direction) => {
-                        let mut attempted_position_to_move_to = current_position.clone();
+                        let mut attempted_position_to_move_to = current_position;
                         let new_position_valid =
                             attempted_position_to_move_to.try_move(move_direction);
                         if new_position_valid
@@ -293,7 +294,7 @@ pub async fn demo_maze_roller_game(
                             current_position = attempted_position_to_move_to;
                             draw_level(&mut display, current_position);
                             break match get_cell(current_position) {
-                                &Cell::End => {
+                                Cell::End => {
                                     Text::with_baseline(
                                         if current_level + 1 < LEVELS.len() {
                                             "Level Complete\nPress R to replay.\nPress Enter to go to next level."
@@ -337,7 +338,7 @@ pub async fn demo_maze_roller_game(
                                         }
                                     }
                                 }
-                                &Cell::Lava => {
+                                Cell::Lava => {
                                     Text::with_baseline(
                                         "YOU DIED!\nPress R to reset level.",
                                         Point::zero(),
@@ -351,9 +352,8 @@ pub async fn demo_maze_roller_game(
                                     .draw(&mut display)
                                     .unwrap();
                                     loop {
-                                        match stream.next().await.unwrap().code {
-                                            KeyCode::R => break,
-                                            _ => {}
+                                        if stream.next().await.unwrap().code == KeyCode::R {
+                                            break;
                                         }
                                     }
                                     current_position = initial_position;

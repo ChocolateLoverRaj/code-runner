@@ -4,7 +4,7 @@ pub struct CombinedLogger<'a, const N: usize> {
     pub loggers: &'a [&'a dyn Log],
 }
 
-impl<'a, const N: usize> Log for CombinedLogger<'a, N> {
+impl<const N: usize> Log for CombinedLogger<'_, N> {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
         self.loggers.iter().any(|logger| logger.enabled(metadata))
     }

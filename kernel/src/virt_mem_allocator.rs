@@ -64,6 +64,7 @@ impl VirtMemTracker {
     }
 
     /// This makes sure that the specific bytes are not in use before allocating
+    #[allow(clippy::result_unit_err)]
     pub fn allocate_specific_bytes_checked(&mut self, range: Range<VirtAddr>) -> Result<(), ()> {
         let range_to_set =
             (range.start - self.starting_addr) as usize..(range.end - self.starting_addr) as usize;

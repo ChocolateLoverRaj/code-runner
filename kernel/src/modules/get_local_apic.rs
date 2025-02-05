@@ -19,8 +19,7 @@ pub fn get_local_apic(
     let local_mapping = unsafe {
         phys_mapper.map_to_phys(
             {
-                let frame =
-                    PhysFrame::containing_address(PhysAddr::new(apic.local_apic_address as u64));
+                let frame = PhysFrame::containing_address(PhysAddr::new(apic.local_apic_address));
                 PhysFrame::range(frame, frame + 1)
             },
             PageTableFlags::PRESENT

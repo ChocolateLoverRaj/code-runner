@@ -8,7 +8,9 @@ use x86_64::{
 
 use crate::phys_mapper::PhysMapper;
 
-pub fn get_io_apic(apic: &Apic<Global>, phys_mapper: &mut PhysMapper) -> IoApic {
+/// # Safety
+/// Calls `IoApic::new`
+pub unsafe fn get_io_apic(apic: &Apic<Global>, phys_mapper: &mut PhysMapper) -> IoApic {
     // Map IO APIC
     // From https://wiki.osdev.org/APIC#IO_APIC_Registers, there are 64 32-bit registers, so 256 bytes need to be mapped to access the IO APIC. We can map a single frame.
     let phys_frame_range = {
@@ -21,6 +23,5 @@ pub fn get_io_apic(apic: &Apic<Global>, phys_mapper: &mut PhysMapper) -> IoApic 
         | PageTableFlags::NO_EXECUTE;
     let io_mapping = unsafe { phys_mapper.map_to_phys(phys_frame_range, flags) };
     let base_addr = io_mapping.start.start_address().as_u64();
-    let io_apic = unsafe { IoApic::new(base_addr) };
-    io_apic
+    unsafe { IoApic::new(base_addr) }
 }

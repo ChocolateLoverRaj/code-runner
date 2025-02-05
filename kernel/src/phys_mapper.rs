@@ -13,10 +13,7 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-use crate::{
-    memory::BootInfoFrameAllocator,
-    virt_mem_allocator::{VirtMemAllocator, VirtMemTracker},
-};
+use crate::{memory::BootInfoFrameAllocator, virt_mem_allocator::VirtMemTracker};
 
 /// Used to "create" a virtual address range that maps to a specified physical address range
 #[derive(Clone, Debug)]
@@ -38,6 +35,7 @@ impl PhysMapper {
         }
     }
 
+    /// # Safety
     /// Don't cause memory leaks by forgetting to unmap it
     pub unsafe fn map_to_phys(
         &self,
@@ -75,6 +73,7 @@ impl PhysMapper {
         page_range
     }
 
+    /// # Safety
     /// Only unmap pages that were mapped by this and are not already unmapped
     pub unsafe fn unmap(&self, page_range: Range<Page>) {
         let mut mapper = self.mapper.lock();

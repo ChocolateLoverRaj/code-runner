@@ -5,6 +5,7 @@ use super::idt::IdtBuilder;
 /// This is not public so it is only used after setting the handler
 const SPURIOUS_INTERRUPT_INDEX: u8 = 0xFF;
 
+#[allow(clippy::result_unit_err)]
 pub fn set_spurious_interrupt_handler(
     idt_builder: &mut IdtBuilder,
     spurious_interrupt_handler: HandlerFunc,

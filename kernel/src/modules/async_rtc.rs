@@ -93,7 +93,7 @@ impl Stream for RtcStream {
     type Item = ();
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        WAKER.register(&cx.waker());
+        WAKER.register(cx.waker());
         match GOT_INTERRUPT.swap(false, Ordering::Relaxed) {
             true => Poll::Ready(Some(())),
             false => Poll::Pending,

@@ -29,6 +29,8 @@ pub fn elf_flags_to_page_table_flags(elf_flags: u32) -> PageTableFlags {
     page_table_flags
 }
 
+/// # Safety
+/// Literally jumps to arbitrary code
 pub unsafe fn jmp_to_elf(
     elf_bytes: &[u8],
     mapper: Arc<spin::Mutex<OffsetPageTable<'static>>>,

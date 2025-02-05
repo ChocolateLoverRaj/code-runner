@@ -6,8 +6,8 @@
 #![feature(naked_functions)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-#[allow(unused)]
-#[macro_use]
+// #[allow(unused)]
+// #[macro_use]
 extern crate alloc;
 
 pub mod acpi;
@@ -50,7 +50,7 @@ pub mod virt_mem_allocator;
 use alloc::sync::Arc;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use conquer_once::noblock::OnceCell;
-use core::{cell::UnsafeCell, ops::DerefMut, panic::PanicInfo, slice};
+use core::{ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
 use demo_async::demo_async;
 #[allow(unused)]
@@ -135,7 +135,7 @@ static GDT: OnceCell<Gdt> = OnceCell::uninit();
 // static IDT: OnceCell<IdtBuilder> = OnceCell::uninit();
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
-    let mut frame_buffer = boot_info.framebuffer.as_mut();
+    let frame_buffer = boot_info.framebuffer.as_mut();
     // let frame_buffer_for_drawing = frame_buffer.take().unwrap();
     init_logger_with_framebuffer(frame_buffer);
     log::info!(
@@ -145,8 +145,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     );
     let static_stuff = STATIC_STUFF
         .try_get_or_init(|| {
-            let mut tss = TssBuilder::new();
-            let mut idt_builder = IdtBuilder::new();
+            let mut tss = TssBuilder::default();
+            let mut idt_builder = IdtBuilder::default();
             idt_builder
                 .set_double_fault_entry(get_double_fault_entry(
                     &mut tss,
@@ -234,12 +234,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
             tss.add_privilege_stack_table_entry({
                 const STACK_SIZE: usize = 0x2000;
-                const PRIV_TSS_STACK: UnsafeCell<[u8; STACK_SIZE]> =
-                    UnsafeCell::new([0; STACK_SIZE]);
+                static mut PRIV_TSS_STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
 
-                let stack_start = VirtAddr::from_ptr(PRIV_TSS_STACK.get());
-                let stack_end = stack_start + STACK_SIZE as u64;
-                stack_end
+                let stack_start = VirtAddr::from_ptr(unsafe {
+                    #[allow(static_mut_refs)]
+                    PRIV_TSS_STACK.as_mut_ptr()
+                });
+                stack_start + STACK_SIZE as u64
             })
             .unwrap();
 
@@ -299,7 +300,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     .unwrap();
     static_local_apic::store(local_apic);
 
-    let mut io_apic = get_io_apic(&apic, &mut phys_mapper.clone());
+    let mut io_apic = unsafe { get_io_apic(&apic, &mut phys_mapper.clone()) };
 
     #[allow(unused)]
     let mut async_rtc = static_stuff

@@ -1,5 +1,4 @@
 use core::{
-    cmp::Ordering,
     fmt::Debug,
     ops::{DerefMut, Range},
 };
@@ -59,12 +58,9 @@ impl<T: Debug + DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> Cont
                         right_part_of_cut_current_segment
                     {
                         self.len_vec.insert(i, right_part_of_cut_current_segment);
-                        i += 1;
-                        current_segment_value = !current_segment_value;
                         break;
                     } else {
-                        let increased_by = range.end - current_segment_end_pos;
-                        increased_by
+                        range.end - current_segment_end_pos
                     }
                 };
                 // panic!("Range: {range:?}. Increased by: {increased_by}. I: {i}. self: {self:#?}");

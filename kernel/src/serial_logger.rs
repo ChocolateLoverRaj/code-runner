@@ -7,6 +7,8 @@ pub struct SerialLogger {
 }
 
 impl SerialLogger {
+    /// # Safety
+    /// Initializes a `SerialPort`
     pub unsafe fn init() -> Self {
         Self {
             serial_port: spin::Mutex::new(unsafe { SerialPort::init() }),
