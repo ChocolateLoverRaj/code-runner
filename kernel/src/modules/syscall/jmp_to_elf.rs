@@ -11,9 +11,13 @@ use x86_64::{
 };
 
 use crate::{
-    enter_user_mode::enter_user_mode, memory::BootInfoFrameAllocator, modules::gdt::Gdt,
+    enter_user_mode::enter_user_mode,
+    memory::BootInfoFrameAllocator,
+    modules::{gdt::Gdt, syscall::init_syscalls::init_syscalls},
     virt_mem_allocator::VirtMemTracker,
 };
+
+use super::handle_syscall::RustSyscallHandler;
 
 pub const KERNEL_VIRT_MEM_START: u64 = 0xFFFF_8000_0000_0000;
 
@@ -30,13 +34,15 @@ pub fn elf_flags_to_page_table_flags(elf_flags: u32) -> PageTableFlags {
 }
 
 /// # Safety
-/// Literally jumps to arbitrary code
+/// Literally jumps to arbitrary code. You are responsible for handling any exceptions from code / invalid code.
 pub unsafe fn jmp_to_elf(
     elf_bytes: &[u8],
     mapper: Arc<spin::Mutex<OffsetPageTable<'static>>>,
     frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
     gdt: &Gdt,
+    syscall_handler: RustSyscallHandler,
 ) -> anyhow::Result<()> {
+    init_syscalls(syscall_handler);
     let elf = ElfBytes::<NativeEndian>::minimal_parse(elf_bytes)?;
     let loadable_segments = elf
         .segments()

@@ -6,8 +6,6 @@
 #![feature(naked_functions)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-// #[allow(unused)]
-// #[macro_use]
 extern crate alloc;
 
 pub mod acpi;
@@ -27,11 +25,8 @@ pub mod execute_future;
 pub mod find_used_virt_addrs;
 pub mod frame_buffer;
 pub mod get_rgb_color;
-pub mod handle_syscall;
 pub mod hlt_loop;
-pub mod init_syscalls;
 pub mod insert;
-pub mod jmp_to_elf;
 pub mod keyboard_interrupt_mutex;
 pub mod logger;
 pub mod logger_without_interrupts;
@@ -62,8 +57,6 @@ use demo_maze_roller_game::demo_maze_roller_game;
 #[allow(unused)]
 use draw_rust::draw_rust;
 use hlt_loop::hlt_loop;
-use init_syscalls::init_syscalls;
-use jmp_to_elf::{jmp_to_elf, KERNEL_VIRT_MEM_START};
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use modules::{
@@ -88,6 +81,7 @@ use modules::{
     panicking_stack_segment_fault_handler::panicking_stack_segment_fault_handler,
     spurious_interrupt_handler::set_spurious_interrupt_handler,
     static_local_apic::{self, LOCAL_APIC},
+    syscall::jmp_to_elf::{jmp_to_elf, KERNEL_VIRT_MEM_START},
     tss::TssBuilder,
 };
 use phys_mapper::PhysMapper;
@@ -258,11 +252,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let gdt = GDT.try_get_or_init(|| Gdt::new(&static_stuff.tss)).unwrap();
     gdt.init();
     static_stuff.idt_builder.init();
-    unsafe {
-        init_syscalls(VirtAddr::from_ptr(
-            handle_syscall::handle_syscall_wrapper as *const (),
-        ));
-    };
 
     let phys_mem_offset = VirtAddr::new(
         *boot_info
@@ -314,109 +303,39 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .configure_io_apic(io_apic, &LOCAL_APIC, 100);
     x86_64::instructions::interrupts::enable();
 
-    // let translate_virt_to_phys = |virt_addr: VirtAddr| -> PhysAddr {
-    //     let l4: &PageTable = unsafe { get_active_level_4_table(phys_mem_offset) };
-    //     let l3_addr = l4[virt_addr.p4_index()].addr();
-    //     let l3 = unsafe {
-    //         &*(VirtAddr::new(l3_addr.as_u64() + phys_mem_offset.as_u64()).as_ptr::<PageTable>())
-    //     };
-    //     let l2_addr = l3[virt_addr.p3_index()].addr();
-    //     let l2 = unsafe {
-    //         &*(VirtAddr::new(l2_addr.as_u64() + phys_mem_offset.as_u64()).as_ptr::<PageTable>())
-    //     };
-    //     let l1_addr = l2[virt_addr.p2_index()].addr();
-    //     let l1 = unsafe {
-    //         &*(VirtAddr::new(l1_addr.as_u64() + phys_mem_offset.as_u64()).as_ptr::<PageTable>())
-    //     };
-    //     let phys_addr = l1[virt_addr.p1_index()].addr() + u64::from(virt_addr.page_offset());
-    //     phys_addr
-    // };
-
     if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
         let elf_bytes = unsafe {
             slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
         };
-        unsafe { jmp_to_elf(elf_bytes, mapper, frame_allocator, gdt).unwrap() };
+        log::info!("Entering ELF as user space");
+        unsafe { jmp_to_elf(elf_bytes, mapper, frame_allocator, gdt, syscall_handler) }.unwrap();
     }
-
-    // let userspace_fn_in_kernel = VirtAddr::from_ptr(userspace_program as *const ());
-    // log::info!(
-    //     "Userspace fn address (in kernel): {:?}",
-    //     userspace_fn_in_kernel
-    // );
-    // let userspace_fn_phys = translate_virt_to_phys(userspace_fn_in_kernel);
-    // log::info!("Userspace fn phys address: {:?}", userspace_fn_phys);
-    // let userspace_fn_frames = {
-    //     let start_frame = PhysFrame::<Size4KiB>::containing_address(userspace_fn_phys);
-    //     PhysFrameRange {
-    //         start: start_frame,
-    //         // Map 2 in case the fn takes up >1
-    //         end: start_frame + 20,
-    //     }
-    // };
-    // let userspace_fn_in_userspace = unsafe {
-    //     phys_mapper.map_to_phys(
-    //         userspace_fn_frames,
-    //         PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
-    //     )
-    // };
-    // log::info!(
-    //     "Mapped userspace fn to page range: {:?}",
-    //     userspace_fn_in_userspace
-    // );
-    // assert_eq!(
-    //     translate_virt_to_phys(userspace_fn_in_userspace.start.start_address()),
-    //     userspace_fn_phys.align_down(Size4KiB::SIZE)
-    // );
-
-    // let stack_size = 0x1000;
-    // let stack_space_virt = VirtAddr::from_ptr(unsafe {
-    //     alloc(Layout::from_size_align(stack_size, Size4KiB::SIZE as usize).unwrap())
-    // });
-    // let stack_space_phys = translate_virt_to_phys(stack_space_virt);
-    // log::info!("mapping to phys range");
-    // let stack_in_userspace = unsafe {
-    //     phys_mapper.map_to_phys(
-    //         PhysFrameRange {
-    //             start: PhysFrame::from_start_address(stack_space_phys).unwrap(),
-    //             end: PhysFrame::containing_address(stack_space_phys + stack_size as u64) + 1,
-    //         },
-    //         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE,
-    //     )
-    // };
-    // log::info!(
-    //     "Mapped userspace stack to page range: {:?}",
-    //     stack_in_userspace
-    // );
-    // assert_eq!(
-    //     translate_virt_to_phys(stack_in_userspace.start.start_address()),
-    //     stack_space_phys
-    // );
-
-    // let code = userspace_fn_in_userspace.start.start_address()
-    //     + userspace_fn_in_kernel.page_offset().into();
-
-    // log::info!("Jumping to code address: {:?}", code);
-    // unsafe {
-    //     enter_user_mode(
-    //         gdt,
-    //         code,
-    //         stack_in_userspace.start.start_address() + stack_size as u64,
-    //     )
-    // };
-    // execute_future(
-    //     async move {
-    //         // demo_async(&mut async_keyboard, &mut async_rtc).await;
-    //         // demo_async_keyboard_drop(&mut async_keyboard).await;
-    //         // demo_asyc_rtc_drop(&mut async_rtc).await;
-    //         // demo_maze_roller_game(frame_buffer_for_drawing, &mut async_keyboard).await;
-    //     }
-    //     .boxed_local(),
-    // );
 
     log::info!("It did not crash");
 
     // draw_rust(frame_buffer_for_drawing);
 
     hlt_loop();
+}
+
+extern "sysv64" fn syscall_handler(
+    arg0: u64,
+    arg1: u64,
+    arg2: u64,
+    arg3: u64,
+    arg4: u64,
+    arg5: u64,
+    arg6: u64,
+) -> u64 {
+    log::info!(
+        "The sys has been called: 0x{:x} 0x{:x} 0x{:x} 0x{:x} 0x{:x} 0x{:x} 0x{:x}",
+        arg0,
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6
+    );
+    0xabcdef
 }
