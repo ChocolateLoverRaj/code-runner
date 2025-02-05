@@ -15,24 +15,34 @@ pub fn run_qemu(boot_type: BootType) {
 
     #[cfg(debug_assertions)]
     {
+        // create lldb debug files to make debugging easy
         let kernel_binary = env!("CARGO_BIN_FILE_KERNEL");
-        // create an lldb debug file to make debugging easy
-        let content = [
-            format!("target create {kernel_binary}"),
-            format!("target modules load --file {kernel_binary} --slide 0xFFFF800000000000"),
-            "gdb-remote localhost:1234".into(),
-        ]
-        .join("\n");
-        // TODO: Figure out how to debug userspace properly
-        // let user_space_binary = env!("USERSPACE");
-        // let content = format!(
-        //     r#"
-        //         target create {user_space_binary}
-        //         target modules load --file {user_space_binary} --slide 0x0
-        //         gdb-remote localhost:1234"#
-        // );
-        std::fs::write("debug.lldb", content).expect("unable to create debug file");
-        println!("debug file is ready, run `lldb -s debug.lldb` to start debugging");
+        let kernel_debug_file = "debug.lldb";
+        std::fs::write(
+            kernel_debug_file,
+            [
+                format!("target create {kernel_binary}"),
+                format!("target modules load --file {kernel_binary} --slide 0xFFFF800000000000"),
+                "gdb-remote localhost:1234".into(),
+            ]
+            .join("\n"),
+        )
+        .expect("unable to create debug file");
+
+        let user_space_binary = env!("USERSPACE");
+        let user_space_debug_file = "debug_userspace.lldb";
+        std::fs::write(
+            user_space_debug_file,
+            [
+                format!("target create {user_space_binary}"),
+                format!("target modules load --file {user_space_binary} --slide 0x0"),
+                "gdb-remote localhost:1234".into(),
+            ]
+            .join("\n"),
+        )
+        .expect("unable to create debug file");
+
+        println!("debug file is ready, run `lldb -s {}` to start debugging the kernel, or `lldb -s {}` to start debugging the user space program.", kernel_debug_file, user_space_debug_file);
     }
 
     let mut qemu = Command::new("qemu-system-x86_64");

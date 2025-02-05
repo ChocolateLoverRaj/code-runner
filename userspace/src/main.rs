@@ -1,42 +1,43 @@
 #![no_std]
 #![no_main]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 use core::{arch::asm, panic::PanicInfo};
 
-#[unsafe(no_mangle)]
-extern "C" fn _start() {
+use x86_64::instructions::nop;
+
+pub fn sycall(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, arg6: u64) -> u64 {
+    let return_value: u64;
     unsafe {
         asm!(
-            "\
-        mov rbx, 0
-        2:
-        push 0x595ca11b // keep the syscall number in the stack
-        mov rbp, 0x100 // distinct values for each register
-        mov rax, 0x101
-        mov rcx, 0x103
-        mov rdx, 0x104
-        mov rdi, 0x106
-        mov r8, 0x107
-        mov r9, 0x108
-        mov r10, 0x109
-        mov r11, 0x110
-        mov r12, 0x111
-        mov r13, 0x112
-        mov r14, 0x113
-        mov r15, 0x114
-        xor rax, rax
-        3:
-        inc rax
-        cmp rax, 0x4000000
-        jnz 3b // loop for some milliseconds
-        pop rax // pop syscall number from the stack
-        inc rbx // increase loop counter
-        mov rdi, rsp // first syscall arg is rsp
-        mov rsi, rbx // second syscall arg is the loop counter
-        syscall // perform the syscall!
-        jmp 2b // do it all over
-    "
-        )
+            "
+            mov rdi, {0}
+            mov rsi, {1}
+            mov rdx, {2}
+            mov r10, {3}
+            mov r8,  {4}
+            mov r9,  {5}
+            mov rax, {6}
+            syscall
+            ",
+            in(reg) arg0,
+            in(reg) arg1,
+            in(reg) arg2,
+            in(reg) arg3,
+            in(reg) arg4,
+            in(reg) arg5,
+            in(reg) arg6,
+            lateout("rax") return_value
+        );
+    }
+    return_value
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn _start() {
+    loop {
+        let a = sycall(0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70);
+        nop();
     }
 }
 
