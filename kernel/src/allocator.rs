@@ -8,7 +8,7 @@ use x86_64::{
 };
 
 use crate::{
-    find_used_virt_addrs::find_used_virt_addrs, jmp_to_elf::FLEXIBLE_VIRT_MEM_START,
+    find_used_virt_addrs::find_used_virt_addrs, jmp_to_elf::KERNEL_VIRT_MEM_START,
     virt_mem_allocator::VirtMemTracker,
 };
 
@@ -26,7 +26,7 @@ pub fn init_heap(
     frame_allocator: &mut impl FrameAllocator<AllocatorPageSize>,
 ) -> Result<VirtMemTracker, ()> {
     let mut virt_mem_tracker = VirtMemTracker::new(
-        VirtAddr::new(FLEXIBLE_VIRT_MEM_START)..VirtAddr::new(0xFFFFFFFFFFFFFFFF),
+        VirtAddr::new(KERNEL_VIRT_MEM_START)..VirtAddr::new(0xFFFFFFFFFFFFFFFF),
     );
     log::info!("Finding used virt addrs");
     find_used_virt_addrs(

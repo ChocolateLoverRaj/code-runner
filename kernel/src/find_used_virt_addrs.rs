@@ -12,7 +12,7 @@ use x86_64::{
 };
 
 use crate::{
-    jmp_to_elf::FLEXIBLE_VIRT_MEM_START,
+    jmp_to_elf::KERNEL_VIRT_MEM_START,
     virt_addr_from_indexes::{
         virt_addr_from_indexes_1_gib, virt_addr_from_indexes_2_mib, virt_addr_from_indexes_4_kib,
     },
@@ -26,7 +26,7 @@ pub fn find_used_virt_addrs(
 ) {
     // We assume that this function is being called in an increasing way (0..2, 2..4, 10..16), not (10..16, 1..2)
     let mut add_range = |range: Range<VirtAddr>| {
-        if range.start >= VirtAddr::new(FLEXIBLE_VIRT_MEM_START) {
+        if range.start >= VirtAddr::new(KERNEL_VIRT_MEM_START) {
             virt_mem_tracker.allocate_specific_bytes_unchecked(range);
         }
     };

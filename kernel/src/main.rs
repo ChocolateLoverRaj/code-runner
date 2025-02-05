@@ -71,7 +71,7 @@ use execute_future::execute_future;
 use futures_util::FutureExt;
 use hlt_loop::hlt_loop;
 use init_syscalls::init_syscalls;
-use jmp_to_elf::{jmp_to_elf, FLEXIBLE_VIRT_MEM_START};
+use jmp_to_elf::{jmp_to_elf, KERNEL_VIRT_MEM_START};
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use memory::get_active_level_4_table;
@@ -123,7 +123,7 @@ pub static BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
     config.mappings.physical_memory = Some(Mapping::Dynamic);
     // Use higher half for kernel to have space in the lower parts for ELFs
-    config.mappings.dynamic_range_start = Some(FLEXIBLE_VIRT_MEM_START);
+    config.mappings.dynamic_range_start = Some(KERNEL_VIRT_MEM_START);
     config
 };
 
@@ -147,7 +147,7 @@ static GDT: OnceCell<Gdt> = OnceCell::uninit();
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let mut frame_buffer = boot_info.framebuffer.as_mut();
-    let frame_buffer_for_drawing = frame_buffer.take().unwrap();
+    // let frame_buffer_for_drawing = frame_buffer.take().unwrap();
     init_logger_with_framebuffer(frame_buffer);
     log::info!(
         "Ramdisk len: {:?}. Ramdisk addr: {:?}",
@@ -291,7 +291,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let mapper = Arc::new(spin::Mutex::new(mapper));
     let virt_mem_tracker = Arc::new(spin::Mutex::new(used_virt_mem_ranges));
     let frame_allocator = Arc::new(spin::Mutex::new(frame_allocator));
-    let phys_mapper = PhysMapper::new(mapper, virt_mem_tracker, frame_allocator);
+    let phys_mapper = PhysMapper::new(mapper.clone(), virt_mem_tracker, frame_allocator.clone());
     let acpi_tables = unsafe {
         acpi::init(
             boot_info.rsdp_addr.take().expect("No rsdp address!") as usize,
@@ -342,12 +342,12 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     //     phys_addr
     // };
 
-    // if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
-    //     let elf_bytes = unsafe {
-    //         slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
-    //     };
-    //     // jmp_to_elf(elf_bytes).unwrap();
-    // }
+    if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
+        let elf_bytes = unsafe {
+            slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
+        };
+        unsafe { jmp_to_elf(elf_bytes, mapper, frame_allocator, gdt).unwrap() };
+    }
 
     // let userspace_fn_in_kernel = VirtAddr::from_ptr(userspace_program as *const ());
     // log::info!(
@@ -414,15 +414,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     //         stack_in_userspace.start.start_address() + stack_size as u64,
     //     )
     // };
-    execute_future(
-        async move {
-            // demo_async(&mut async_keyboard, &mut async_rtc).await;
-            // demo_async_keyboard_drop(&mut async_keyboard).await;
-            // demo_asyc_rtc_drop(&mut async_rtc).await;
-            // demo_maze_roller_game(frame_buffer_for_drawing, &mut async_keyboard).await;
-        }
-        .boxed_local(),
-    );
+    // execute_future(
+    //     async move {
+    //         // demo_async(&mut async_keyboard, &mut async_rtc).await;
+    //         // demo_async_keyboard_drop(&mut async_keyboard).await;
+    //         // demo_asyc_rtc_drop(&mut async_rtc).await;
+    //         // demo_maze_roller_game(frame_buffer_for_drawing, &mut async_keyboard).await;
+    //     }
+    //     .boxed_local(),
+    // );
 
     log::info!("It did not crash");
 
