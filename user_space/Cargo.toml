@@ -9,3 +9,4 @@ x86_64 = "0.15.2"
 [[bin]]
 name = "user_space"
 test = false
+bench = false

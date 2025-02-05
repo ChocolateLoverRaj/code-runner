@@ -27,7 +27,7 @@ pub extern "C" fn handle_syscall_wrapper() {
             // Do the call 
             // Save the stack pointer (`rsp`) to `rbp`
             mov rbp, rsp
-            // Adjust the input
+            // Convert `syscall`s `r10` input to `sysv64`s `rcx` input
             mov rcx, r10
             // After the first 6 inputs, additional inputs go on the stack. So we put `rax` on the stack
             push rax // Move rax to the stack which is where additional inputs go in sysv64
@@ -67,6 +67,10 @@ extern "sysv64" fn handle_syscall_with_temp_stack(
 ) -> u64 {
     let old_stack: *const u8;
     unsafe {
+        let temp_stack = {
+            #[allow(static_mut_refs)]
+            TEMP_STACK.0.as_mut_ptr()
+        };
         asm!("\
             nop
             mov {old_stack}, rsp
@@ -76,7 +80,7 @@ extern "sysv64" fn handle_syscall_with_temp_stack(
             sti // enable interrupts
             nop
             ",
-            temp_stack_base_plus_stack_size = in(reg) TEMP_STACK.0.as_mut_ptr(), old_stack = out(reg) old_stack
+            temp_stack_base_plus_stack_size = in(reg) temp_stack, old_stack = out(reg) old_stack
         );
     }
 

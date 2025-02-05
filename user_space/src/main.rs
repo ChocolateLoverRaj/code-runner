@@ -9,8 +9,7 @@ use x86_64::instructions::nop;
 pub fn sycall(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, arg6: u64) -> u64 {
     let return_value: u64;
     unsafe {
-        asm!(
-            "
+        asm!("\
             mov rdi, {0}
             mov rsi, {1}
             mov rdx, {2}
@@ -36,7 +35,7 @@ pub fn sycall(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, 
 #[unsafe(no_mangle)]
 extern "C" fn _start() {
     loop {
-        let a = sycall(0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70);
+        let _a = sycall(0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70);
         nop();
     }
 }
