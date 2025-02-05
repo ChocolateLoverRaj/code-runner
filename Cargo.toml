@@ -5,14 +5,14 @@ edition = "2021"
 default-run = "qemu-uefi"
 
 [workspace]
-members = ["kernel", "util", "userspace"]
+members = ["kernel", "util", "user_space"]
 
 [dependencies]
 ovmf-prebuilt = "0.1.0-alpha"
 
 [build-dependencies]
 kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
-userspace = { path = "userspace", artifact = "bin", target = "x86_64-unknown-none" }
+user_space = { path = "user_space", artifact = "bin", target = "x86_64-unknown-none" }
 bootloader = "0.11.9"
 
 [patch.crates-io]

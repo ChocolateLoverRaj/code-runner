@@ -11,7 +11,7 @@ pub enum BootType {
 pub fn run_qemu(boot_type: BootType) {
     println!("{}", env!("UEFI_IMAGE"));
     println!("{}", env!("CARGO_BIN_FILE_KERNEL"));
-    println!("{}", env!("USERSPACE"));
+    println!("{}", env!("USER_SPACE"));
 
     #[cfg(debug_assertions)]
     {
@@ -29,7 +29,7 @@ pub fn run_qemu(boot_type: BootType) {
         )
         .expect("unable to create debug file");
 
-        let user_space_binary = env!("USERSPACE");
+        let user_space_binary = env!("USER_SPACE");
         let user_space_debug_file = "debug_userspace.lldb";
         std::fs::write(
             user_space_debug_file,
