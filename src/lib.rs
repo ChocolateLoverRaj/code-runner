@@ -16,12 +16,21 @@ pub fn run_qemu(boot_type: BootType) {
     #[cfg(debug_assertions)]
     {
         let kernel_binary = env!("CARGO_BIN_FILE_KERNEL");
+        let user_space_binary = env!("USERSPACE");
         // create an lldb debug file to make debugging easy
-        let content = format!(
-            r#"target create {kernel_binary}
-                target modules load --file {kernel_binary} --slide 0xFFFF800000000000
-                gdb-remote localhost:1234"#
-        );
+        let content = [
+            format!("target create {kernel_binary}"),
+            format!("target modules load --file {kernel_binary} --slide 0xFFFF800000000000"),
+            format!("gdb-remote localhost:1234"),
+        ]
+        .join("\n");
+        // TODO: Figure out how to debug userspace properly
+        // let content = format!(
+        //     r#"
+        //         target create {user_space_binary}
+        //         target modules load --file {user_space_binary} --slide 0x0
+        //         gdb-remote localhost:1234"#
+        // );
         std::fs::write("debug.lldb", content).expect("unable to create debug file");
         println!("debug file is ready, run `lldb -s debug.lldb` to start debugging");
     }

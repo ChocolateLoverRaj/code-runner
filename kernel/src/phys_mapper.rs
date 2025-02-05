@@ -59,15 +59,16 @@ impl PhysMapper {
         let mut flush = None;
         for page_index in 0..page_count {
             flush = Some(
-                mapper
-                    .map_to(
+                unsafe {
+                    mapper.map_to(
                         page_range.clone().nth(page_index as usize).unwrap(),
                         phys_frame_range.clone().nth(page_index as usize).unwrap(),
                         // Use the same flags as devos - https://github.com/tsatke/devos/blob/cf9d2ff1ca1ca973372e6dd15a3ad8a589adf73e/kernel/src/driver/acpi.rs#L85
                         flags,
                         self.frame_allocator.lock().deref_mut(),
                     )
-                    .expect("Error mapping frame"),
+                }
+                .expect("Error mapping frame"),
             );
         }
         flush.unwrap().flush();
@@ -100,25 +101,29 @@ impl AcpiHandler for PhysMapper {
             ));
             PhysFrame::range(start_frame, end_frame + 1)
         };
-        let page_range = self.map_to_phys(
-            frame_range,
-            PageTableFlags::PRESENT
-                | PageTableFlags::WRITABLE
-                | PageTableFlags::NO_CACHE
-                | PageTableFlags::WRITE_THROUGH,
-        );
-        log::debug!("AcpiHandler map: {page_range:?} pointing to {frame_range:?}");
-        acpi::PhysicalMapping::new(
-            physical_address,
-            NonNull::new(
-                (page_range.start.start_address() + physical_address as u64 % Size4KiB::SIZE)
-                    .as_mut_ptr::<T>(),
+        let page_range = unsafe {
+            self.map_to_phys(
+                frame_range,
+                PageTableFlags::PRESENT
+                    | PageTableFlags::WRITABLE
+                    | PageTableFlags::NO_CACHE
+                    | PageTableFlags::WRITE_THROUGH,
             )
-            .unwrap(), //page must exist
-            size,
-            (Size4KiB::SIZE * (page_range.end - page_range.start)) as usize,
-            self.clone(),
-        )
+        };
+        log::debug!("AcpiHandler map: {page_range:?} pointing to {frame_range:?}");
+        unsafe {
+            acpi::PhysicalMapping::new(
+                physical_address,
+                NonNull::new(
+                    (page_range.start.start_address() + physical_address as u64 % Size4KiB::SIZE)
+                        .as_mut_ptr::<T>(),
+                )
+                .unwrap(), //page must exist
+                size,
+                (Size4KiB::SIZE * (page_range.end - page_range.start)) as usize,
+                self.clone(),
+            )
+        }
     }
 
     fn unmap_physical_region<T>(region: &acpi::PhysicalMapping<Self, T>) {

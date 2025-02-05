@@ -9,7 +9,7 @@ pub struct SerialLogger {
 impl SerialLogger {
     pub unsafe fn init() -> Self {
         Self {
-            serial_port: spin::Mutex::new(SerialPort::init()),
+            serial_port: spin::Mutex::new(unsafe { SerialPort::init() }),
         }
     }
 }

@@ -48,11 +48,11 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
 
 unsafe fn enable_interrupts(io_apic: &mut IoApic) {
     log::debug!("Enabling keyboard interrupts");
-    io_apic.enable_irq(Pic8259Interrupts::Keyboard.into())
+    unsafe { io_apic.enable_irq(Pic8259Interrupts::Keyboard.into()) }
 }
 unsafe fn disable_interrupts(io_apic: &mut IoApic) {
     log::debug!("Disabling keyboard interrupts");
-    io_apic.disable_irq(Pic8259Interrupts::Keyboard.into())
+    unsafe { io_apic.disable_irq(Pic8259Interrupts::Keyboard.into()) }
 }
 
 pub struct AsyncKeyboardBuilder {

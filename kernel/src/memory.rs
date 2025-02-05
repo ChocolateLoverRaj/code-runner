@@ -11,8 +11,8 @@ use x86_64::{
 /// `physical_memory_offset`. Also, this function must be only called once
 /// to avoid aliasing `&mut` references (which is undefined behavior).
 pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
-    let level_4_table = get_active_level_4_table(physical_memory_offset);
-    OffsetPageTable::new(level_4_table, physical_memory_offset)
+    let level_4_table = unsafe { get_active_level_4_table(physical_memory_offset) };
+    unsafe { OffsetPageTable::new(level_4_table, physical_memory_offset) }
 }
 
 /// Returns a mutable reference to the active level 4 table.
@@ -30,7 +30,7 @@ pub unsafe fn get_active_level_4_table(physical_memory_offset: VirtAddr) -> &'st
     let virt = physical_memory_offset + phys.as_u64();
     let page_table_ptr: *mut PageTable = virt.as_mut_ptr();
 
-    &mut *page_table_ptr // unsafe
+    unsafe { &mut *page_table_ptr }
 }
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.

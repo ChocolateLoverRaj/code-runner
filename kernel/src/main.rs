@@ -4,7 +4,7 @@
 #![feature(allocator_api)]
 #![feature(int_roundings)]
 #![feature(naked_functions)]
-#![feature(str_from_raw_parts)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 #[allow(unused)]
 #[macro_use]
@@ -44,17 +44,13 @@ pub mod serial_logger;
 pub mod set_color;
 pub mod split_draw_target;
 pub mod stream_with_initial;
-pub mod userspace_program;
 pub mod virt_addr_from_indexes;
 pub mod virt_mem_allocator;
 
-use alloc::{alloc::alloc, sync::Arc, vec::Vec};
+use alloc::sync::Arc;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use conquer_once::noblock::OnceCell;
-use core::{
-    alloc::Layout, cell::UnsafeCell, ops::DerefMut, panic::PanicInfo, slice, str,
-    sync::atomic::Ordering,
-};
+use core::{cell::UnsafeCell, ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
 use demo_async::demo_async;
 #[allow(unused)]
@@ -65,16 +61,11 @@ use demo_async_rtc_drop::demo_asyc_rtc_drop;
 use demo_maze_roller_game::demo_maze_roller_game;
 #[allow(unused)]
 use draw_rust::draw_rust;
-use elf::{endian::NativeEndian, ElfBytes};
-use enter_user_mode::enter_user_mode;
-use execute_future::execute_future;
-use futures_util::FutureExt;
 use hlt_loop::hlt_loop;
 use init_syscalls::init_syscalls;
 use jmp_to_elf::{jmp_to_elf, KERNEL_VIRT_MEM_START};
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
-use memory::get_active_level_4_table;
 use modules::{
     async_keyboard::AsyncKeyboardBuilder,
     async_rtc::AsyncRtcBuilder,
@@ -101,14 +92,12 @@ use modules::{
 };
 use phys_mapper::PhysMapper;
 use spin::Mutex;
-use userspace_program::userspace_program;
 use x86_64::{
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
-        paging::{frame::PhysFrameRange, PageSize, PageTable, PageTableFlags, PhysFrame, Size4KiB},
         tss::TaskStateSegment,
     },
-    PhysAddr, VirtAddr,
+    VirtAddr,
 };
 
 /// This function is called on panic.

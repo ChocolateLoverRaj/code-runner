@@ -38,7 +38,6 @@ pub extern "C" fn handle_syscall_wrapper() {
 }
 
 // allocate a temp stack and call the syscall handler
-//  extern "sysv64"
 unsafe extern "sysv64" fn syscall_alloc_stack(
     arg0: u64,
     arg1: u64,
@@ -48,16 +47,17 @@ unsafe extern "sysv64" fn syscall_alloc_stack(
 ) -> u64 {
     const TEMP_STACK_SIZE: usize = 0x10000;
     let layout = Layout::from_size_align(TEMP_STACK_SIZE, 16).unwrap();
-    let stack_ptr = alloc(layout);
+    // FIXME: Maybe don't put the allocator's stack on the userspace stack
+    let stack_ptr = unsafe { alloc(layout) };
     let retval = handle_syscall_with_temp_stack(
         arg0,
         arg1,
         arg2,
         arg3,
         syscall,
-        stack_ptr.add(TEMP_STACK_SIZE),
+        stack_ptr.wrapping_add(TEMP_STACK_SIZE),
     );
-    dealloc(stack_ptr, layout);
+    unsafe { dealloc(stack_ptr, layout) };
     return retval;
 }
 
