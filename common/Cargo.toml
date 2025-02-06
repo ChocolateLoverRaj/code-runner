@@ -1,0 +1,9 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytemuck = { version = "1.21.0", default-features = false }
+postcard = { version = "1.1.1", features = ["experimental-derive"] }
+serde = { version = "1.0.217", features = ["derive"], default-features = false }

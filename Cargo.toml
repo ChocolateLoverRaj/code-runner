@@ -5,7 +5,7 @@ edition = "2021"
 default-run = "qemu-uefi"
 
 [workspace]
-members = ["kernel", "util", "user_space"]
+members = ["kernel", "util", "user_space", "common"]
 
 [dependencies]
 ovmf-prebuilt = "0.1.0-alpha"

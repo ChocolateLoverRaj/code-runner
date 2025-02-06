@@ -39,6 +39,7 @@ pub mod serial_logger;
 pub mod set_color;
 pub mod split_draw_target;
 pub mod stream_with_initial;
+pub mod syscall_handler;
 pub mod virt_addr_from_indexes;
 pub mod virt_mem_allocator;
 
@@ -86,6 +87,7 @@ use modules::{
 };
 use phys_mapper::PhysMapper;
 use spin::Mutex;
+use syscall_handler::syscall_handler;
 use x86_64::{
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
@@ -316,26 +318,4 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // draw_rust(frame_buffer_for_drawing);
 
     hlt_loop();
-}
-
-extern "sysv64" fn syscall_handler(
-    arg0: u64,
-    arg1: u64,
-    arg2: u64,
-    arg3: u64,
-    arg4: u64,
-    arg5: u64,
-    arg6: u64,
-) -> u64 {
-    log::info!(
-        "The sys has been called: 0x{:x} 0x{:x} 0x{:x} 0x{:x} 0x{:x} 0x{:x} 0x{:x}",
-        arg0,
-        arg1,
-        arg2,
-        arg3,
-        arg4,
-        arg5,
-        arg6
-    );
-    0xabcdef
 }

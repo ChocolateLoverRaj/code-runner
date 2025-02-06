@@ -4,7 +4,17 @@
 
 use core::{arch::asm, panic::PanicInfo};
 
-pub fn sycall(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, arg6: u64) -> u64 {
+use common::Syscall;
+
+fn syscall_internal(
+    arg0: u64,
+    arg1: u64,
+    arg2: u64,
+    arg3: u64,
+    arg4: u64,
+    arg5: u64,
+    arg6: u64,
+) -> u64 {
     let return_value: u64;
     unsafe {
         asm!("\
@@ -30,12 +40,19 @@ pub fn sycall(arg0: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, 
     return_value
 }
 
+fn syscall(syscall: &Syscall) -> u64 {
+    let [input0, input1, input2, input3, input4, input5, input6] =
+        syscall.serialize_to_input().unwrap();
+    syscall_internal(input0, input1, input2, input3, input4, input5, input6)
+}
+
 #[unsafe(no_mangle)]
 extern "C" fn _start() {
     let mut c = 0;
     loop {
-        let _a = sycall(0x10, 0x20, 0x30, 0x40, 0x50, 0x60, c);
+        let _a = syscall(&Syscall::Print(0x69));
         c += 1;
+        break;
     }
 }
 
