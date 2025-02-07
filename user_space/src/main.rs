@@ -50,9 +50,11 @@ fn syscall(syscall: &Syscall) -> u64 {
 extern "C" fn _start() {
     let mut c = 0;
     loop {
-        let _a = syscall(&Syscall::Print(0x69));
+        // let _a = syscall(&Syscall::Print(0x69));
+        let s = Syscall::Print(0x69);
+        s.serialize_to_input();
         c += 1;
-        break;
+        // break;
     }
 }
 

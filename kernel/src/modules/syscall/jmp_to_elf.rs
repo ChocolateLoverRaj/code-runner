@@ -77,9 +77,9 @@ pub unsafe fn jmp_to_elf(
 
     let mut frame_allocator = frame_allocator.lock();
     let mut mapper = mapper.lock();
-    for segment in loadable_segments {
+    for segment in &loadable_segments {
         let segment_data = elf.segment_data(&segment)?;
-        // log::info!("Must map segment accessible to the kernel at {:p} to virtual address 0x{:x} with size 0x{:x} and copy 0x{:x} bytes, with alignment down 0x{:x} with flags 0b{:b}", segment_data, segment.p_vaddr, segment.p_memsz, segment.p_filesz, segment.p_align, segment.p_flags);
+        log::info!("Must map segment accessible to the kernel at {:p} to virtual address 0x{:x} with size 0x{:x} and copy 0x{:x} bytes, with alignment down 0x{:x} with flags 0b{:b}", segment_data, segment.p_vaddr, segment.p_memsz, segment.p_filesz, segment.p_align, segment.p_flags);
         let page_range = {
             let start = Page::<Size4KiB>::from_start_address(
                 VirtAddr::new(segment.p_vaddr).align_down(Size4KiB::SIZE),
@@ -97,77 +97,145 @@ pub unsafe fn jmp_to_elf(
                 page_range.start.start_address()..page_range.end.start_address(),
             )
             .map_err(|_| anyhow!("Failed to mark pages as used."))?;
+
+        fn set_phys_frame(
+            frame_allocator: &mut impl FrameAllocator<Size4KiB>,
+            mapper: &mut impl Mapper<Size4KiB>,
+            page: Page,
+            f: impl FnOnce(&mut [u8]),
+            final_flags: PageTableFlags,
+            tracker: &mut VirtMemTracker,
+        ) -> anyhow::Result<()> {
+            Ok({
+                let phys_frame = frame_allocator
+                    .allocate_frame()
+                    .ok_or(anyhow!("Failed to allocate frame"))?;
+                if page.start_address().is_null() {
+                    let temp_page = tracker
+                        .allocate_pages::<Size4KiB>(1)
+                        .ok_or(anyhow!("No page"))?;
+                    unsafe {
+                        mapper.map_to(
+                            temp_page,
+                            phys_frame,
+                            PageTableFlags::PRESENT
+                                | PageTableFlags::WRITABLE
+                                // FIXME: Remove user accessible. But for now, we keep it cuz of [a bug in `update_flags`](https://github.com/rust-osdev/x86_64/issues/534)
+                                | PageTableFlags::USER_ACCESSIBLE,
+                            frame_allocator,
+                        )
+                    }
+                    .map_err(|_| anyhow!("Failed to map page"))?
+                    .flush();
+
+                    let slice = unsafe {
+                        slice::from_raw_parts_mut::<u8>(
+                            temp_page.start_address().as_mut_ptr(),
+                            temp_page.size() as usize,
+                        )
+                    };
+                    f(slice);
+
+                    mapper.unmap(temp_page).map_err(|_| anyhow!(""))?;
+                    tracker.deallocate_pages_unchecked(temp_page..temp_page + 1);
+                    unsafe { mapper.map_to(page, phys_frame, final_flags, frame_allocator) }
+                        .map_err(|_| anyhow!(""))?;
+                } else {
+                    unsafe {
+                        mapper.map_to(
+                            page,
+                            phys_frame,
+                            PageTableFlags::PRESENT
+                                | PageTableFlags::WRITABLE
+                                // FIXME: Remove user accessible. But for now, we keep it cuz of [a bug in `update_flags`](https://github.com/rust-osdev/x86_64/issues/534)
+                                | PageTableFlags::USER_ACCESSIBLE,
+                            frame_allocator,
+                        )
+                    }
+                    .map_err(|_| anyhow!("Failed to map page"))?
+                    .flush();
+
+                    let slice = unsafe {
+                        slice::from_raw_parts_mut::<u8>(
+                            page.start_address().as_mut_ptr(),
+                            page.size() as usize,
+                        )
+                    };
+
+                    f(slice);
+
+                    unsafe { mapper.update_flags(page, final_flags) }
+                        .map_err(|_| anyhow!("Failed to update flags"))?
+                        .flush();
+                }
+            })
+        }
+
         for (page_index, page) in page_range.enumerate() {
-            let phys_frame = frame_allocator
-                .allocate_frame()
-                .ok_or(anyhow!("Failed to allocate frame"))?;
+            set_phys_frame(
+                frame_allocator.deref_mut(),
+                mapper.deref_mut(),
+                page,
+                |slice| {
+                    // Zero the phys frame to be secure
+                    slice.fill(Default::default());
+                    // Copy the data
+                    let dest_start = if page_index == 0 {
+                        segment.p_vaddr % segment.p_align
+                    } else {
+                        0
+                    };
+                    let already_copied = match page_index {
+                        0 => 0,
+                        n => Size4KiB::SIZE * n as u64 - (segment.p_vaddr % segment.p_align),
+                    };
+                    let dest_end =
+                        (dest_start + (segment.p_filesz - already_copied)).min(slice.len() as u64);
 
-            unsafe {
-                mapper.map_to(
-                    page,
-                    phys_frame,
-                    PageTableFlags::PRESENT
-                        | PageTableFlags::WRITABLE
-                        // FIXME: Remove user accessible. But for now, we keep it cuz of [a bug in `update_flags`](https://github.com/rust-osdev/x86_64/issues/534)
-                        | PageTableFlags::USER_ACCESSIBLE,
-                    frame_allocator.deref_mut(),
-                )
-            }
-            .map_err(|_| anyhow!("Failed to map page"))?
-            .flush();
-
-            // FIXME: Rust cannot work with the page at 0x0 cuz Rust has errors on "null pointers"
-            if page.start_address() == VirtAddr::zero() {
-                continue;
-            }
-            let slice = unsafe {
-                slice::from_raw_parts_mut::<u8>(
-                    page.start_address().as_mut_ptr(),
-                    page.size() as usize,
-                )
-            };
-            // log::info!("Slice: {:?}. Len should be: {}", slice, page.size());
-            // Zero the phys frame to be secure
-            slice.fill(Default::default());
-            // Copy the data
-            let start = segment.p_vaddr % segment.p_align;
-            let end = (start + (segment.p_filesz - Size4KiB::SIZE * page_index as u64))
-                .min(slice.len() as u64);
-
-            let src_start = Size4KiB::SIZE * page_index as u64;
-            let src_end = src_start
-                + (segment.p_filesz - Size4KiB::SIZE * page_index as u64).min(Size4KiB::SIZE);
-            // log::warn!(
-            //     "Copying to frame: {:?} from segment data: {:?}",
-            //     start..end,
-            //     src_start..src_end,
-            // );
-            slice[start as usize..end as usize]
-                .copy_from_slice(&segment_data[src_start as usize..src_end as usize]);
-            // Set flags for user space
-            let flags = PageTableFlags::PRESENT
-                | PageTableFlags::USER_ACCESSIBLE
-                | elf_flags_to_page_table_flags(segment.p_flags);
-            // log::info!("setting flags for {page:?}: {flags:?}");
-            unsafe { mapper.update_flags(page, flags) }
-                .map_err(|_| anyhow!("Failed to update flags"))?
-                .flush();
+                    let src_start = already_copied;
+                    let src_end = src_start + (dest_end - dest_start);
+                    log::warn!(
+                        "Page index: {}, copy bytes: {}, already copied: {}, Copying to frame: {:?} from segment data: {:?}",
+                        page_index,
+                        segment.p_filesz,
+                        already_copied,
+                        dest_start..dest_end,
+                        src_start..src_end,
+                    );
+                    slice[dest_start as usize..dest_end as usize]
+                        .copy_from_slice(&segment_data[src_start as usize..src_end as usize]);
+                },
+                PageTableFlags::PRESENT
+                    | PageTableFlags::USER_ACCESSIBLE
+                    | elf_flags_to_page_table_flags(segment.p_flags),
+                &mut tracker,
+            )?;
         }
     }
-    // let start_instruction = slice::from_raw_parts_mut::<u8>(
-    //     VirtAddr::new(start_symbol.st_value).as_mut_ptr(),
-    //     start_symbol.st_size as usize,
-    // );
+
+    let data = elf.segment_data(&loadable_segments[2]).unwrap();
+    log::info!(
+        "Data: {:?}",
+        &data[0x0000000000007bb0 - 0x0000000000007668..0x0000000000007bb0 - 0x0000000000007668 + 8]
+    );
+
+    // let start_instruction = unsafe {
+    //     slice::from_raw_parts_mut::<u8>(
+    //         VirtAddr::new(start_symbol.st_value).as_mut_ptr(),
+    //         start_symbol.st_size as usize,
+    //     )
+    // };
     // You can ask GitHub Copilot to show this as assembly to verify that it's the same as what gdb shows
     // log::warn!("_start instruction: {:?}", start_instruction);
 
-    const USER_SPACE_STACK_SIZE: usize = 0x1000;
+    const USER_SPACE_STACK_SIZE: usize = 0x12000;
     let page_count = (USER_SPACE_STACK_SIZE as u64).div_ceil(Size4KiB::SIZE);
     let stack_start = tracker
         .allocate_pages::<Size4KiB>(page_count)
         .ok_or(anyhow!("Failed to find pages for stack"))?;
     let stack_end = stack_start + page_count;
     let stack_pages = stack_start..stack_end;
+    log::info!("User space Stack: {stack_pages:?}");
     for page in stack_pages {
         unsafe {
             mapper.map_to(
