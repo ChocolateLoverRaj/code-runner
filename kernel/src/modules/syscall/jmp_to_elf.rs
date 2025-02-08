@@ -79,7 +79,7 @@ pub unsafe fn jmp_to_elf(
     let mut mapper = mapper.lock();
     for segment in &loadable_segments {
         let segment_data = elf.segment_data(&segment)?;
-        log::info!("Must map segment accessible to the kernel at {:p} to virtual address 0x{:x} with size 0x{:x} and copy 0x{:x} bytes, with alignment down 0x{:x} with flags 0b{:b}", segment_data, segment.p_vaddr, segment.p_memsz, segment.p_filesz, segment.p_align, segment.p_flags);
+        // log::info!("Must map segment accessible to the kernel at {:p} to virtual address 0x{:x} with size 0x{:x} and copy 0x{:x} bytes, with alignment down 0x{:x} with flags 0b{:b}", segment_data, segment.p_vaddr, segment.p_memsz, segment.p_filesz, segment.p_align, segment.p_flags);
         let page_range = {
             let start = Page::<Size4KiB>::from_start_address(
                 VirtAddr::new(segment.p_vaddr).align_down(Size4KiB::SIZE),
@@ -136,10 +136,11 @@ pub unsafe fn jmp_to_elf(
                     };
                     f(slice);
 
-                    mapper.unmap(temp_page).map_err(|_| anyhow!(""))?;
+                    mapper.unmap(temp_page).map_err(|_| anyhow!(""))?.1.flush();
                     tracker.deallocate_pages_unchecked(temp_page..temp_page + 1);
                     unsafe { mapper.map_to(page, phys_frame, final_flags, frame_allocator) }
-                        .map_err(|_| anyhow!(""))?;
+                        .map_err(|_| anyhow!(""))?
+                        .flush();
                 } else {
                     unsafe {
                         mapper.map_to(
@@ -194,14 +195,14 @@ pub unsafe fn jmp_to_elf(
 
                     let src_start = already_copied;
                     let src_end = src_start + (dest_end - dest_start);
-                    log::warn!(
-                        "Page index: {}, copy bytes: {}, already copied: {}, Copying to frame: {:?} from segment data: {:?}",
-                        page_index,
-                        segment.p_filesz,
-                        already_copied,
-                        dest_start..dest_end,
-                        src_start..src_end,
-                    );
+                    // log::warn!(
+                    //     "Page index: {}, copy bytes: {}, already copied: {}, Copying to frame: {:?} from segment data: {:?}",
+                    //     page_index,
+                    //     segment.p_filesz,
+                    //     already_copied,
+                    //     dest_start..dest_end,
+                    //     src_start..src_end,
+                    // );
                     slice[dest_start as usize..dest_end as usize]
                         .copy_from_slice(&segment_data[src_start as usize..src_end as usize]);
                 },
@@ -213,11 +214,26 @@ pub unsafe fn jmp_to_elf(
         }
     }
 
-    let data = elf.segment_data(&loadable_segments[2]).unwrap();
-    log::info!(
-        "Data: {:?}",
-        &data[0x0000000000007bb0 - 0x0000000000007668..0x0000000000007bb0 - 0x0000000000007668 + 8]
-    );
+    // Do relocations
+    // Warning: I don't fully understand this and the implementation may only work under certain assumptions
+    if let Some(section_headers) = elf.section_headers() {
+        for section_header in section_headers {
+            if section_header.sh_type == 4 {
+                let relas = elf.section_data_as_relas(&section_header)?;
+                for rela in relas {
+                    match rela.r_type {
+                        8 => {
+                            // TODO: The offset needs to be added to the base virtual address. The base virtual address may not be 0.
+                            let virt_addr = VirtAddr::new(rela.r_offset);
+                            let mem_to_replace = virt_addr.as_mut_ptr::<u64>();
+                            unsafe { *mem_to_replace = rela.r_addend as u64 };
+                        }
+                        _ => log::warn!("Not applying rela: {:?}", rela),
+                    }
+                }
+            }
+        }
+    }
 
     // let start_instruction = unsafe {
     //     slice::from_raw_parts_mut::<u8>(
