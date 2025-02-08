@@ -1,3 +1,5 @@
+use core::str;
+
 use common::Syscall;
 
 pub extern "sysv64" fn syscall_handler(
@@ -12,8 +14,18 @@ pub extern "sysv64" fn syscall_handler(
     let inputs = [input0, input1, input2, input3, input4, input5, input6];
     match Syscall::deserialize_from_input(inputs) {
         Ok(syscall) => match syscall {
-            Syscall::Print(message_ptr) => {
-                log::info!("Print: 0x{:x}", message_ptr);
+            Syscall::Print(message) => {
+                // FIXME: Verify that message is accessible to user
+                match str::from_utf8(unsafe { message.to_slice() }) {
+                    Ok(message) => {
+                        log::info!("Message from user space: {:?}", message);
+                    }
+                    Err(e) => {
+                        log::warn!("Invalid message from user space: {:?}", e);
+                    }
+                }
+                // No return value needed cuz the user space should be printing valid utf8 and it should never be invalid
+                Default::default()
             }
         },
         Err(e) => {
@@ -22,7 +34,8 @@ pub extern "sysv64" fn syscall_handler(
                 inputs,
                 e
             );
+            // TODO: Stop the user space process
+            Default::default()
         }
     }
-    0xabcdef
 }

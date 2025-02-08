@@ -1,11 +1,35 @@
 #![cfg_attr(not(test), no_std)]
 
+use core::slice;
+
 use postcard::experimental::max_size::MaxSize;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, MaxSize, PartialEq, Eq)]
+pub struct SyscallSlice {
+    pointer: u64,
+    /// The len of whatever type is being represented, not necessarily the number of `u8`s
+    len: u64,
+}
+
+impl SyscallSlice {
+    pub fn from_slice<T>(slice: &[T]) -> Self {
+        Self {
+            pointer: slice.as_ptr() as u64,
+            len: slice.len() as u64,
+        }
+    }
+
+    /// # Safety
+    /// See `core::slice::from_raw_parts`
+    pub unsafe fn to_slice<'a, T>(&self) -> &'a [T] {
+        unsafe { slice::from_raw_parts(self.pointer as *const _, self.len as usize) }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, MaxSize, PartialEq, Eq)]
 pub enum Syscall {
-    Print(u64),
+    Print(SyscallSlice),
 }
 
 impl Syscall {
@@ -35,11 +59,14 @@ mod test {
 
 #[cfg(test)]
 mod test2 {
-    use crate::Syscall;
+    use crate::{Syscall, SyscallSlice};
 
     #[test]
     fn serialize_and_deserialize() {
-        let syscall = Syscall::Print(0x1000);
+        let syscall = Syscall::Print(SyscallSlice {
+            pointer: 0x1000,
+            len: 0xa,
+        });
         let serialized_syscall = syscall.serialize_to_input().unwrap();
         let deserialiezd_syscall = Syscall::deserialize_from_input(serialized_syscall).unwrap();
         assert_eq!(deserialiezd_syscall, syscall);

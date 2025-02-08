@@ -2,9 +2,9 @@
 #![no_main]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use core::{arch::asm, panic::PanicInfo};
+use core::{arch::asm, fmt::Write, panic::PanicInfo};
 
-use common::Syscall;
+use common::{Syscall, SyscallSlice};
 
 fn syscall_internal(
     arg0: u64,
@@ -48,8 +48,18 @@ fn syscall(syscall: &Syscall) -> u64 {
 
 #[unsafe(no_mangle)]
 extern "C" fn _start() {
-    syscall(&Syscall::Print(0x69));
-    loop {}
+    let string = "Hello from User Space (written in Rust ofc)!";
+    let mut count = 0;
+    loop {
+        let mut message = heapless::String::<100>::new();
+        message
+            .write_fmt(format_args!("{}. Counter: {}", string, count))
+            .unwrap();
+        syscall(&Syscall::Print(SyscallSlice::from_slice(
+            message.as_bytes(),
+        )));
+        count += 1;
+    }
 }
 
 #[panic_handler]

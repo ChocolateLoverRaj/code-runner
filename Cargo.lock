@@ -1630,6 +1630,7 @@ name = "user_space"
 version = "0.1.0"
 dependencies = [
  "common",
+ "heapless 0.8.0",
  "x86_64 0.15.2",
 ]
 

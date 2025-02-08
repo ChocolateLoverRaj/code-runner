@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 common = { version = "0.1.0", path = "../common" }
+heapless = "0.8.0"
 x86_64 = "0.15.2"
 
 [[bin]]
