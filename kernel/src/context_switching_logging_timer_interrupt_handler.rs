@@ -3,9 +3,9 @@ use spin::Mutex;
 use x2apic::lapic::LocalApic;
 use x86_64::structures::idt::{HandlerFunc, InterruptStackFrame};
 
-use core::arch::{asm, naked_asm};
+use core::arch::naked_asm;
 
-use crate::context::Context;
+use crate::{context::Context, restore_context::restore_context};
 
 static LOCAL_APIC: OnceCell<&'static OnceCell<Mutex<LocalApic>>> = OnceCell::uninit();
 
@@ -60,17 +60,6 @@ unsafe extern "sysv64" fn a(context: *const Context) {
         unsafe { local_apic.end_of_interrupt() };
     }
     unsafe { restore_context(&context) };
-}
-
-#[inline(always)]
-pub unsafe fn restore_context(ctxr: &Context) -> ! {
-    unsafe {
-        asm!("mov rsp, {};\
-        pop rbp; pop rax; pop rbx; pop rcx; pop rdx; pop rsi; pop rdi; pop r8; pop r9;\
-        pop r10; pop r11; pop r12; pop r13; pop r14; pop r15; iretq;",
-        in(reg) ctxr);
-    }
-    unreachable!()
 }
 
 pub fn get_context_switching_logging_timer_interrupt_handler(

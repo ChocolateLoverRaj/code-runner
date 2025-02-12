@@ -35,6 +35,7 @@ pub mod memory;
 pub mod modules;
 pub mod phys_mapper;
 pub mod pic8259_interrupts;
+pub mod restore_context;
 pub mod serial_logger;
 pub mod set_color;
 pub mod split_draw_target;
@@ -47,7 +48,7 @@ use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use conquer_once::noblock::OnceCell;
 use context_switching_keyboard_interrupt_handler::TestKeyboardBuilder;
 use context_switching_logging_timer_interrupt_handler::get_context_switching_logging_timer_interrupt_handler;
-use core::{arch::x86_64::__cpuid, ops::DerefMut, panic::PanicInfo, slice};
+use core::{ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
 use demo_async::demo_async;
 #[allow(unused)]

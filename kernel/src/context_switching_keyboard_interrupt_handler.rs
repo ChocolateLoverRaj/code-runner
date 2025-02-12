@@ -1,9 +1,7 @@
-use core::arch::{asm, naked_asm};
+use core::arch::naked_asm;
 
 use alloc::sync::Arc;
 use conquer_once::noblock::OnceCell;
-use crossbeam_queue::ArrayQueue;
-use futures_util::task::AtomicWaker;
 use spin::Mutex;
 use x2apic::{
     ioapic::{IoApic, RedirectionTableEntry},
@@ -14,10 +12,11 @@ use x86_64::{
     structures::idt::{self, HandlerFunc, InterruptStackFrame},
 };
 
-use crate::{context::Context, modules::idt::IdtBuilder, pic8259_interrupts::Pic8259Interrupts};
+use crate::{
+    context::Context, modules::idt::IdtBuilder, pic8259_interrupts::Pic8259Interrupts,
+    restore_context::restore_context,
+};
 
-static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
-static WAKER: AtomicWaker = AtomicWaker::new();
 static LOCAL_APIC: OnceCell<&'static OnceCell<Mutex<LocalApic>>> = OnceCell::uninit();
 
 #[naked]
@@ -64,24 +63,9 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
     unsafe { restore_context(&context) };
 }
 
-#[inline(always)]
-pub unsafe fn restore_context(ctxr: &Context) -> ! {
-    unsafe {
-        asm!("mov rsp, {};\
-        pop rbp; pop rax; pop rbx; pop rcx; pop rdx; pop rsi; pop rdi; pop r8; pop r9;\
-        pop r10; pop r11; pop r12; pop r13; pop r14; pop r15; iretq;",
-        in(reg) ctxr);
-    }
-    unreachable!()
-}
-
 unsafe fn enable_interrupts(io_apic: &mut IoApic) {
     log::debug!("Enabling keyboard interrupts");
     unsafe { io_apic.enable_irq(Pic8259Interrupts::Keyboard.into()) }
-}
-unsafe fn disable_interrupts(io_apic: &mut IoApic) {
-    log::debug!("Disabling keyboard interrupts");
-    unsafe { io_apic.disable_irq(Pic8259Interrupts::Keyboard.into()) }
 }
 
 pub struct TestKeyboardBuilder {
@@ -95,7 +79,9 @@ impl TestKeyboardBuilder {
     ) -> Option<Self> {
         LOCAL_APIC.try_init_once(|| local_apic).unwrap();
         let handler = unsafe {
-            core::mem::transmute(context_switching_keyboard_interrupt_handler as *const ())
+            core::mem::transmute::<*const (), HandlerFunc>(
+                context_switching_keyboard_interrupt_handler as *const _,
+            )
         };
         let interrupt_index = idt_builder.set_flexible_entry({
             let mut entry = idt::Entry::<HandlerFunc>::missing();

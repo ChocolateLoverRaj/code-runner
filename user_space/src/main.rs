@@ -6,14 +6,16 @@ use core::{arch::asm, fmt::Write, panic::PanicInfo};
 
 use common::{Syscall, SyscallSlice};
 
-fn syscall_internal(
-    arg0: u64,
-    arg1: u64,
-    arg2: u64,
-    arg3: u64,
-    arg4: u64,
-    arg5: u64,
-    arg6: u64,
+/// # Safety
+/// The inputs must be valid. Invalid inputs can lead to undefined behavior or the program being terminated.
+unsafe fn syscall_internal(
+    input0: u64,
+    input1: u64,
+    input2: u64,
+    input3: u64,
+    input4: u64,
+    input5: u64,
+    input6: u64,
 ) -> u64 {
     let return_value: u64;
     unsafe {
@@ -27,13 +29,13 @@ fn syscall_internal(
             mov rax, {6}
             syscall
             ",
-            in(reg) arg0,
-            in(reg) arg1,
-            in(reg) arg2,
-            in(reg) arg3,
-            in(reg) arg4,
-            in(reg) arg5,
-            in(reg) arg6,
+            in(reg) input0,
+            in(reg) input1,
+            in(reg) input2,
+            in(reg) input3,
+            in(reg) input4,
+            in(reg) input5,
+            in(reg) input6,
             lateout("rax") return_value
         );
     }
@@ -43,7 +45,8 @@ fn syscall_internal(
 fn syscall(syscall: &Syscall) -> u64 {
     let [input0, input1, input2, input3, input4, input5, input6] =
         syscall.serialize_to_input().unwrap();
-    syscall_internal(input0, input1, input2, input3, input4, input5, input6)
+    // We know the inputs are valid
+    unsafe { syscall_internal(input0, input1, input2, input3, input4, input5, input6) }
 }
 
 #[unsafe(no_mangle)]
