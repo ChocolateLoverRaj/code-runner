@@ -64,8 +64,6 @@ use hlt_loop::hlt_loop;
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use modules::{
-    async_keyboard::AsyncKeyboardBuilder,
-    async_rtc::AsyncRtcBuilder,
     double_fault_handler_entry::get_double_fault_entry,
     gdt::Gdt,
     get_apic::get_apic,
@@ -73,7 +71,6 @@ use modules::{
     get_local_apic::get_local_apic,
     idt::IdtBuilder,
     logging_breakpoint_handler::logging_breakpoint_handler,
-    logging_timer_interrupt_handler::get_logging_timer_interrupt_handler,
     panicking_double_fault_handler::panicking_double_fault_handler,
     panicking_general_protection_fault_handler::panicking_general_protection_fault_handler,
     panicking_invalid_opcode_handler::panicking_invalid_opcode_handler,
@@ -89,7 +86,6 @@ use modules::{
     tss::TssBuilder,
 };
 use phys_mapper::PhysMapper;
-use spin::Mutex;
 use syscall_handler::syscall_handler;
 use x2apic::lapic::TimerDivide;
 use x86_64::{
@@ -285,12 +281,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         static_stuff.local_apic_error_interrupt_index,
     )
     .unwrap();
+    // This is only for testing
     unsafe {
         local_apic.set_timer_divide(TimerDivide::Div2);
         local_apic.enable_timer()
     };
     static_local_apic::store(local_apic);
 
+    #[allow(unused)]
     let mut io_apic = unsafe { get_io_apic(&apic, &mut phys_mapper.clone()) };
 
     // x86_64::instructions::interrupts::enable();

@@ -1,6 +1,6 @@
 use x86_64::instructions::tables::load_tss;
 use x86_64::registers::model_specific::Star;
-use x86_64::registers::segmentation::{Segment, CS, DS, ES, FS, GS, SS};
+use x86_64::registers::segmentation::{Segment, CS, DS, ES, SS};
 use x86_64::structures::tss::TaskStateSegment;
 
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
@@ -57,8 +57,6 @@ impl Gdt {
             SS::set_reg(self.kernel_data_selector);
             DS::set_reg(SegmentSelector::NULL);
             ES::set_reg(SegmentSelector::NULL);
-            // FS::set_reg(SegmentSelector::NULL);
-            // GS::set_reg(SegmentSelector::NULL);
 
             load_tss(self.tss_selector);
 

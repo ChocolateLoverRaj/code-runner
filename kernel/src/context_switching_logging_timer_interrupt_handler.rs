@@ -45,7 +45,18 @@ unsafe extern "sysv64" fn a(context: *const Context) {
     {
         let mut local_apic = LOCAL_APIC.try_get().unwrap().try_get().unwrap().lock();
         let current = unsafe { local_apic.timer_current() };
-        log::info!("Timer interrupt: {}", current);
+        // Don't log too often cuz then we would always only be executing this interrupt handler and no other code would get a chance to run.
+        static mut COUNTER: u64 = 0;
+        if unsafe { COUNTER } == 0 {
+            log::info!("Timer interrupt (1 out of every 100 logged): {}", current);
+        }
+        unsafe {
+            COUNTER += 1;
+        }
+        if unsafe { COUNTER } == 100 {
+            unsafe { COUNTER = 0 };
+        }
+
         unsafe { local_apic.end_of_interrupt() };
     }
     unsafe { restore_context(&context) };
