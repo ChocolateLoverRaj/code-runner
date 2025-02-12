@@ -22,6 +22,7 @@ pub unsafe fn enter_user_mode(gdt: &Gdt, code: VirtAddr, stack_end: VirtAddr) {
         data_selector.0
     };
     tlb::flush_all();
+    log::info!("Last message before entering user mode");
     unsafe {
         asm!("\
     push rax   // stack segment

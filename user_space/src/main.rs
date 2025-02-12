@@ -5,6 +5,7 @@
 use core::{arch::asm, fmt::Write, panic::PanicInfo};
 
 use common::{Syscall, SyscallSlice};
+use x86_64::instructions::nop;
 
 fn syscall_internal(
     arg0: u64,
@@ -55,6 +56,8 @@ extern "C" fn _start() {
         message
             .write_fmt(format_args!("{}. Counter: {}", string, count))
             .unwrap();
+        nop();
+        // The bug with GP exception is probably due to an interrupted syscall
         syscall(&Syscall::Print(SyscallSlice::from_slice(
             message.as_bytes(),
         )));

@@ -14,6 +14,8 @@ pub mod apic;
 pub mod change_stream;
 pub mod colorful_logger;
 pub mod combined_logger;
+pub mod context;
+pub mod context_switching_logging_timer_interrupt_handler;
 pub mod demo_async;
 pub mod demo_async_keyboard_drop;
 pub mod demo_async_rtc_drop;
@@ -46,6 +48,7 @@ pub mod virt_mem_allocator;
 use alloc::sync::Arc;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use conquer_once::noblock::OnceCell;
+use context_switching_logging_timer_interrupt_handler::get_context_switching_logging_timer_interrupt_handler;
 use core::{ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
 use demo_async::demo_async;
@@ -88,6 +91,7 @@ use modules::{
 use phys_mapper::PhysMapper;
 use spin::Mutex;
 use syscall_handler::syscall_handler;
+use x2apic::lapic::TimerDivide;
 use x86_64::{
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
@@ -120,8 +124,6 @@ struct StaticStuff {
     spurious_interrupt_handler_index: u8,
     timer_interrupt_index: u8,
     local_apic_error_interrupt_index: u8,
-    rtc_async: AsyncRtcBuilder,
-    async_keyboard: AsyncKeyboardBuilder,
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
@@ -207,7 +209,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 panicking_spurious_interrupt_handler,
             )
             .unwrap();
-            let timer_interrupt_handler = get_logging_timer_interrupt_handler(&LOCAL_APIC);
+            let timer_interrupt_handler =
+                get_context_switching_logging_timer_interrupt_handler(&LOCAL_APIC);
             let timer_interrupt_index = idt_builder
                 .set_flexible_entry({
                     let mut entry = idt::Entry::missing();
@@ -222,8 +225,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                     entry
                 })
                 .unwrap();
-            let rtc_async = AsyncRtcBuilder::set_interrupt(&mut idt_builder).unwrap();
-            let async_keyboard = AsyncKeyboardBuilder::set_interrupt(&mut idt_builder).unwrap();
 
             tss.add_privilege_stack_table_entry({
                 const STACK_SIZE: usize = 0x2000;
@@ -243,8 +244,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 spurious_interrupt_handler_index,
                 timer_interrupt_index,
                 local_apic_error_interrupt_index,
-                rtc_async,
-                async_keyboard,
             }
         })
         .unwrap();
@@ -278,7 +277,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     }
     .expect("Error getting ACPI tables");
     let apic = get_apic(&acpi_tables).unwrap();
-    let local_apic = get_local_apic(
+    let mut local_apic = get_local_apic(
         &apic,
         &mut phys_mapper.clone(),
         static_stuff.spurious_interrupt_handler_index,
@@ -286,21 +285,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         static_stuff.local_apic_error_interrupt_index,
     )
     .unwrap();
+    unsafe {
+        local_apic.set_timer_divide(TimerDivide::Div2);
+        local_apic.enable_timer()
+    };
     static_local_apic::store(local_apic);
 
     let mut io_apic = unsafe { get_io_apic(&apic, &mut phys_mapper.clone()) };
 
-    #[allow(unused)]
-    let mut async_rtc = static_stuff
-        .rtc_async
-        .configure_io_apic(&mut io_apic, &LOCAL_APIC);
-    let io_apic = Arc::new(Mutex::new(io_apic));
-    #[allow(unused)]
-    let mut async_keyboard =
-        static_stuff
-            .async_keyboard
-            .configure_io_apic(io_apic, &LOCAL_APIC, 100);
-    x86_64::instructions::interrupts::enable();
+    // x86_64::instructions::interrupts::enable();
 
     if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
         let elf_bytes = unsafe {

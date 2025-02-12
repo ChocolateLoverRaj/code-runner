@@ -91,13 +91,9 @@ extern "sysv64" fn handle_syscall_with_temp_stack(
             TEMP_STACK.0.as_mut_ptr().add(TEMP_STACK_SIZE)
         };
         asm!("\
-            nop
             mov {old_stack}, rsp
-            nop
             mov rsp, {temp_stack_base_plus_stack_size} // move our stack to the newly allocated one
-            nop
             sti // enable interrupts
-            nop
             ",
             temp_stack_base_plus_stack_size = in(reg) temp_stack, old_stack = out(reg) old_stack
         );
@@ -110,11 +106,8 @@ extern "sysv64" fn handle_syscall_with_temp_stack(
 
     unsafe {
         asm!("\
-            nop
             cli // disable interrupts while restoring the stack
-            nop
             mov rsp, {old_stack} // restore the old stack
-            nop
             ",
             old_stack = in(reg) old_stack
         );

@@ -1,0 +1,70 @@
+use conquer_once::noblock::OnceCell;
+use spin::Mutex;
+use x2apic::lapic::LocalApic;
+use x86_64::structures::idt::{HandlerFunc, InterruptStackFrame};
+
+use core::arch::{asm, naked_asm};
+
+use crate::context::Context;
+
+static LOCAL_APIC: OnceCell<&'static OnceCell<Mutex<LocalApic>>> = OnceCell::uninit();
+
+/// This is private so that the getter must be initialized before using
+#[naked]
+unsafe extern "sysv64" fn context_switching_logging_timer_interrupt_handler(
+    _stack_frame: InterruptStackFrame,
+) {
+    unsafe {
+        naked_asm!("\
+            push r15 
+            push r14
+            push r13
+            push r12
+            push r11
+            push r10
+            push r9
+            push r8
+            push rdi
+            push rsi
+            push rdx
+            push rcx
+            push rbx
+            push rax
+            push rbp
+            mov rdi, rsp   // first arg of context switch is the context which is all the registers saved above
+            sub rsp, 0x400
+            jmp {context_switch}
+            ", 
+            context_switch = sym a
+        );
+    };
+}
+
+unsafe extern "sysv64" fn a(context: *const Context) {
+    let context = unsafe { (*context).clone() };
+    {
+        let mut local_apic = LOCAL_APIC.try_get().unwrap().try_get().unwrap().lock();
+        let current = unsafe { local_apic.timer_current() };
+        log::info!("Timer interrupt: {}", current);
+        unsafe { local_apic.end_of_interrupt() };
+    }
+    unsafe { restore_context(&context) };
+}
+
+#[inline(always)]
+pub unsafe fn restore_context(ctxr: &Context) -> ! {
+    unsafe {
+        asm!("mov rsp, {};\
+        pop rbp; pop rax; pop rbx; pop rcx; pop rdx; pop rsi; pop rdi; pop r8; pop r9;\
+        pop r10; pop r11; pop r12; pop r13; pop r14; pop r15; iretq;",
+        in(reg) ctxr);
+    }
+    unreachable!()
+}
+
+pub fn get_context_switching_logging_timer_interrupt_handler(
+    local_apic: &'static OnceCell<Mutex<LocalApic>>,
+) -> HandlerFunc {
+    LOCAL_APIC.try_init_once(|| local_apic).unwrap();
+    unsafe { core::mem::transmute(context_switching_logging_timer_interrupt_handler as *const ()) }
+}
