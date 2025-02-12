@@ -283,7 +283,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     .unwrap();
     // This is only for testing
     unsafe {
-        local_apic.set_timer_divide(TimerDivide::Div2);
+        local_apic.set_timer_divide(TimerDivide::Div256);
         local_apic.enable_timer()
     };
     static_local_apic::store(local_apic);
