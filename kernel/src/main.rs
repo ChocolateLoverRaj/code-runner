@@ -125,10 +125,7 @@ struct StaticStuff {
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
-
-// static TSS: OnceCell<TaskStateSegment> = OnceCell::uninit();
 static GDT: OnceCell<Gdt> = OnceCell::uninit();
-// static IDT: OnceCell<IdtBuilder> = OnceCell::uninit();
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let frame_buffer = boot_info.framebuffer.as_mut();

@@ -48,13 +48,13 @@ impl Gdt {
         }
     }
 
-    pub fn init(&self) {
-        unsafe { self.gdt.load_unsafe() };
+    pub fn init(&'static self) {
+        self.gdt.load();
         unsafe {
             // https://github.com/rust-osdev/bootloader/blob/5d318bfc8afa4fb116a2c7923d5411febbe7266c/docs/migration/v0.9.md#kernel
             CS::set_reg(self.kernel_code_selector);
             DS::set_reg(self.kernel_data_selector);
-            SS::set_reg(self.kernel_data_selector);
+            SS::set_reg(SegmentSelector::NULL);
             ES::set_reg(SegmentSelector::NULL);
             FS::set_reg(SegmentSelector::NULL);
             GS::set_reg(SegmentSelector::NULL);
