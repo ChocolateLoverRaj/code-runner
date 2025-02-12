@@ -14,7 +14,7 @@ use crate::{
     enter_user_mode::enter_user_mode,
     memory::BootInfoFrameAllocator,
     modules::{gdt::Gdt, syscall::init_syscalls::init_syscalls},
-    virt_mem_allocator::VirtMemTracker,
+    virt_mem_tracker::VirtMemTracker,
 };
 
 use super::handle_syscall::RustSyscallHandler;

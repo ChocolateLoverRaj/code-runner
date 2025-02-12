@@ -12,7 +12,7 @@ use crate::{
     virt_addr_from_indexes::{
         virt_addr_from_indexes_1_gib, virt_addr_from_indexes_2_mib, virt_addr_from_indexes_4_kib,
     },
-    virt_mem_allocator::VirtMemTracker,
+    virt_mem_tracker::VirtMemTracker,
 };
 
 pub fn find_used_virt_addrs(

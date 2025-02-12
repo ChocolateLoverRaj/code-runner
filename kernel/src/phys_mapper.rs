@@ -13,7 +13,7 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-use crate::{memory::BootInfoFrameAllocator, virt_mem_allocator::VirtMemTracker};
+use crate::{memory::BootInfoFrameAllocator, virt_mem_tracker::VirtMemTracker};
 
 /// Used to "create" a virtual address range that maps to a specified physical address range
 #[derive(Clone, Debug)]

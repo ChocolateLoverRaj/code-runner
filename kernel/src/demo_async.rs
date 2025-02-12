@@ -2,13 +2,10 @@ use alloc::sync::Arc;
 use chrono::DateTime;
 use futures_util::{join, StreamExt};
 use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet1};
+use util::{change_stream::StreamChanges, stream_with_initial::StreamWithInitial};
 use x86_rtc::{interrupts::DividerValue, Rtc};
 
-use crate::{
-    change_stream::StreamChanges,
-    modules::{async_keyboard::AsyncKeyboard, async_rtc::AsyncRtc},
-    stream_with_initial::StreamWithInitial,
-};
+use crate::modules::{async_keyboard::AsyncKeyboard, async_rtc::AsyncRtc};
 
 pub async fn demo_async(async_keyboard: &mut AsyncKeyboard, async_rtc: &mut AsyncRtc) {
     join!(

@@ -11,10 +11,10 @@ extern crate alloc;
 pub mod acpi;
 pub mod allocator;
 pub mod apic;
-pub mod change_stream;
 pub mod colorful_logger;
 pub mod combined_logger;
 pub mod context;
+pub mod context_switching_keyboard_interrupt_handler;
 pub mod context_switching_logging_timer_interrupt_handler;
 pub mod demo_async;
 pub mod demo_async_keyboard_drop;
@@ -29,27 +29,25 @@ pub mod frame_buffer;
 pub mod get_rgb_color;
 pub mod hlt_loop;
 pub mod insert;
-pub mod keyboard_interrupt_mutex;
 pub mod logger;
 pub mod logger_without_interrupts;
 pub mod memory;
 pub mod modules;
 pub mod phys_mapper;
 pub mod pic8259_interrupts;
-pub mod remove;
 pub mod serial_logger;
 pub mod set_color;
 pub mod split_draw_target;
-pub mod stream_with_initial;
 pub mod syscall_handler;
 pub mod virt_addr_from_indexes;
-pub mod virt_mem_allocator;
+pub mod virt_mem_tracker;
 
 use alloc::sync::Arc;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use conquer_once::noblock::OnceCell;
+use context_switching_keyboard_interrupt_handler::TestKeyboardBuilder;
 use context_switching_logging_timer_interrupt_handler::get_context_switching_logging_timer_interrupt_handler;
-use core::{ops::DerefMut, panic::PanicInfo, slice};
+use core::{arch::x86_64::__cpuid, ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
 use demo_async::demo_async;
 #[allow(unused)]
@@ -86,6 +84,8 @@ use modules::{
     tss::TssBuilder,
 };
 use phys_mapper::PhysMapper;
+use raw_cpuid::CpuId;
+use spin::Mutex;
 use syscall_handler::syscall_handler;
 use x2apic::lapic::TimerDivide;
 use x86_64::{
@@ -120,6 +120,7 @@ struct StaticStuff {
     spurious_interrupt_handler_index: u8,
     timer_interrupt_index: u8,
     local_apic_error_interrupt_index: u8,
+    keyboard: TestKeyboardBuilder,
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
@@ -233,6 +234,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 stack_start + STACK_SIZE as u64
             })
             .unwrap();
+            let keyboard =
+                TestKeyboardBuilder::set_interrupt(&mut idt_builder, &LOCAL_APIC).unwrap();
 
             StaticStuff {
                 tss: tss.get_tss(),
@@ -240,6 +243,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 spurious_interrupt_handler_index,
                 timer_interrupt_index,
                 local_apic_error_interrupt_index,
+                keyboard,
             }
         })
         .unwrap();
@@ -282,6 +286,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     )
     .unwrap();
     // This is only for testing
+    let cpuid = CpuId::default();
+    let info = cpuid.get_processor_frequency_info();
+    log::info!("Freq info: {:?}", info);
+    let info = cpuid.get_tsc_info();
+    log::info!("TSC info: {:?}", info);
     unsafe {
         local_apic.set_timer_divide(TimerDivide::Div256);
         local_apic.enable_timer()
@@ -290,6 +299,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     #[allow(unused)]
     let mut io_apic = unsafe { get_io_apic(&apic, &mut phys_mapper.clone()) };
+    static_stuff
+        .keyboard
+        .configure_io_apic(Arc::new(Mutex::new(io_apic)));
 
     // x86_64::instructions::interrupts::enable();
 

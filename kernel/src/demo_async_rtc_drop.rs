@@ -1,12 +1,10 @@
 use alloc::sync::Arc;
 use chrono::DateTime;
 use futures_util::StreamExt;
+use util::{change_stream::StreamChanges, stream_with_initial::StreamWithInitial};
 use x86_rtc::{interrupts::DividerValue, Rtc};
 
-use crate::{
-    change_stream::StreamChanges, modules::async_rtc::AsyncRtc,
-    stream_with_initial::StreamWithInitial,
-};
+use crate::modules::async_rtc::AsyncRtc;
 
 pub async fn demo_asyc_rtc_drop(async_rtc: &mut AsyncRtc) {
     let rtc = Arc::new(Rtc::new());

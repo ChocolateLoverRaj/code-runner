@@ -5,4 +5,8 @@ edition = "2021"
 
 [dependencies]
 heapless = "0.8.0"
-# round_mult = "0.1.3"
+
+[dependencies.futures-util]
+version = "0.3.31"
+default-features = false
+features = ["alloc", "async-await", "async-await-macro"]

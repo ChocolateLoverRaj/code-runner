@@ -5,7 +5,6 @@
 use core::{arch::asm, fmt::Write, panic::PanicInfo};
 
 use common::{Syscall, SyscallSlice};
-use x86_64::instructions::nop;
 
 fn syscall_internal(
     arg0: u64,
@@ -49,15 +48,12 @@ fn syscall(syscall: &Syscall) -> u64 {
 
 #[unsafe(no_mangle)]
 extern "C" fn _start() {
-    let string = "Hello from User Space (written in Rust ofc)!";
     let mut count = 0;
     loop {
         let mut message = heapless::String::<100>::new();
         message
-            .write_fmt(format_args!("{}. Counter: {}", string, count))
+            .write_fmt(format_args!("Hello from user space. Counter: {}", count))
             .unwrap();
-        nop();
-        // The bug with GP exception is probably due to an interrupted syscall
         syscall(&Syscall::Print(SyscallSlice::from_slice(
             message.as_bytes(),
         )));

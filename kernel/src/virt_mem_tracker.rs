@@ -3,13 +3,13 @@ use core::{
     ops::{DerefMut, Range},
 };
 
-use util::continuous_bool_vec::ContinuousBoolVec;
+use util::{continuous_bool_vec::ContinuousBoolVec, remove::Remove};
 use x86_64::{
     structures::paging::{page::PageRange, Page, PageSize},
     VirtAddr,
 };
 
-use crate::{insert::Insert, remove::Remove};
+use crate::insert::Insert;
 
 /// All "allocation" is actually just keeping track of what's being used and not used. You have to actually do the allocating.
 #[derive(Debug)]
