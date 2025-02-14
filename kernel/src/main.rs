@@ -18,6 +18,7 @@ pub mod combined_logger;
 pub mod context;
 pub mod context_switching_keyboard_interrupt_handler;
 pub mod context_switching_logging_timer_interrupt_handler;
+pub mod cool_keyboard_interrupt_handler;
 pub mod demo_async;
 pub mod demo_async_keyboard_drop;
 pub mod demo_async_rtc_drop;
@@ -49,8 +50,8 @@ use alloc::sync::Arc;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use common::mem::KERNEL_VIRT_MEM_START;
 use conquer_once::noblock::OnceCell;
-use context_switching_keyboard_interrupt_handler::TestKeyboardBuilder;
 use context_switching_logging_timer_interrupt_handler::get_context_switching_logging_timer_interrupt_handler;
+use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
 use core::{ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
 use demo_async::demo_async;
@@ -124,7 +125,7 @@ struct StaticStuff {
     spurious_interrupt_handler_index: u8,
     timer_interrupt_index: u8,
     local_apic_error_interrupt_index: u8,
-    keyboard: TestKeyboardBuilder,
+    keyboard: CoolKeyboardBuilder,
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
@@ -238,7 +239,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             })
             .unwrap();
             let keyboard =
-                TestKeyboardBuilder::set_interrupt(&mut idt_builder, &LOCAL_APIC).unwrap();
+                CoolKeyboardBuilder::set_interrupt(&mut idt_builder, &LOCAL_APIC).unwrap();
 
             StaticStuff {
                 tss: tss.get_tss(),
@@ -279,6 +280,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         )
     }
     .expect("Error getting ACPI tables");
+    acpi_tables
+        .headers()
+        .for_each(|header| log::info!("ACPI table header: {header:#?}"));
     let apic = get_apic(&acpi_tables).unwrap();
     let mut local_apic = get_local_apic(
         &apic,
@@ -302,7 +306,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     #[allow(unused)]
     let mut io_apic = unsafe { get_io_apic(&apic, &mut phys_mapper.clone()) };
-    static_stuff
+    let keyboard = static_stuff
         .keyboard
         .configure_io_apic(Arc::new(Mutex::new(io_apic)));
 
@@ -319,7 +323,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 mapper.clone(),
                 frame_allocator.clone(),
                 gdt,
-                get_syscall_handler(frame_buffer, mapper, frame_allocator),
+                get_syscall_handler(frame_buffer, mapper, frame_allocator, keyboard),
             )
         }
         .unwrap();

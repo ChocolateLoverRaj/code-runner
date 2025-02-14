@@ -18,14 +18,15 @@ use x86_64::{
 };
 
 use crate::{
-    hlt_loop::hlt_loop, memory::BootInfoFrameAllocator,
-    modules::syscall::handle_syscall::RustSyscallHandler,
+    cool_keyboard_interrupt_handler::CoolKeyboard, hlt_loop::hlt_loop,
+    memory::BootInfoFrameAllocator, modules::syscall::handle_syscall::RustSyscallHandler,
 };
 
 struct StaticStuff {
     frame_buffer: Option<&'static mut FrameBuffer>,
     mapper: Arc<spin::Mutex<OffsetPageTable<'static>>>,
     frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
+    cool_keyboard: CoolKeyboard,
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
@@ -156,6 +157,54 @@ extern "sysv64" fn syscall_handler(
                 // Nothing to do
                 hlt_loop();
             }
+            Syscall::StartRecordingKeyboard(input) => {
+                STATIC_STUFF.try_get().unwrap().cool_keyboard.enable(input);
+                Default::default()
+            }
+            Syscall::PollKeyboard(dest) => {
+                let dest_ptr: *mut u8 = dest.into();
+                if !dest_ptr.is_null()
+                    && dest_ptr.is_aligned()
+                    && VirtAddr::from_ptr(dest_ptr.wrapping_add(1))
+                        <= VirtAddr::new_truncate(KERNEL_VIRT_MEM_START)
+                {
+                    match STATIC_STUFF
+                        .try_get()
+                        .unwrap()
+                        .cool_keyboard
+                        .queue()
+                        .queue()
+                    {
+                        Some(queue) => {
+                            let slice = unsafe { dest.to_slice_mut::<u8>() };
+                            let count = {
+                                let mut count = 0;
+                                loop {
+                                    match slice.get_mut(count) {
+                                        Some(slot) => match queue.pop() {
+                                            Some(scan_code) => {
+                                                *slot = scan_code;
+                                            }
+                                            None => {
+                                                break;
+                                            }
+                                        },
+                                        None => {
+                                            break;
+                                        }
+                                    }
+                                    count += 1;
+                                }
+                                count
+                            };
+                            count as u64
+                        }
+                        None => 0,
+                    }
+                } else {
+                    0
+                }
+            }
         },
         Err(e) => {
             log::warn!(
@@ -173,12 +222,14 @@ pub fn get_syscall_handler(
     frame_buffer: Option<&'static mut FrameBuffer>,
     mapper: Arc<spin::Mutex<OffsetPageTable<'static>>>,
     frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
+    cool_keyboard: CoolKeyboard,
 ) -> RustSyscallHandler {
     STATIC_STUFF
         .try_init_once(|| StaticStuff {
             frame_buffer,
             mapper,
             frame_allocator,
+            cool_keyboard,
         })
         .unwrap();
     syscall_handler

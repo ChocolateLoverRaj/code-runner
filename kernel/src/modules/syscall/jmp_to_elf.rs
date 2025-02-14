@@ -244,7 +244,7 @@ pub unsafe fn jmp_to_elf(
         // You can ask GitHub Copilot to show this as assembly to verify that it's the same as what gdb shows
         // log::warn!("_start instruction: {:?}", start_instruction);
 
-        const USER_SPACE_STACK_SIZE: usize = 0x1000;
+        const USER_SPACE_STACK_SIZE: usize = 0x3000;
         let page_count = (USER_SPACE_STACK_SIZE as u64).div_ceil(Size4KiB::SIZE);
         let stack_start = tracker
             .allocate_pages::<Size4KiB>(page_count)

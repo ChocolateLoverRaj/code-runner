@@ -4,6 +4,7 @@ use common::{
     syscall::Syscall,
     syscall_output::SyscallOutput,
     syscall_print::{SyscallPrintError, SyscallPrintOutput},
+    syscall_start_recording_keyboard::SyscallStartRecordingKeyboardInput,
     syscall_take_frame_buffer::{
         TakeFrameBufferError, TakeFrameBufferOutput, TakeFrameBufferOutputData,
     },
@@ -73,4 +74,13 @@ pub fn syscall_print(string: &str) -> Result<(), SyscallPrintError> {
 pub fn syscall_exit() -> ! {
     syscall(&Syscall::Exit);
     unreachable!()
+}
+
+pub fn syscall_start_recording_keyboard(input: SyscallStartRecordingKeyboardInput) {
+    syscall(&Syscall::StartRecordingKeyboard(input));
+}
+
+pub fn syscall_poll_keyboard(buffer: &mut [u8]) -> &mut [u8] {
+    let count = syscall(&Syscall::PollKeyboard(buffer.into())) as usize;
+    &mut buffer[..count]
 }

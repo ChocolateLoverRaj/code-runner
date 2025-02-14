@@ -1,13 +1,18 @@
 use postcard::experimental::max_size::MaxSize;
 use serde::{Deserialize, Serialize};
 
-use crate::{syscall_pointer::SyscallPointer, syscall_slice::SyscallSlice};
+use crate::{
+    syscall_pointer::SyscallPointer, syscall_slice::SyscallSlice,
+    syscall_start_recording_keyboard::SyscallStartRecordingKeyboardInput,
+};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, MaxSize, PartialEq, Eq)]
 pub enum Syscall {
     Print(SyscallSlice),
     TakeFrameBuffer(SyscallPointer),
     Exit,
+    StartRecordingKeyboard(SyscallStartRecordingKeyboardInput),
+    PollKeyboard(SyscallSlice),
 }
 
 impl Syscall {
