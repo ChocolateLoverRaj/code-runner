@@ -23,6 +23,11 @@ impl SyscallSlice {
     pub unsafe fn to_slice<'a, T>(&self) -> &'a [T] {
         unsafe { slice::from_raw_parts(self.pointer as *const _, self.len as usize) }
     }
+
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> u64 {
+        self.len
+    }
 }
 
 impl<T> From<&[T]> for SyscallSlice {
@@ -31,6 +36,12 @@ impl<T> From<&[T]> for SyscallSlice {
             pointer: value.as_ptr() as u64,
             len: value.len() as u64,
         }
+    }
+}
+
+impl<T> From<SyscallSlice> for *const T {
+    fn from(value: SyscallSlice) -> Self {
+        value.pointer as *const T
     }
 }
 

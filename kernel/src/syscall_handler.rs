@@ -4,7 +4,12 @@ use alloc::sync::Arc;
 use bootloader_api::info::FrameBuffer;
 use common::{
     mem::{KERNEL_VIRT_MEM_START, USER_SPACE_MMIO_START},
-    syscall::{Syscall, TakeFrameBufferError, TakeFrameBufferOutput, TakeFrameBufferOutputData},
+    syscall::Syscall,
+    syscall_output::SyscallOutput,
+    syscall_print::{SyscallPrintError, SyscallPrintOutput},
+    syscall_take_frame_buffer::{
+        TakeFrameBufferError, TakeFrameBufferOutput, TakeFrameBufferOutputData,
+    },
 };
 use conquer_once::noblock::OnceCell;
 use x86_64::{
@@ -35,17 +40,27 @@ extern "sysv64" fn syscall_handler(
     match Syscall::deserialize_from_input(inputs) {
         Ok(syscall) => match syscall {
             Syscall::Print(message) => {
-                // FIXME: Verify that message is accessible to user
-                match str::from_utf8(unsafe { message.to_slice() }) {
-                    Ok(message) => {
-                        log::info!("[U] {:?}", message);
+                let output = SyscallPrintOutput({
+                    let pointer: *const u8 = message.into();
+                    if pointer.is_null() {
+                        Err(SyscallPrintError::PointerIsNull)
+                    } else if !pointer.is_aligned() {
+                        Err(SyscallPrintError::PointerNotAligned)
+                    } else if VirtAddr::from_ptr(pointer.wrapping_add(message.len() as usize))
+                        > VirtAddr::new_truncate(KERNEL_VIRT_MEM_START)
+                    {
+                        Err(SyscallPrintError::PointerNotAllowed)
+                    } else {
+                        match str::from_utf8(unsafe { message.to_slice() }) {
+                            Ok(message) => {
+                                log::info!("[U] {:?}", message);
+                                Ok(())
+                            }
+                            Err(_e) => Err(SyscallPrintError::InvalidString),
+                        }
                     }
-                    Err(e) => {
-                        log::warn!("Invalid message from user space: {:?}", e);
-                    }
-                }
-                // No return value needed cuz the user space should be printing valid utf8 and it should never be invalid
-                Default::default()
+                });
+                output.to_syscall_output().unwrap()
             }
             Syscall::TakeFrameBuffer(output) => {
                 let return_value = TakeFrameBufferOutput({
