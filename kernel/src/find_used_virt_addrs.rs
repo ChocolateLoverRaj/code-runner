@@ -1,3 +1,4 @@
+use common::mem::KERNEL_VIRT_MEM_START;
 use core::ops::Range;
 use x86_64::{
     structures::paging::{
@@ -8,7 +9,6 @@ use x86_64::{
 };
 
 use crate::{
-    modules::syscall::jmp_to_elf::KERNEL_VIRT_MEM_START,
     virt_addr_from_indexes::{
         virt_addr_from_indexes_1_gib, virt_addr_from_indexes_2_mib, virt_addr_from_indexes_4_kib,
     },

@@ -267,7 +267,7 @@ version = "0.11.9"
 source = "git+https://github.com/rust-osdev/bootloader?rev=2419f2f6bcc81839043b1a0b21c65302b34037d1#2419f2f6bcc81839043b1a0b21c65302b34037d1"
 dependencies = [
  "bootloader-boot-config 0.11.9 (git+https://github.com/rust-osdev/bootloader?rev=2419f2f6bcc81839043b1a0b21c65302b34037d1)",
- "bootloader_api 0.11.9 (git+https://github.com/rust-osdev/bootloader?rev=2419f2f6bcc81839043b1a0b21c65302b34037d1)",
+ "bootloader_api 0.11.9",
  "conquer-once 0.3.2",
  "log",
  "noto-sans-mono-bitmap",
@@ -284,13 +284,13 @@ dependencies = [
 [[package]]
 name = "bootloader_api"
 version = "0.11.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57a08a674787a3711ea0ba3bd730e6ffeb74832dcf6c51caf553528b33b54f73"
+source = "git+https://github.com/rust-osdev/bootloader?rev=2419f2f6bcc81839043b1a0b21c65302b34037d1#2419f2f6bcc81839043b1a0b21c65302b34037d1"
 
 [[package]]
 name = "bootloader_api"
-version = "0.11.9"
-source = "git+https://github.com/rust-osdev/bootloader?rev=2419f2f6bcc81839043b1a0b21c65302b34037d1#2419f2f6bcc81839043b1a0b21c65302b34037d1"
+version = "0.11.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77fadafc2a2fa690f4f14a2e2a41c65d9e810b7fe959245bdf6d3b9c6d7e4bf1"
 
 [[package]]
 name = "bytemuck"
@@ -348,6 +348,7 @@ dependencies = [
 name = "common"
 version = "0.1.0"
 dependencies = [
+ "bootloader_api 0.11.10",
  "bytemuck",
  "postcard",
  "serde",
@@ -841,7 +842,8 @@ dependencies = [
  "acpi",
  "anyhow",
  "bootloader-x86_64-common",
- "bootloader_api 0.11.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bootloader_api 0.11.10",
+ "bytemuck",
  "chrono",
  "common",
  "conquer-once 0.4.0",

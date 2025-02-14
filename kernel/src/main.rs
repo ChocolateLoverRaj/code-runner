@@ -4,6 +4,8 @@
 #![feature(allocator_api)]
 #![feature(int_roundings)]
 #![feature(naked_functions)]
+#![feature(pointer_is_aligned_to)]
+#![feature(unsigned_is_multiple_of)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
@@ -45,6 +47,7 @@ pub mod virt_mem_tracker;
 
 use alloc::sync::Arc;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
+use common::mem::KERNEL_VIRT_MEM_START;
 use conquer_once::noblock::OnceCell;
 use context_switching_keyboard_interrupt_handler::TestKeyboardBuilder;
 use context_switching_logging_timer_interrupt_handler::get_context_switching_logging_timer_interrupt_handler;
@@ -81,13 +84,13 @@ use modules::{
     panicking_stack_segment_fault_handler::panicking_stack_segment_fault_handler,
     spurious_interrupt_handler::set_spurious_interrupt_handler,
     static_local_apic::{self, LOCAL_APIC},
-    syscall::jmp_to_elf::{jmp_to_elf, KERNEL_VIRT_MEM_START},
+    syscall::jmp_to_elf::jmp_to_elf,
     tss::TssBuilder,
 };
 use phys_mapper::PhysMapper;
 use raw_cpuid::CpuId;
 use spin::Mutex;
-use syscall_handler::syscall_handler;
+use syscall_handler::get_syscall_handler;
 use x2apic::lapic::TimerDivide;
 use x86_64::{
     structures::{
@@ -129,8 +132,7 @@ static GDT: OnceCell<Gdt> = OnceCell::uninit();
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let frame_buffer = boot_info.framebuffer.as_mut();
-    // let frame_buffer_for_drawing = frame_buffer.take().unwrap();
-    init_logger_with_framebuffer(frame_buffer);
+    init_logger_with_framebuffer(None);
     log::info!(
         "Ramdisk len: {:?}. Ramdisk addr: {:?}",
         boot_info.ramdisk_len,
@@ -311,7 +313,16 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
         };
         log::info!("Entering ELF as user space");
-        unsafe { jmp_to_elf(elf_bytes, mapper, frame_allocator, gdt, syscall_handler) }.unwrap();
+        unsafe {
+            jmp_to_elf(
+                elf_bytes,
+                mapper.clone(),
+                frame_allocator.clone(),
+                gdt,
+                get_syscall_handler(frame_buffer, mapper, frame_allocator),
+            )
+        }
+        .unwrap();
     }
 
     log::info!("It did not crash");

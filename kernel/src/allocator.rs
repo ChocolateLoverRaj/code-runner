@@ -1,3 +1,4 @@
+use common::mem::KERNEL_VIRT_MEM_START;
 use linked_list_allocator::LockedHeap;
 use x86_64::{
     structures::paging::{
@@ -6,10 +7,7 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::{
-    find_used_virt_addrs::find_used_virt_addrs,
-    modules::syscall::jmp_to_elf::KERNEL_VIRT_MEM_START, virt_mem_tracker::VirtMemTracker,
-};
+use crate::{find_used_virt_addrs::find_used_virt_addrs, virt_mem_tracker::VirtMemTracker};
 
 pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB
 
