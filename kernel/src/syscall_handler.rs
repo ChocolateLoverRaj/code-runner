@@ -17,7 +17,10 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::{memory::BootInfoFrameAllocator, modules::syscall::handle_syscall::RustSyscallHandler};
+use crate::{
+    hlt_loop::hlt_loop, memory::BootInfoFrameAllocator,
+    modules::syscall::handle_syscall::RustSyscallHandler,
+};
 
 struct StaticStuff {
     frame_buffer: Option<&'static mut FrameBuffer>,
@@ -148,6 +151,10 @@ extern "sysv64" fn syscall_handler(
                 });
                 // postcard should never panic
                 return_value.to_syscall_output().unwrap()
+            }
+            Syscall::Exit => {
+                // Nothing to do
+                hlt_loop();
             }
         },
         Err(e) => {

@@ -7,6 +7,7 @@ use crate::{syscall_pointer::SyscallPointer, syscall_slice::SyscallSlice};
 pub enum Syscall {
     Print(SyscallSlice),
     TakeFrameBuffer(SyscallPointer),
+    Exit,
 }
 
 impl Syscall {

@@ -69,3 +69,8 @@ pub fn syscall_print(string: &str) -> Result<(), SyscallPrintError> {
         .unwrap()
         .0
 }
+
+pub fn syscall_exit() -> ! {
+    syscall(&Syscall::Exit);
+    unreachable!()
+}
