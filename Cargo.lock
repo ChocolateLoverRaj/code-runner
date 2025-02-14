@@ -1641,8 +1641,11 @@ checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
 name = "user_space"
 version = "0.1.0"
 dependencies = [
+ "bootloader_api 0.11.10",
  "common",
+ "embedded-graphics",
  "heapless 0.8.0",
+ "tinytga",
  "x86_64 0.15.2",
 ]
 
