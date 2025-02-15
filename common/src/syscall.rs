@@ -13,6 +13,8 @@ pub enum Syscall {
     Exit,
     StartRecordingKeyboard(SyscallStartRecordingKeyboardInput),
     PollKeyboard(SyscallSlice),
+    /// Block until an event (currently only keyboard input) has data
+    BlockUntilEvent,
 }
 
 impl Syscall {

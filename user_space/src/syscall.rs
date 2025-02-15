@@ -84,3 +84,7 @@ pub fn syscall_poll_keyboard(buffer: &mut [u8]) -> &mut [u8] {
     let count = syscall(&Syscall::PollKeyboard(buffer.into())) as usize;
     &mut buffer[..count]
 }
+
+pub fn syscall_block_until_event() {
+    syscall(&Syscall::BlockUntilEvent);
+}

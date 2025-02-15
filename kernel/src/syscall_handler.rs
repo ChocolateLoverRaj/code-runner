@@ -13,6 +13,7 @@ use common::{
 };
 use conquer_once::noblock::OnceCell;
 use x86_64::{
+    instructions::interrupts,
     structures::paging::{Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, Size4KiB},
     VirtAddr,
 };
@@ -179,16 +180,11 @@ extern "sysv64" fn syscall_handler(
                             let slice = unsafe { dest.to_slice_mut::<u8>() };
                             let count = {
                                 let mut count = 0;
-                                loop {
-                                    match slice.get_mut(count) {
-                                        Some(slot) => match queue.pop() {
-                                            Some(scan_code) => {
-                                                *slot = scan_code;
-                                            }
-                                            None => {
-                                                break;
-                                            }
-                                        },
+                                while let Some(slot) = slice.get_mut(count) {
+                                    match queue.pop() {
+                                        Some(scan_code) => {
+                                            *slot = scan_code;
+                                        }
                                         None => {
                                             break;
                                         }
@@ -204,6 +200,28 @@ extern "sysv64" fn syscall_handler(
                 } else {
                     0
                 }
+            }
+            Syscall::BlockUntilEvent => {
+                // This method only works since we aren't doing anything else while we wait
+                // If we want to run other user space threads or kernel tasks then we can't `hlt` here
+                if let Some(queue) = STATIC_STUFF
+                    .try_get()
+                    .unwrap()
+                    .cool_keyboard
+                    .queue()
+                    .queue()
+                {
+                    loop {
+                        interrupts::disable();
+                        if queue.is_empty() {
+                            interrupts::enable_and_hlt();
+                        } else {
+                            interrupts::enable();
+                            break;
+                        }
+                    }
+                }
+                Default::default()
             }
         },
         Err(e) => {

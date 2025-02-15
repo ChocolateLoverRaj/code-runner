@@ -14,8 +14,8 @@ use common::syscall_start_recording_keyboard::{
 };
 use draw_rust::draw_rust;
 use syscall::{
-    syscall_poll_keyboard, syscall_print, syscall_start_recording_keyboard,
-    syscall_take_frame_buffer,
+    syscall_block_until_event, syscall_poll_keyboard, syscall_print,
+    syscall_start_recording_keyboard, syscall_take_frame_buffer,
 };
 
 #[unsafe(no_mangle)]
@@ -28,8 +28,7 @@ extern "C" fn _start() -> ! {
     });
     let mut buffer = [Default::default(); 256];
     loop {
-        // To test getting multiple scan codes at once
-        spin(10_000_000);
+        syscall_block_until_event();
         let scan_codes = syscall_poll_keyboard(&mut buffer);
         if !scan_codes.is_empty() {
             syscall_print(&{
@@ -41,11 +40,5 @@ extern "C" fn _start() -> ! {
             })
             .unwrap();
         }
-    }
-}
-
-fn spin(count: usize) {
-    for _ in 0..count {
-        x86_64::instructions::nop();
     }
 }
