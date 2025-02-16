@@ -1,4 +1,8 @@
-use core::{cmp::Ordering, ops::DerefMut, str};
+use core::{
+    cmp::Ordering,
+    ops::{Deref, DerefMut},
+    str,
+};
 
 use alloc::sync::Arc;
 use bootloader_api::info::FrameBuffer;
@@ -22,9 +26,9 @@ use x86_64::{
 };
 
 use crate::{
-    context::Context, cool_keyboard_interrupt_handler::CoolKeyboard, hlt_loop::hlt_loop,
+    cool_keyboard_interrupt_handler::CoolKeyboard, hlt_loop::hlt_loop,
     memory::BootInfoFrameAllocator, modules::syscall::handle_syscall::RustSyscallHandler,
-    restore_context::restore_context,
+    restore_context::restore_context, user_space_state::State,
 };
 
 pub struct UserSpaceMemInfo {
@@ -47,7 +51,7 @@ struct StaticStuff {
     frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
     cool_keyboard: CoolKeyboard,
     user_space_mem_info: Arc<Mutex<Option<UserSpaceMemInfo>>>,
-    context_to_go_back_to: Arc<Mutex<Option<Context>>>,
+    state: Arc<Mutex<State>>,
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
@@ -293,17 +297,27 @@ extern "sysv64" fn syscall_handler(
             }
             Syscall::DoneWithInterruptHandler => {
                 // Make sure lock is dropped
-                let context = {
-                    STATIC_STUFF
-                        .try_get()
-                        .unwrap()
-                        .context_to_go_back_to
-                        .lock()
-                        .take()
+                let action = {
+                    {
+                        log::info!(
+                            "State: {:#?}",
+                            STATIC_STUFF.try_get().unwrap().state.lock().deref()
+                        );
+                    };
+                    match STATIC_STUFF.try_get().unwrap().state.lock().as_mut() {
+                        Some(user_space_state) => {
+                            match user_space_state.stack_of_saved_contexts.pop() {
+                                Some(context) => Some(context),
+                                None => None,
+                            }
+                        }
+                        None => None,
+                    }
                 };
-                if let Some(context_to_go_back_to) = context {
-                    unsafe { restore_context(&context_to_go_back_to) };
+                if let Some(context) = action {
+                    unsafe { restore_context(&context) };
                 }
+
                 // TODO: Return a `Result` for better error handling (although there should never be an error)
                 Default::default()
             }
@@ -326,7 +340,7 @@ pub fn get_syscall_handler(
     frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
     cool_keyboard: CoolKeyboard,
     user_space_mem_info: Arc<spin::Mutex<Option<UserSpaceMemInfo>>>,
-    context_to_go_back_to: Arc<Mutex<Option<Context>>>,
+    state: Arc<Mutex<State>>,
 ) -> RustSyscallHandler {
     STATIC_STUFF
         .try_init_once(|| StaticStuff {
@@ -335,7 +349,7 @@ pub fn get_syscall_handler(
             frame_allocator,
             cool_keyboard,
             user_space_mem_info,
-            context_to_go_back_to,
+            state,
         })
         .unwrap();
     syscall_handler

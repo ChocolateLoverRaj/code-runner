@@ -23,6 +23,7 @@ use x86_64::{
 use crate::{
     context::Context, enter_user_mode::enter_user_mode, modules::idt::IdtBuilder,
     pic8259_interrupts::Pic8259Interrupts, restore_context::restore_context,
+    user_space_state::State,
 };
 
 static LOCAL_APIC: OnceCell<&'static OnceCell<Mutex<LocalApic>>> = OnceCell::uninit();
@@ -34,7 +35,7 @@ struct RecordingKeyboard {
 
 static SCANCODE_QUEUE: RwLock<Option<RecordingKeyboard>> = RwLock::new(None);
 static USER_SPACE_INTERRUPT_HANDLER: Mutex<Option<VirtAddr>> = Mutex::new(None);
-static CONTEXT_TO_GO_BACK_TO: OnceCell<Arc<Mutex<Option<Context>>>> = OnceCell::uninit();
+static STATE: OnceCell<Arc<Mutex<State>>> = OnceCell::uninit();
 
 #[naked]
 unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler(
@@ -60,9 +61,8 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler(
             
 
             mov rdi, rsp   // first arg of context switch is the context which is all the registers saved above
-            // mov rsi, [rsp + 0xA0] // 2nd arg: interrupt stack frame
             
-            sub rsp, 0x400
+            sub rsp, 0x80
             jmp {context_switch}
             ", 
             context_switch = sym context_switching_keyboard_interrupt_handler_rust
@@ -72,11 +72,10 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler(
 
 unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
     context: *const Context,
-    // interrupt_stack_frame: *const InterruptStackFrame,
 ) {
     let context = unsafe { (*context).clone() };
-    // let stack_frame = unsafe { (*interrupt_stack_frame).clone() };
-    log::info!("Context: {:#x?}", context);
+    log::info!("State: {:#?}", STATE.try_get().unwrap().lock().deref());
+    // log::info!("Context: {:#x?}", context);
     // Make sure to drop all locks before exiting
     #[derive(Debug)]
     enum JmpTo {
@@ -102,14 +101,19 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
         };
         let mut local_apic = LOCAL_APIC.try_get().unwrap().try_get().unwrap().lock();
         unsafe { local_apic.end_of_interrupt() };
-        match USER_SPACE_INTERRUPT_HANDLER.lock().as_ref() {
-            Some(user_space_interrupt_handler) => {
-                *CONTEXT_TO_GO_BACK_TO.try_get().unwrap().lock() = Some(context);
-                // FIXME: Make sure that the context we have is actually the context for the same user space process, so that it has the correct stack and rsp
+        match (
+            STATE.try_get().unwrap().lock().as_mut(),
+            USER_SPACE_INTERRUPT_HANDLER.lock().as_ref(),
+        ) {
+            (Some(user_space_state), Some(user_space_interrupt_handler)) => {
+                user_space_state
+                    .stack_of_saved_contexts
+                    .push(context)
+                    .unwrap();
                 let interrupt_handler_stack_end = VirtAddr::new(context.rsp);
                 JmpTo::UserMode(*user_space_interrupt_handler, interrupt_handler_stack_end)
             }
-            None => JmpTo::RestoreContext(context),
+            _ => JmpTo::RestoreContext(context),
         }
     };
     log::info!("jmp_to: {:#?}", jmp_to);
@@ -122,27 +126,6 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
         }
     }
 }
-
-// extern "x86-interrupt" fn cool_keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-//     let mut port = Port::new(0x60);
-//     let scan_code: u8 = unsafe { port.read() };
-//     if let Some(RecordingKeyboard {
-//         full_queue_behavior,
-//         queue,
-//     }) = SCANCODE_QUEUE.read().deref()
-//     {
-//         match full_queue_behavior {
-//             FullQueueBehavior::DropNewest => {
-//                 let _ = queue.push(scan_code);
-//             }
-//             FullQueueBehavior::DropOldest => {
-//                 queue.force_push(scan_code);
-//             }
-//         }
-//     };
-//     let mut local_apic = LOCAL_APIC.try_get().unwrap().try_get().unwrap().lock();
-//     unsafe { local_apic.end_of_interrupt() };
-// }
 
 unsafe fn enable_interrupts(io_apic: &mut IoApic) {
     unsafe { io_apic.enable_irq(Pic8259Interrupts::Keyboard.into()) }
@@ -179,7 +162,7 @@ impl CoolKeyboardBuilder {
     pub fn configure_io_apic(
         &'static self,
         io_apic: Arc<Mutex<IoApic>>,
-        context_to_go_back_to: Arc<Mutex<Option<Context>>>,
+        state: Arc<Mutex<State>>,
     ) -> CoolKeyboard {
         {
             let mut io_apic = io_apic.lock();
@@ -190,9 +173,7 @@ impl CoolKeyboardBuilder {
                     entry
                 })
             };
-            CONTEXT_TO_GO_BACK_TO
-                .try_init_once(|| context_to_go_back_to)
-                .unwrap();
+            STATE.try_init_once(|| state).unwrap();
         }
         CoolKeyboard { io_apic }
     }

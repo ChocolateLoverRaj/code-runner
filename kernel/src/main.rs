@@ -43,6 +43,7 @@ pub mod serial_logger;
 pub mod set_color;
 pub mod split_draw_target;
 pub mod syscall_handler;
+pub mod user_space_state;
 pub mod virt_addr_from_indexes;
 pub mod virt_mem_tracker;
 
@@ -306,12 +307,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     #[allow(unused)]
     let mut io_apic = unsafe { get_io_apic(&apic, &mut phys_mapper.clone()) };
-    let context_to_go_back_to = Arc::new(Mutex::new(None));
+    let state = Arc::new(Mutex::new(None));
     let keyboard = static_stuff
         .keyboard
-        .configure_io_apic(Arc::new(Mutex::new(io_apic)), context_to_go_back_to.clone());
-
-    // x86_64::instructions::interrupts::enable();
+        .configure_io_apic(Arc::new(Mutex::new(io_apic)), state.clone());
 
     if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
         let elf_bytes = unsafe {
@@ -324,16 +323,16 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 elf_bytes,
                 mapper.clone(),
                 frame_allocator.clone(),
-                gdt,
                 get_syscall_handler(
                     frame_buffer,
                     mapper,
                     frame_allocator,
                     keyboard,
                     user_space_mem_info.clone(),
-                    context_to_go_back_to,
+                    state.clone(),
                 ),
                 user_space_mem_info,
+                state,
             )
         }
         .unwrap();

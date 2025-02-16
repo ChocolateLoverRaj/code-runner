@@ -4,6 +4,7 @@ use alloc::{sync::Arc, vec::Vec};
 use anyhow::{anyhow, Context};
 use common::mem::KERNEL_VIRT_MEM_START;
 use elf::{endian::NativeEndian, ElfBytes};
+use spin::Mutex;
 use x86_64::{
     structures::paging::{
         FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, Size4KiB,
@@ -14,8 +15,9 @@ use x86_64::{
 use crate::{
     enter_user_mode::enter_user_mode,
     memory::BootInfoFrameAllocator,
-    modules::{gdt::Gdt, syscall::init_syscalls::init_syscalls},
+    modules::syscall::init_syscalls::init_syscalls,
     syscall_handler::UserSpaceMemInfo,
+    user_space_state::{State, UserSpaceState},
     virt_mem_tracker::VirtMemTracker,
 };
 
@@ -39,9 +41,9 @@ pub unsafe fn jmp_to_elf(
     elf_bytes: &[u8],
     mapper: Arc<spin::Mutex<OffsetPageTable<'static>>>,
     frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
-    gdt: &Gdt,
     syscall_handler: RustSyscallHandler,
     user_space_mem_info: Arc<spin::Mutex<Option<UserSpaceMemInfo>>>,
+    state: Arc<Mutex<State>>,
 ) -> anyhow::Result<()> {
     let (start_addr, stack_end) = {
         init_syscalls(syscall_handler);
@@ -297,6 +299,10 @@ pub unsafe fn jmp_to_elf(
     };
     // FIXME: Make sure that the stack doesn't end up in between the ELF area for some reason.
     *user_space_mem_info.lock() = Some(UserSpaceMemInfo::new(stack_end.start_address()));
+    *state.lock() = Some(UserSpaceState {
+        stack_of_saved_contexts: Default::default(),
+        currently_running: true,
+    });
     unsafe { enter_user_mode(start_addr, stack_end.start_address()) };
 
     Ok(())
