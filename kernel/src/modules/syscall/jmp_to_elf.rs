@@ -297,7 +297,7 @@ pub unsafe fn jmp_to_elf(
     };
     // FIXME: Make sure that the stack doesn't end up in between the ELF area for some reason.
     *user_space_mem_info.lock() = Some(UserSpaceMemInfo::new(stack_end.start_address()));
-    unsafe { enter_user_mode(gdt, start_addr, stack_end.start_address()) };
+    unsafe { enter_user_mode(start_addr, stack_end.start_address()) };
 
     Ok(())
 }

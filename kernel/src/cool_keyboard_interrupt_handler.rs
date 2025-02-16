@@ -21,11 +21,8 @@ use x86_64::{
 };
 
 use crate::{
-    context::Context,
-    enter_user_mode::enter_user_mode,
-    modules::{gdt::Gdt, idt::IdtBuilder},
-    pic8259_interrupts::Pic8259Interrupts,
-    restore_context::restore_context,
+    context::Context, enter_user_mode::enter_user_mode, modules::idt::IdtBuilder,
+    pic8259_interrupts::Pic8259Interrupts, restore_context::restore_context,
 };
 
 static LOCAL_APIC: OnceCell<&'static OnceCell<Mutex<LocalApic>>> = OnceCell::uninit();
@@ -38,7 +35,6 @@ struct RecordingKeyboard {
 static SCANCODE_QUEUE: RwLock<Option<RecordingKeyboard>> = RwLock::new(None);
 static USER_SPACE_INTERRUPT_HANDLER: Mutex<Option<VirtAddr>> = Mutex::new(None);
 static CONTEXT_TO_GO_BACK_TO: OnceCell<Arc<Mutex<Option<Context>>>> = OnceCell::uninit();
-static GDT: OnceCell<&'static Gdt> = OnceCell::uninit();
 
 #[naked]
 unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler(
@@ -84,7 +80,7 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
     // Make sure to drop all locks before exiting
     #[derive(Debug)]
     enum JmpTo {
-        UserMode(&'static Gdt, VirtAddr, VirtAddr),
+        UserMode(VirtAddr, VirtAddr),
         RestoreContext(Context),
     }
     let jmp_to = {
@@ -111,26 +107,15 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
                 *CONTEXT_TO_GO_BACK_TO.try_get().unwrap().lock() = Some(context);
                 // FIXME: Make sure that the context we have is actually the context for the same user space process, so that it has the correct stack and rsp
                 let interrupt_handler_stack_end = VirtAddr::new(context.rsp);
-                let gdt = *GDT.try_get().unwrap();
-                JmpTo::UserMode(
-                    gdt,
-                    *user_space_interrupt_handler,
-                    interrupt_handler_stack_end,
-                )
+                JmpTo::UserMode(*user_space_interrupt_handler, interrupt_handler_stack_end)
             }
             None => JmpTo::RestoreContext(context),
         }
     };
     log::info!("jmp_to: {:#?}", jmp_to);
     match jmp_to {
-        JmpTo::UserMode(gdt, user_space_interrupt_handler, interrupt_handler_stack_end) => {
-            unsafe {
-                enter_user_mode(
-                    gdt,
-                    user_space_interrupt_handler,
-                    interrupt_handler_stack_end,
-                )
-            };
+        JmpTo::UserMode(user_space_interrupt_handler, interrupt_handler_stack_end) => {
+            unsafe { enter_user_mode(user_space_interrupt_handler, interrupt_handler_stack_end) };
         }
         JmpTo::RestoreContext(context) => {
             unsafe { restore_context(&context) };
@@ -195,7 +180,6 @@ impl CoolKeyboardBuilder {
         &'static self,
         io_apic: Arc<Mutex<IoApic>>,
         context_to_go_back_to: Arc<Mutex<Option<Context>>>,
-        gdt: &'static Gdt,
     ) -> CoolKeyboard {
         {
             let mut io_apic = io_apic.lock();
@@ -209,7 +193,6 @@ impl CoolKeyboardBuilder {
             CONTEXT_TO_GO_BACK_TO
                 .try_init_once(|| context_to_go_back_to)
                 .unwrap();
-            GDT.try_init_once(|| gdt).unwrap();
         }
         CoolKeyboard { io_apic }
     }

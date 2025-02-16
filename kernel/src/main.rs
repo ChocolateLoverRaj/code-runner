@@ -307,11 +307,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     #[allow(unused)]
     let mut io_apic = unsafe { get_io_apic(&apic, &mut phys_mapper.clone()) };
     let context_to_go_back_to = Arc::new(Mutex::new(None));
-    let keyboard = static_stuff.keyboard.configure_io_apic(
-        Arc::new(Mutex::new(io_apic)),
-        context_to_go_back_to.clone(),
-        gdt,
-    );
+    let keyboard = static_stuff
+        .keyboard
+        .configure_io_apic(Arc::new(Mutex::new(io_apic)), context_to_go_back_to.clone());
 
     // x86_64::instructions::interrupts::enable();
 
