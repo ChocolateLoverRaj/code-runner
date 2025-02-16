@@ -1,5 +1,5 @@
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Context {
     pub rbp: u64,
     pub rax: u64,

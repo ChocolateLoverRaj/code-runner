@@ -15,6 +15,7 @@ use crate::{
     enter_user_mode::enter_user_mode,
     memory::BootInfoFrameAllocator,
     modules::{gdt::Gdt, syscall::init_syscalls::init_syscalls},
+    syscall_handler::UserSpaceMemInfo,
     virt_mem_tracker::VirtMemTracker,
 };
 
@@ -40,6 +41,7 @@ pub unsafe fn jmp_to_elf(
     frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
     gdt: &Gdt,
     syscall_handler: RustSyscallHandler,
+    user_space_mem_info: Arc<spin::Mutex<Option<UserSpaceMemInfo>>>,
 ) -> anyhow::Result<()> {
     let (start_addr, stack_end) = {
         init_syscalls(syscall_handler);
@@ -293,6 +295,8 @@ pub unsafe fn jmp_to_elf(
 
         (start_addr, stack_end)
     };
+    // FIXME: Make sure that the stack doesn't end up in between the ELF area for some reason.
+    *user_space_mem_info.lock() = Some(UserSpaceMemInfo::new(stack_end.start_address()));
     unsafe { enter_user_mode(gdt, start_addr, stack_end.start_address()) };
 
     Ok(())

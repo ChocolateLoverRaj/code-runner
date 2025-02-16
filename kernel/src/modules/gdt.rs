@@ -7,6 +7,7 @@ pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
 use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
 
+#[derive(Debug)]
 pub struct Gdt {
     gdt: GlobalDescriptorTable,
     kernel_code_selector: SegmentSelector,

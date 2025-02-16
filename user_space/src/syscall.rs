@@ -9,6 +9,7 @@ use common::{
         TakeFrameBufferError, TakeFrameBufferOutput, TakeFrameBufferOutputData,
     },
 };
+use x86_64::VirtAddr;
 
 /// # Safety
 /// The inputs must be valid. Invalid inputs can lead to undefined behavior or the program being terminated.
@@ -87,4 +88,22 @@ pub fn syscall_poll_keyboard(buffer: &mut [u8]) -> &mut [u8] {
 
 pub fn syscall_block_until_event() {
     syscall(&Syscall::BlockUntilEvent);
+}
+
+pub fn syscall_allocate_pages(total_pages: u64) -> VirtAddr {
+    VirtAddr::new(syscall(&Syscall::AllocatePages(total_pages)))
+}
+
+/// Set your handler to `unsafe` to avoid accidentally calling it in your code
+pub type KeyboardInterruptHandler = unsafe extern "sysv64" fn() -> !;
+
+pub fn syscall_set_keyboard_interrupt_handler(handler: Option<KeyboardInterruptHandler>) {
+    syscall(&Syscall::SetKeyboardInterruptHandler(
+        handler.map(|handler| (handler as *const ()).into()),
+    ));
+}
+
+pub fn syscall_done_with_interrupt_handler() -> ! {
+    syscall(&Syscall::DoneWithInterruptHandler);
+    unreachable!()
 }

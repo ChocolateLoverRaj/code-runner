@@ -1,4 +1,4 @@
-use core::{ops::DerefMut, str};
+use core::{cmp::Ordering, ops::DerefMut, str};
 
 use alloc::sync::Arc;
 use bootloader_api::info::FrameBuffer;
@@ -12,22 +12,42 @@ use common::{
     },
 };
 use conquer_once::noblock::OnceCell;
+use spin::Mutex;
 use x86_64::{
     instructions::interrupts,
-    structures::paging::{Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, Size4KiB},
+    structures::paging::{
+        FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, Size4KiB,
+    },
     VirtAddr,
 };
 
 use crate::{
-    cool_keyboard_interrupt_handler::CoolKeyboard, hlt_loop::hlt_loop,
+    context::Context, cool_keyboard_interrupt_handler::CoolKeyboard, hlt_loop::hlt_loop,
     memory::BootInfoFrameAllocator, modules::syscall::handle_syscall::RustSyscallHandler,
+    restore_context::restore_context,
 };
+
+pub struct UserSpaceMemInfo {
+    user_space_heap_start: VirtAddr,
+    allocated_pages: u64,
+}
+
+impl UserSpaceMemInfo {
+    pub fn new(user_space_heap_start: VirtAddr) -> Self {
+        Self {
+            user_space_heap_start,
+            allocated_pages: 0,
+        }
+    }
+}
 
 struct StaticStuff {
     frame_buffer: Option<&'static mut FrameBuffer>,
     mapper: Arc<spin::Mutex<OffsetPageTable<'static>>>,
     frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
     cool_keyboard: CoolKeyboard,
+    user_space_mem_info: Arc<Mutex<Option<UserSpaceMemInfo>>>,
+    context_to_go_back_to: Arc<Mutex<Option<Context>>>,
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
@@ -223,6 +243,70 @@ extern "sysv64" fn syscall_handler(
                 }
                 Default::default()
             }
+            Syscall::AllocatePages(pages) => {
+                let stuff = STATIC_STUFF.try_get().unwrap();
+                let mut user_space_mem_info = stuff.user_space_mem_info.lock();
+                let UserSpaceMemInfo {
+                    user_space_heap_start,
+                    allocated_pages,
+                } = user_space_mem_info.as_mut().unwrap();
+
+                // FIXME: Check for situations where a ton of pages are requested
+                match (*allocated_pages).cmp(&pages) {
+                    Ordering::Less => {
+                        let mut frame_allocator = stuff.frame_allocator.lock();
+                        let mut mapper = stuff.mapper.lock();
+                        for i in *allocated_pages..pages {
+                            unsafe {
+                                mapper.map_to(
+                                    Page::from_start_address(*user_space_heap_start).unwrap() + i,
+                                    // FIXME: Handle errors
+                                    frame_allocator.allocate_frame().unwrap(),
+                                    PageTableFlags::PRESENT
+                                        | PageTableFlags::USER_ACCESSIBLE
+                                        | PageTableFlags::WRITABLE,
+                                    frame_allocator.deref_mut(),
+                                )
+                            }
+                            .unwrap()
+                            .flush();
+                        }
+                    }
+                    Ordering::Equal => {}
+                    Ordering::Greater => {
+                        // FIXME: Deallocate pages
+                    }
+                }
+                user_space_heap_start.as_u64()
+            }
+            Syscall::SetKeyboardInterruptHandler(user_space_interrupt) => {
+                STATIC_STUFF
+                    .try_get()
+                    .unwrap()
+                    .cool_keyboard
+                    .set_user_space_interrupt(
+                        user_space_interrupt.map(|syscall_pointer| {
+                            VirtAddr::from_ptr::<()>(syscall_pointer.into())
+                        }),
+                    );
+                Default::default()
+            }
+            Syscall::DoneWithInterruptHandler => {
+                // Make sure lock is dropped
+                let context = {
+                    STATIC_STUFF
+                        .try_get()
+                        .unwrap()
+                        .context_to_go_back_to
+                        .lock()
+                        .take()
+                };
+                if let Some(context_to_go_back_to) = context {
+                    unsafe { restore_context(&context_to_go_back_to) };
+                }
+                // TODO: Return a `Result` for better error handling (although there should never be an error)
+                Default::default()
+            }
         },
         Err(e) => {
             log::warn!(
@@ -241,6 +325,8 @@ pub fn get_syscall_handler(
     mapper: Arc<spin::Mutex<OffsetPageTable<'static>>>,
     frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
     cool_keyboard: CoolKeyboard,
+    user_space_mem_info: Arc<spin::Mutex<Option<UserSpaceMemInfo>>>,
+    context_to_go_back_to: Arc<Mutex<Option<Context>>>,
 ) -> RustSyscallHandler {
     STATIC_STUFF
         .try_init_once(|| StaticStuff {
@@ -248,6 +334,8 @@ pub fn get_syscall_handler(
             mapper,
             frame_allocator,
             cool_keyboard,
+            user_space_mem_info,
+            context_to_go_back_to,
         })
         .unwrap();
     syscall_handler

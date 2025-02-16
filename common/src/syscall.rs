@@ -15,6 +15,11 @@ pub enum Syscall {
     PollKeyboard(SyscallSlice),
     /// Block until an event (currently only keyboard input) has data
     BlockUntilEvent,
+    /// Change the **total** number of allocated pages (the kernel increases / decreased depending on the current number and specified number)
+    AllocatePages(u64),
+    SetKeyboardInterruptHandler(Option<SyscallPointer>),
+    /// Do not return from the keyboard interrupt handler. Instead, call this syscall at the end of ur fn.
+    DoneWithInterruptHandler,
 }
 
 impl Syscall {

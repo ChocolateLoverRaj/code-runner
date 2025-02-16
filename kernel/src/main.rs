@@ -306,9 +306,12 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     #[allow(unused)]
     let mut io_apic = unsafe { get_io_apic(&apic, &mut phys_mapper.clone()) };
-    let keyboard = static_stuff
-        .keyboard
-        .configure_io_apic(Arc::new(Mutex::new(io_apic)));
+    let context_to_go_back_to = Arc::new(Mutex::new(None));
+    let keyboard = static_stuff.keyboard.configure_io_apic(
+        Arc::new(Mutex::new(io_apic)),
+        context_to_go_back_to.clone(),
+        gdt,
+    );
 
     // x86_64::instructions::interrupts::enable();
 
@@ -317,13 +320,22 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
         };
         log::info!("Entering ELF as user space");
+        let user_space_mem_info = Arc::new(spin::Mutex::new(None));
         unsafe {
             jmp_to_elf(
                 elf_bytes,
                 mapper.clone(),
                 frame_allocator.clone(),
                 gdt,
-                get_syscall_handler(frame_buffer, mapper, frame_allocator, keyboard),
+                get_syscall_handler(
+                    frame_buffer,
+                    mapper,
+                    frame_allocator,
+                    keyboard,
+                    user_space_mem_info.clone(),
+                    context_to_go_back_to,
+                ),
+                user_space_mem_info,
             )
         }
         .unwrap();

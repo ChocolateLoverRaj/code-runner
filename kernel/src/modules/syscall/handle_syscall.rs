@@ -1,10 +1,6 @@
-use core::{
-    arch::{asm, naked_asm},
-    ops::DerefMut,
-};
+use core::arch::{asm, naked_asm};
 
 use conquer_once::noblock::OnceCell;
-use spin::Mutex;
 
 const TEMP_STACK_SIZE: usize = 0x10000;
 
@@ -24,7 +20,7 @@ pub type RustSyscallHandler = extern "sysv64" fn(
     input6: u64,
 ) -> u64;
 
-static RUST_HANDLER: OnceCell<Mutex<Option<RustSyscallHandler>>> = OnceCell::uninit();
+static RUST_HANDLER: OnceCell<RustSyscallHandler> = OnceCell::uninit();
 
 // save the registers, handle the syscall and return to usermode
 #[naked]
@@ -100,9 +96,7 @@ extern "sysv64" fn handle_syscall_with_temp_stack(
     }
 
     // unwrap shouldn't panic cuz this handler will only be called after setting the handler
-    let ret_val = RUST_HANDLER.try_get().unwrap().lock().deref_mut().unwrap()(
-        arg0, arg1, arg2, arg3, arg4, arg5, arg6,
-    );
+    let ret_val = RUST_HANDLER.try_get().unwrap()(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
 
     unsafe {
         asm!("\
@@ -116,9 +110,6 @@ extern "sysv64" fn handle_syscall_with_temp_stack(
 }
 
 pub fn get_syscall_handler(rust_handler: RustSyscallHandler) -> *const () {
-    *RUST_HANDLER
-        .try_get_or_init(|| Mutex::new(None))
-        .unwrap()
-        .lock() = Some(rust_handler);
+    RUST_HANDLER.try_get_or_init(|| rust_handler).unwrap();
     handle_syscall_wrapper as *const ()
 }
