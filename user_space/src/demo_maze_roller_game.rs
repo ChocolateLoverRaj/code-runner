@@ -188,7 +188,7 @@ const LEVELS: &[&[&[Cell]]] = &[
 
 /// A game which just needs a draw target and async keyboard input
 pub async fn demo_maze_roller_game<D: DrawTarget, K: Stream<Item = u8>>(
-    mut display: &mut D,
+    display: &mut D,
     async_keyboard: K,
 ) where
     D::Color: From<Rgb888>,
@@ -269,7 +269,7 @@ pub async fn demo_maze_roller_game<D: DrawTarget, K: Stream<Item = u8>>(
                 )
                 .unwrap();
         };
-        draw_level(&mut display, current_position);
+        draw_level(display, current_position);
         loop {
             let level_change = loop {
                 #[derive(Debug)]
@@ -298,7 +298,7 @@ pub async fn demo_maze_roller_game<D: DrawTarget, K: Stream<Item = u8>>(
                                 .is_some()
                         {
                             current_position = attempted_position_to_move_to;
-                            draw_level(&mut display, current_position);
+                            draw_level(display, current_position);
                             break match get_cell(current_position) {
                                 Cell::End => {
                                     Text::with_baseline(
@@ -332,7 +332,7 @@ pub async fn demo_maze_roller_game<D: DrawTarget, K: Stream<Item = u8>>(
                                     match input {
                                         Input::Reset => {
                                             current_position = initial_position;
-                                            draw_level(&mut display, current_position);
+                                            draw_level(display, current_position);
                                             false
                                         }
                                         Input::NextLevel => {
@@ -363,7 +363,7 @@ pub async fn demo_maze_roller_game<D: DrawTarget, K: Stream<Item = u8>>(
                                         }
                                     }
                                     current_position = initial_position;
-                                    draw_level(&mut display, current_position);
+                                    draw_level(display, current_position);
                                     false
                                 }
                                 _ => false,
@@ -372,7 +372,7 @@ pub async fn demo_maze_roller_game<D: DrawTarget, K: Stream<Item = u8>>(
                     }
                     Input::ResetLevel => {
                         current_position = initial_position;
-                        draw_level(&mut display, current_position);
+                        draw_level(display, current_position);
                         break false;
                     }
                 }

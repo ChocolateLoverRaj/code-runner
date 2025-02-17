@@ -33,7 +33,7 @@ struct RecordingKeyboard {
     queue: ArrayQueue<u8>,
 }
 
-static SCANCODE_QUEUE: RwLock<Option<RecordingKeyboard>> = RwLock::new(None);
+static SCAN_CODE_QUEUE: RwLock<Option<RecordingKeyboard>> = RwLock::new(None);
 static USER_SPACE_INTERRUPT_HANDLER: Mutex<Option<VirtAddr>> = Mutex::new(None);
 static STATE: OnceCell<Arc<Mutex<State>>> = OnceCell::uninit();
 
@@ -71,11 +71,11 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler(
 unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
     context: *const Context,
 ) {
-    let context = unsafe { (*context).clone() };
+    let context = unsafe { *context };
     {
-        log::info!("State: {:#?}", STATE.try_get().unwrap().lock().deref());
+        // log::info!("State: {:#x?}", STATE.try_get().unwrap().lock().deref());
     }
-    log::info!("Context: {:#x?}", context);
+    // log::info!("Context: {:#x?}", context);
     // Make sure to drop all locks before exiting
     #[derive(Debug)]
     enum JmpTo {
@@ -88,7 +88,7 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
         if let Some(RecordingKeyboard {
             full_queue_behavior,
             queue,
-        }) = SCANCODE_QUEUE.read().deref()
+        }) = SCAN_CODE_QUEUE.read().deref()
         {
             match full_queue_behavior {
                 FullQueueBehavior::DropNewest => {
@@ -108,6 +108,7 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
             (Some(user_space_state), Some(user_space_interrupt_handler)) => {
                 user_space_state
                     .stack_of_saved_contexts
+                    // The bug is caused by entering the keyboard interrupt handler while the keyboard interrupt handler is still running
                     .push(context)
                     .unwrap();
                 let interrupt_handler_stack_end = user_space_state
@@ -118,7 +119,7 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
             _ => JmpTo::RestoreContext(context),
         }
     };
-    log::info!("jmp_to: {:#?}", jmp_to);
+    // log::info!("jmp_to: {:#?}", jmp_to);
     match jmp_to {
         JmpTo::UserMode(user_space_interrupt_handler, interrupt_handler_stack_end) => {
             unsafe { enter_user_mode(user_space_interrupt_handler, interrupt_handler_stack_end) };
@@ -188,7 +189,7 @@ pub struct CoolKeyboard {
 
 impl CoolKeyboard {
     pub fn enable(&self, settings: SyscallStartRecordingKeyboardInput) {
-        *SCANCODE_QUEUE.write() = Some(RecordingKeyboard {
+        *SCAN_CODE_QUEUE.write() = Some(RecordingKeyboard {
             full_queue_behavior: settings.behavior_on_full_queue,
             queue: ArrayQueue::new(settings.queue_size as usize),
         });
@@ -201,7 +202,7 @@ impl CoolKeyboard {
 
     pub fn queue(&self) -> QueueGuard {
         QueueGuard {
-            guard: SCANCODE_QUEUE.read(),
+            guard: SCAN_CODE_QUEUE.read(),
         }
     }
 

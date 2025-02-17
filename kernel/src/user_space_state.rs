@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use x86_64::VirtAddr;
 
 use crate::context::Context;
@@ -6,7 +7,7 @@ use crate::context::Context;
 #[derive(Debug)]
 pub struct UserSpaceState {
     // TODO: Don't use a fixed size vec
-    pub stack_of_saved_contexts: heapless::Vec<Context, 10>,
+    pub stack_of_saved_contexts: Box<heapless::Vec<Context, 100>>,
     /// During a syscall, this is set to the stack pointer of the user space stack so that user space interrupt handlers can be called on their own stack instead of the kernel's sycall handler stack
     pub stack_pointer: Option<VirtAddr>,
 }

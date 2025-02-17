@@ -1,10 +1,19 @@
 {
     "words": [
+        "Apic",
+        "eflags",
+        "ioapic",
+        "lapic",
+        "lateout",
+        "noblock",
         "repr",
+        "rflags",
+        "roundings",
         "Syscall",
+        "syscalls",
         "sysretq",
+        "sysv64",
         "uninit",
-        "Virt",
-        "sysv64"
+        "Virt"
     ]
 }

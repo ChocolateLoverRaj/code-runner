@@ -16,7 +16,6 @@ pub mod apic;
 pub mod colorful_logger;
 pub mod combined_logger;
 pub mod context;
-pub mod context_switching_keyboard_interrupt_handler;
 pub mod context_switching_logging_timer_interrupt_handler;
 pub mod cool_keyboard_interrupt_handler;
 pub mod demo_async;

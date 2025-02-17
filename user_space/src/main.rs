@@ -28,8 +28,8 @@ use syscall::{
 extern "C" fn _start() -> ! {
     allocator::init();
 
-    // let mut frame_buffer = syscall_take_frame_buffer().unwrap();
-    // draw_rust(&mut FrameBufferDisplay::new(&mut frame_buffer));
+    let mut frame_buffer = syscall_take_frame_buffer().unwrap();
+    draw_rust(&mut FrameBufferDisplay::new(&mut frame_buffer));
     syscall_start_recording_keyboard(SyscallStartRecordingKeyboardInput {
         queue_size: 256,
         behavior_on_full_queue: FullQueueBehavior::DropNewest,
@@ -37,9 +37,7 @@ extern "C" fn _start() -> ! {
     syscall_set_keyboard_interrupt_handler(Some(keyboard_interrupt_handler));
     let mut buffer = [Default::default(); 256];
     loop {
-        syscall_print("Blocking until event").unwrap();
         syscall_block_until_event();
-        syscall_print("Done blocking until event").unwrap();
         let scan_codes = syscall_poll_keyboard(&mut buffer);
         if !scan_codes.is_empty() {
             syscall_print(&format!("Got scan codes: {:x?}", scan_codes)).unwrap();
@@ -47,9 +45,19 @@ extern "C" fn _start() -> ! {
     }
 }
 
-static mut C: u64 = 0;
+// static mut C: u64 = 0;
 unsafe extern "sysv64" fn keyboard_interrupt_handler() -> ! {
-    syscall_print(&format!("Got keyboard interrupt; {:?}", unsafe { C })).unwrap();
-    unsafe { C += 1 };
+    // We cannot allocate during the interrupt handler because that would cause a lock forever.
+    // Same reason why we can't allocate in kernel interrupt handlers
+    // use core::fmt::Write;
+    // syscall_print(&{
+    //     let mut message = heapless::String::<100>::default();
+    //     message
+    //         .write_fmt(format_args!("Got keyboard interrupt; {:?}", unsafe { C }))
+    //         .unwrap();
+    //     message
+    // })
+    // .unwrap();
+    // unsafe { C += 1 };
     syscall_done_with_interrupt_handler();
 }

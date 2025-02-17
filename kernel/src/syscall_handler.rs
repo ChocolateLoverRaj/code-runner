@@ -1,10 +1,4 @@
-use core::{
-    arch::naked_asm,
-    cmp::Ordering,
-    mem::MaybeUninit,
-    ops::{Deref, DerefMut},
-    str,
-};
+use core::{arch::naked_asm, cmp::Ordering, mem::MaybeUninit, ops::DerefMut, str};
 
 use alloc::sync::Arc;
 use bootloader_api::info::FrameBuffer;
@@ -145,11 +139,15 @@ const SYSCALL_HANDLER: SyscallHandler =
 
 const TEMP_STACK_SIZE: usize = 0x10000;
 #[repr(C, align(16))]
-struct TempStack(MaybeUninit<[u8; TEMP_STACK_SIZE]>);
-static mut TEMP_STACK: TempStack = TempStack(MaybeUninit::uninit());
+struct TempStack([u8; TEMP_STACK_SIZE]);
+static mut TEMP_STACK: MaybeUninit<TempStack> = MaybeUninit::uninit();
 
 extern "sysv64" fn get_temp_rsp() -> u64 {
-    let temp_stack_start = VirtAddr::from_ptr(unsafe { TEMP_STACK.0.as_ptr() });
+    let temp_stack_start = VirtAddr::from_ptr(unsafe {
+        // Safety: We set the rsp in a way so that the same part of the temp stack isn't used at the same time
+        #[allow(static_mut_refs)]
+        TEMP_STACK.as_ptr()
+    });
     let temp_stack_end = temp_stack_start + TEMP_STACK_SIZE as u64;
     let temp_stack_range = temp_stack_start..temp_stack_end;
     let state = STATIC_STUFF.try_get().unwrap().state.lock();
@@ -165,12 +163,12 @@ extern "sysv64" fn get_temp_rsp() -> u64 {
             // TODO: Maybe check if we are gonna have a stack overflow (if the new rsp is already below the start of the temp stack)
         })
         .unwrap_or(temp_stack_end);
-    log::info!(
-        "Contexts: {:#x?}. Temp stack rsp: {:?}. Temp stack range: {:?}",
-        contexts,
-        temp_stack_rsp,
-        temp_stack_range
-    );
+    // log::info!(
+    //     "Contexts: {:#x?}. Temp stack rsp: {:?}. Temp stack range: {:?}",
+    //     contexts,
+    //     temp_stack_rsp,
+    //     temp_stack_range
+    // );
     temp_stack_rsp.as_u64()
 }
 
@@ -354,7 +352,7 @@ extern "sysv64" fn handle_syscall(
                         static_stuff.state.lock().as_mut().unwrap().stack_pointer =
                             Some(VirtAddr::new(user_space_stack_pointer));
                     }
-                    log::warn!("Waiting...");
+                    // log::warn!("Waiting...");
                     loop {
                         if queue.is_empty() {
                             interrupts::enable_and_hlt();
@@ -363,12 +361,10 @@ extern "sysv64" fn handle_syscall(
                         }
                         interrupts::disable();
                     }
-                    log::warn!("Done waiting...");
-                    interrupts::disable();
+                    // log::warn!("Done waiting...");
                     {
                         static_stuff.state.lock().as_mut().unwrap().stack_pointer = None;
                     }
-                    // We need to disable interrupts so that we don't get interrupted during stack switching after this function returns
                 }
                 Default::default()
             }
@@ -424,18 +420,13 @@ extern "sysv64" fn handle_syscall(
                 // Make sure lock is dropped
                 let action = {
                     {
-                        log::info!(
-                            "[{syscall:?}] State: {:#x?}",
-                            STATIC_STUFF.try_get().unwrap().state.lock().deref()
-                        );
+                        // log::info!(
+                        //     "[{syscall:?}] State: {:#x?}",
+                        //     STATIC_STUFF.try_get().unwrap().state.lock().deref()
+                        // );
                     };
                     match STATIC_STUFF.try_get().unwrap().state.lock().as_mut() {
-                        Some(user_space_state) => {
-                            match user_space_state.stack_of_saved_contexts.pop() {
-                                Some(context) => Some(context),
-                                None => None,
-                            }
-                        }
+                        Some(user_space_state) => user_space_state.stack_of_saved_contexts.pop(),
                         None => None,
                     }
                 };

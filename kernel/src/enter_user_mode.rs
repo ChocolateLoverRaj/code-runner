@@ -3,6 +3,7 @@ use x86_64::{registers::rflags::RFlags, VirtAddr};
 
 /// # Safety
 /// Jumps to an unchecked address with an unchecked stack.
+/// You should handle any exceptions that happen in Ring3 and not crash the kernel because of exception in Ring3.
 pub unsafe fn enter_user_mode(code: VirtAddr, stack_end: VirtAddr) {
     // Based on https://wiki.osdev.org/Getting_to_Ring_3#sysret_method
     // 0x0002 should always be set

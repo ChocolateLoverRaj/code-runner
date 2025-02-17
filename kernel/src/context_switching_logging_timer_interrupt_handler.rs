@@ -41,7 +41,7 @@ unsafe extern "sysv64" fn context_switching_logging_timer_interrupt_handler(
 }
 
 unsafe extern "sysv64" fn a(context: *const Context) {
-    let context = unsafe { (*context).clone() };
+    let context = unsafe { *context };
     {
         let mut local_apic = LOCAL_APIC.try_get().unwrap().try_get().unwrap().lock();
         let current = unsafe { local_apic.timer_current() };
