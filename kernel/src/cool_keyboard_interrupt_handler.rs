@@ -34,7 +34,7 @@ struct RecordingKeyboard {
 }
 
 static SCAN_CODE_QUEUE: RwLock<Option<RecordingKeyboard>> = RwLock::new(None);
-static USER_SPACE_INTERRUPT_HANDLER: Mutex<Option<VirtAddr>> = Mutex::new(None);
+pub static USER_SPACE_INTERRUPT_HANDLER: Mutex<Option<VirtAddr>> = Mutex::new(None);
 static STATE: OnceCell<Arc<Mutex<State>>> = OnceCell::uninit();
 
 #[naked]
@@ -106,15 +106,21 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
             USER_SPACE_INTERRUPT_HANDLER.lock().as_ref(),
         ) {
             (Some(user_space_state), Some(user_space_interrupt_handler)) => {
-                user_space_state
-                    .stack_of_saved_contexts
-                    // The bug is caused by entering the keyboard interrupt handler while the keyboard interrupt handler is still running
-                    .push(context)
-                    .unwrap();
-                let interrupt_handler_stack_end = user_space_state
-                    .stack_pointer
-                    .unwrap_or(VirtAddr::new(context.rsp));
-                JmpTo::UserMode(*user_space_interrupt_handler, interrupt_handler_stack_end)
+                if !user_space_state.in_keyboard_interrupt_handler {
+                    user_space_state
+                        .stack_of_saved_contexts
+                        // TODO: If a keyboard interrupt happens while the keyboard interrupt is running, don't enter the keyboard interrupt handler. Instead, call the keyboard interrupt handler again after the current keyboard interrupt handler is done.
+                        .push_within_capacity(context)
+                        .unwrap();
+                    user_space_state.in_keyboard_interrupt_handler = true;
+                    let interrupt_handler_stack_end = user_space_state
+                        .stack_pointer
+                        .unwrap_or(VirtAddr::new(context.rsp));
+                    JmpTo::UserMode(*user_space_interrupt_handler, interrupt_handler_stack_end)
+                } else {
+                    user_space_state.keyboard_interrupt_queued = true;
+                    JmpTo::RestoreContext(context)
+                }
             }
             _ => JmpTo::RestoreContext(context),
         }

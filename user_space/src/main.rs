@@ -59,5 +59,6 @@ unsafe extern "sysv64" fn keyboard_interrupt_handler() -> ! {
     // })
     // .unwrap();
     // unsafe { C += 1 };
+    for _ in 0..1_000_000 {}
     syscall_done_with_interrupt_handler();
 }

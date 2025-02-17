@@ -295,8 +295,13 @@ pub unsafe fn jmp_to_elf(
     // FIXME: Make sure that the stack doesn't end up in between the ELF area for some reason.
     *user_space_mem_info.lock() = Some(UserSpaceMemInfo::new(stack_end.start_address()));
     *state.lock() = Some(UserSpaceState {
-        stack_of_saved_contexts: Default::default(),
+        // The capacity needed is equal to the number of user space interrupt handlers
+        // Interrupt handlers can stack on top of each other, but the same interrupt handler can't stack on itself
+        // For example, a timer interrupt handler can interrupt a keyboard interrupt handler, but a keyboard interrupt handler can't interrupt a keyboard interrupt handler
+        stack_of_saved_contexts: Vec::with_capacity(1),
         stack_pointer: None,
+        keyboard_interrupt_queued: false,
+        in_keyboard_interrupt_handler: false,
     });
     unsafe { enter_user_mode(start_addr, stack_end.start_address()) };
 

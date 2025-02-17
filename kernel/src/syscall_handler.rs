@@ -22,9 +22,14 @@ use x86_64::{
 };
 
 use crate::{
-    cool_keyboard_interrupt_handler::CoolKeyboard, hlt_loop::hlt_loop,
-    memory::BootInfoFrameAllocator, modules::syscall::syscall_handler::SyscallHandler,
-    restore_context::restore_context, user_space_state::State,
+    context::Context,
+    cool_keyboard_interrupt_handler::{CoolKeyboard, USER_SPACE_INTERRUPT_HANDLER},
+    enter_user_mode::enter_user_mode,
+    hlt_loop::hlt_loop,
+    memory::BootInfoFrameAllocator,
+    modules::syscall::syscall_handler::SyscallHandler,
+    restore_context::restore_context,
+    user_space_state::State,
 };
 
 pub struct UserSpaceMemInfo {
@@ -418,6 +423,10 @@ extern "sysv64" fn handle_syscall(
             }
             Syscall::DoneWithInterruptHandler => {
                 // Make sure lock is dropped
+                enum Action {
+                    JmpToUserMode(VirtAddr, VirtAddr),
+                    RestoreContext(Context),
+                }
                 let action = {
                     {
                         // log::info!(
@@ -426,12 +435,57 @@ extern "sysv64" fn handle_syscall(
                         // );
                     };
                     match STATIC_STUFF.try_get().unwrap().state.lock().as_mut() {
-                        Some(user_space_state) => user_space_state.stack_of_saved_contexts.pop(),
+                        Some(user_space_state) => {
+                            user_space_state.in_keyboard_interrupt_handler = false;
+                            if !user_space_state.keyboard_interrupt_queued {
+                                match user_space_state.stack_of_saved_contexts.pop() {
+                                    Some(context) => Some(Action::RestoreContext(context)),
+                                    None => {
+                                        log::warn!(
+                                            "Called {:?} outside of an interrupt handler",
+                                            syscall
+                                        );
+                                        None
+                                    }
+                                }
+                            } else {
+                                log::info!("Entering queued keyboard interrupt handler");
+                                // FIXME: The stack_pointer could be `None` if this syscall is called outside of a user space interrupt handler. Do not unwrap.
+                                let interrupt_handler_stack_end =
+                                    user_space_state.stack_pointer.unwrap_or(VirtAddr::new(
+                                        user_space_state
+                                            .stack_of_saved_contexts
+                                            .last()
+                                            .unwrap()
+                                            .rsp,
+                                    ));
+                                user_space_state.in_keyboard_interrupt_handler = true;
+                                user_space_state.keyboard_interrupt_queued = false;
+                                match USER_SPACE_INTERRUPT_HANDLER.lock().as_ref() {
+                                    Some(user_space_interrupt_handler) => {
+                                        Some(Action::JmpToUserMode(
+                                            *user_space_interrupt_handler,
+                                            interrupt_handler_stack_end,
+                                        ))
+                                    }
+                                    None => {
+                                        log::warn!("Need to enter queued keyboard interrupt handler, but the handler address is not set.");
+                                        None
+                                    }
+                                }
+                            }
+                        }
                         None => None,
                     }
                 };
-                if let Some(context) = action {
-                    unsafe { restore_context(&context) };
+                match action {
+                    None => {}
+                    Some(Action::RestoreContext(context)) => {
+                        unsafe { restore_context(&context) };
+                    }
+                    Some(Action::JmpToUserMode(code, stack_end)) => {
+                        unsafe { enter_user_mode(code, stack_end) };
+                    }
                 }
 
                 // TODO: Return a `Result` for better error handling (although there should never be an error)

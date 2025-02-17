@@ -6,6 +6,7 @@
 #![feature(naked_functions)]
 #![feature(pointer_is_aligned_to)]
 #![feature(unsigned_is_multiple_of)]
+#![feature(vec_push_within_capacity)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
