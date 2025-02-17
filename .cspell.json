@@ -5,6 +5,7 @@
         "Apic",
         "eflags",
         "ioapic",
+        "iretq",
         "lapic",
         "lateout",
         "noblock",

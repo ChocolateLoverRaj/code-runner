@@ -17,7 +17,7 @@ pub unsafe fn enter_user_mode(code: VirtAddr, stack_end: VirtAddr) {
             mov rsp, {}
             sysretq",
             in(reg) rsp,
-            in("ecx") rip,
+            in("rcx") rip,
             in("r11") eflags
         );
     }

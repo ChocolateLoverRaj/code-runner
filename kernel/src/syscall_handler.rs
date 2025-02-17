@@ -22,13 +22,12 @@ use x86_64::{
 };
 
 use crate::{
-    context::Context,
+    context::{FullContext, RestoreContext, SyscallContext},
     cool_keyboard_interrupt_handler::{CoolKeyboard, USER_SPACE_INTERRUPT_HANDLER},
     enter_user_mode::enter_user_mode,
     hlt_loop::hlt_loop,
     memory::BootInfoFrameAllocator,
     modules::syscall::syscall_handler::SyscallHandler,
-    restore_context::restore_context,
     user_space_state::State,
 };
 
@@ -115,23 +114,27 @@ unsafe extern "sysv64" fn raw_syscall_handler() {
             push rax // Move rax to the stack which is where additional inputs go in sysv64
             call {handle_syscall}
 
+            // asm version of unreachable!() un rust
+            ud2
+
+            // This is what we would do if we were going to sysretq in this function, but then I changed it so that the handle_syscall function does the sysretq itself
             // Switch back to the old stack
-            mov rsp, rbp
+            // mov rsp, rbp
 
-            // restore callee-saved registers from the stack
-            pop r15
-            pop r14
-            pop r13
-            pop r12
-            pop rbx
-            pop rbp
+            // // restore callee-saved registers from the stack
+            // pop r15
+            // pop r14
+            // pop r13
+            // pop r12
+            // pop rbx
+            // pop rbp
 
-            // restore registers from the stack for sysretq
-            pop r11
-            pop rcx
+            // // restore registers from the stack for sysretq
+            // pop r11
+            // pop rcx
 
-            // go back to user mode
-            sysretq
+            // // go back to user mode
+            // sysretq
             ",
             handle_syscall = sym handle_syscall,
             get_temp_rsp = sym get_temp_rsp
@@ -177,7 +180,6 @@ extern "sysv64" fn get_temp_rsp() -> u64 {
     temp_stack_rsp.as_u64()
 }
 
-#[inline(never)]
 extern "sysv64" fn handle_syscall(
     input0: u64,
     input1: u64,
@@ -187,9 +189,9 @@ extern "sysv64" fn handle_syscall(
     input5: u64,
     input6: u64,
     user_space_stack_pointer: u64,
-) -> u64 {
+) -> ! {
     let inputs = [input0, input1, input2, input3, input4, input5, input6];
-    match Syscall::deserialize_from_input(inputs) {
+    let return_value = match Syscall::deserialize_from_input(inputs) {
         Ok(syscall) => match syscall {
             Syscall::Print(message) => {
                 let output = SyscallPrintOutput({
@@ -425,7 +427,7 @@ extern "sysv64" fn handle_syscall(
                 // Make sure lock is dropped
                 enum Action {
                     JmpToUserMode(VirtAddr, VirtAddr),
-                    RestoreContext(Context),
+                    RestoreContext(FullContext),
                 }
                 let action = {
                     {
@@ -481,7 +483,7 @@ extern "sysv64" fn handle_syscall(
                 match action {
                     None => {}
                     Some(Action::RestoreContext(context)) => {
-                        unsafe { restore_context(&context) };
+                        unsafe { context.restore() };
                     }
                     Some(Action::JmpToUserMode(code, stack_end)) => {
                         unsafe { enter_user_mode(code, stack_end) };
@@ -490,6 +492,31 @@ extern "sysv64" fn handle_syscall(
 
                 // TODO: Return a `Result` for better error handling (although there should never be an error)
                 Default::default()
+            }
+            Syscall::DisableMyInterrupts => {
+                STATIC_STUFF
+                    .try_get()
+                    .unwrap()
+                    .state
+                    .lock()
+                    .as_mut()
+                    .unwrap()
+                    .interrupts_enabled = true;
+                Default::default()
+            }
+            Syscall::EnableMyInterrupts => {
+                STATIC_STUFF
+                    .try_get()
+                    .unwrap()
+                    .state
+                    .lock()
+                    .as_mut()
+                    .unwrap()
+                    .interrupts_enabled = false;
+                todo!("Call the interrupt handlers if queued")
+            }
+            Syscall::EnableMyInterruptsAndBlockUntilEvent => {
+                todo!()
             }
         },
         Err(e) => {
@@ -501,7 +528,36 @@ extern "sysv64" fn handle_syscall(
             // TODO: Stop the user space process
             Default::default()
         }
-    }
+    };
+    let syscall_context = {
+        #[repr(C)]
+        #[derive(Debug, Clone, Copy)]
+        struct PushedRegisters {
+            pub r15: u64,
+            pub r14: u64,
+            pub r13: u64,
+            pub r12: u64,
+            pub rbx: u64,
+            pub rbp: u64,
+            pub r11: u64,
+            pub rcx: u64,
+        }
+        let pushed_registers = unsafe { *(user_space_stack_pointer as *const PushedRegisters) };
+        let rsp_to_restore = user_space_stack_pointer + size_of::<PushedRegisters>() as u64;
+        SyscallContext {
+            r15: pushed_registers.r15,
+            r14: pushed_registers.r14,
+            r13: pushed_registers.r13,
+            r12: pushed_registers.r12,
+            rbx: pushed_registers.rbx,
+            rbp: pushed_registers.rbp,
+            r11: pushed_registers.r11,
+            rcx: pushed_registers.rcx,
+            rax: return_value,
+            rsp: rsp_to_restore,
+        }
+    };
+    unsafe { syscall_context.restore() };
 }
 
 pub fn get_syscall_handler(

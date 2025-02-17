@@ -21,8 +21,10 @@ use x86_64::{
 };
 
 use crate::{
-    context::Context, enter_user_mode::enter_user_mode, modules::idt::IdtBuilder,
-    pic8259_interrupts::Pic8259Interrupts, restore_context::restore_context,
+    context::{FullContext, RestoreContext},
+    enter_user_mode::enter_user_mode,
+    modules::idt::IdtBuilder,
+    pic8259_interrupts::Pic8259Interrupts,
     user_space_state::State,
 };
 
@@ -61,7 +63,10 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler(
             
             mov rdi, rsp   // first arg of context switch is the context which is all the registers saved above
             
-            jmp {context_switch}
+            // The function should never return
+            call {context_switch}
+            // asm! version of unreachable!() 
+            ud2
             ", 
             context_switch = sym context_switching_keyboard_interrupt_handler_rust
         );
@@ -69,7 +74,7 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler(
 }
 
 unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
-    context: *const Context,
+    context: *const FullContext,
 ) {
     let context = unsafe { *context };
     {
@@ -80,7 +85,7 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
     #[derive(Debug)]
     enum JmpTo {
         UserMode(VirtAddr, VirtAddr),
-        RestoreContext(Context),
+        RestoreContext(FullContext),
     }
     let jmp_to = {
         let mut port = Port::new(0x60);
@@ -131,7 +136,7 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
             unsafe { enter_user_mode(user_space_interrupt_handler, interrupt_handler_stack_end) };
         }
         JmpTo::RestoreContext(context) => {
-            unsafe { restore_context(&context) };
+            unsafe { context.restore() };
         }
     }
 }

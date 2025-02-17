@@ -20,6 +20,9 @@ pub enum Syscall {
     SetKeyboardInterruptHandler(Option<SyscallPointer>),
     /// Do not return from the keyboard interrupt handler. Instead, call this syscall at the end of ur fn.
     DoneWithInterruptHandler,
+    DisableMyInterrupts,
+    EnableMyInterrupts,
+    EnableMyInterruptsAndBlockUntilEvent,
 }
 
 impl Syscall {

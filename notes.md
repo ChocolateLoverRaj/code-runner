@@ -1,11 +1,10 @@
 # Start of syscall handler
-0xffff8000000564e0
+0xffff80000006c518
 
 # before switching stacks
-0xffff80000005650d
 
 # sysretq
-0xffff80000005652f
+0xffff80000006c568
 
 # handle_syscall
 handle_syscall

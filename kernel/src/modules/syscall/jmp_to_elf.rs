@@ -302,6 +302,7 @@ pub unsafe fn jmp_to_elf(
         stack_pointer: None,
         keyboard_interrupt_queued: false,
         in_keyboard_interrupt_handler: false,
+        interrupts_enabled: true,
     });
     unsafe { enter_user_mode(start_addr, stack_end.start_address()) };
 
