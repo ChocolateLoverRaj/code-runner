@@ -59,10 +59,8 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler(
             push rax
             push rbp
             
-
             mov rdi, rsp   // first arg of context switch is the context which is all the registers saved above
             
-            sub rsp, 0x80
             jmp {context_switch}
             ", 
             context_switch = sym context_switching_keyboard_interrupt_handler_rust
@@ -74,8 +72,10 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
     context: *const Context,
 ) {
     let context = unsafe { (*context).clone() };
-    log::info!("State: {:#?}", STATE.try_get().unwrap().lock().deref());
-    // log::info!("Context: {:#x?}", context);
+    {
+        log::info!("State: {:#?}", STATE.try_get().unwrap().lock().deref());
+    }
+    log::info!("Context: {:#x?}", context);
     // Make sure to drop all locks before exiting
     #[derive(Debug)]
     enum JmpTo {
@@ -110,7 +110,9 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
                     .stack_of_saved_contexts
                     .push(context)
                     .unwrap();
-                let interrupt_handler_stack_end = VirtAddr::new(context.rsp);
+                let interrupt_handler_stack_end = user_space_state
+                    .stack_pointer
+                    .unwrap_or(VirtAddr::new(context.rsp));
                 JmpTo::UserMode(*user_space_interrupt_handler, interrupt_handler_stack_end)
             }
             _ => JmpTo::RestoreContext(context),

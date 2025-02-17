@@ -15,13 +15,10 @@ use x86_64::{
 use crate::{
     enter_user_mode::enter_user_mode,
     memory::BootInfoFrameAllocator,
-    modules::syscall::init_syscalls::init_syscalls,
     syscall_handler::UserSpaceMemInfo,
     user_space_state::{State, UserSpaceState},
     virt_mem_tracker::VirtMemTracker,
 };
-
-use super::handle_syscall::RustSyscallHandler;
 
 /// Only specifies `WRITABLE` and `NO_EXECUTE` if needed. Other flags such as `PRESENT` and `USER_ACCESSIBLE` must be added.
 pub fn elf_flags_to_page_table_flags(elf_flags: u32) -> PageTableFlags {
@@ -41,12 +38,10 @@ pub unsafe fn jmp_to_elf(
     elf_bytes: &[u8],
     mapper: Arc<spin::Mutex<OffsetPageTable<'static>>>,
     frame_allocator: Arc<spin::Mutex<BootInfoFrameAllocator>>,
-    syscall_handler: RustSyscallHandler,
     user_space_mem_info: Arc<spin::Mutex<Option<UserSpaceMemInfo>>>,
     state: Arc<Mutex<State>>,
 ) -> anyhow::Result<()> {
     let (start_addr, stack_end) = {
-        init_syscalls(syscall_handler);
         let elf = ElfBytes::<NativeEndian>::minimal_parse(elf_bytes)?;
         let loadable_segments = elf
             .segments()
@@ -301,7 +296,7 @@ pub unsafe fn jmp_to_elf(
     *user_space_mem_info.lock() = Some(UserSpaceMemInfo::new(stack_end.start_address()));
     *state.lock() = Some(UserSpaceState {
         stack_of_saved_contexts: Default::default(),
-        currently_running: true,
+        stack_pointer: None,
     });
     unsafe { enter_user_mode(start_addr, stack_end.start_address()) };
 

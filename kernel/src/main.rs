@@ -86,7 +86,7 @@ use modules::{
     panicking_stack_segment_fault_handler::panicking_stack_segment_fault_handler,
     spurious_interrupt_handler::set_spurious_interrupt_handler,
     static_local_apic::{self, LOCAL_APIC},
-    syscall::jmp_to_elf::jmp_to_elf,
+    syscall::{init_syscalls::init_syscalls, jmp_to_elf::jmp_to_elf},
     tss::TssBuilder,
 };
 use phys_mapper::PhysMapper;
@@ -301,7 +301,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     log::info!("TSC info: {:?}", info);
     unsafe {
         local_apic.set_timer_divide(TimerDivide::Div256);
-        local_apic.enable_timer()
+        // local_apic.enable_timer()
     };
     static_local_apic::store(local_apic);
 
@@ -318,19 +318,19 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         };
         log::info!("Entering ELF as user space");
         let user_space_mem_info = Arc::new(spin::Mutex::new(None));
+        init_syscalls(get_syscall_handler(
+            frame_buffer,
+            mapper.clone(),
+            frame_allocator.clone(),
+            keyboard,
+            user_space_mem_info.clone(),
+            state.clone(),
+        ));
         unsafe {
             jmp_to_elf(
                 elf_bytes,
                 mapper.clone(),
                 frame_allocator.clone(),
-                get_syscall_handler(
-                    frame_buffer,
-                    mapper,
-                    frame_allocator,
-                    keyboard,
-                    user_space_mem_info.clone(),
-                    state.clone(),
-                ),
                 user_space_mem_info,
                 state,
             )

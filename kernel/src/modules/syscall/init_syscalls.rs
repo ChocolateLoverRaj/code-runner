@@ -2,13 +2,14 @@ use x86_64::{
     registers::{
         control::{Efer, EferFlags},
         model_specific::{LStar, Msr},
+        rflags::RFlags,
     },
     VirtAddr,
 };
 
-use super::handle_syscall::{get_syscall_handler, RustSyscallHandler};
+use super::syscall_handler::SyscallHandler;
 
-pub(super) fn init_syscalls(rust_syscall_handler: RustSyscallHandler) {
+pub fn init_syscalls(syscall_handler: SyscallHandler) {
     // Enable syscall in IA32_EFER
     // https://shell-storm.org/x86doc/SYSCALL.html
     // https://wiki.osdev.org/CPU_Registers_x86-64#IA32_EFER
@@ -21,10 +22,8 @@ pub(super) fn init_syscalls(rust_syscall_handler: RustSyscallHandler) {
     // clear Interrupt flag on syscall with AMD's MSR_FMASK register
     // This makes it so that interrupts are disabled during the syscall handler
     let mut msr_fmask = Msr::new(0xc0000084);
-    unsafe { msr_fmask.write(0x200) };
+    unsafe { msr_fmask.write(RFlags::INTERRUPT_FLAG.bits()) };
 
     // write handler address to AMD's MSR_LSTAR register
-    LStar::write(VirtAddr::from_ptr(get_syscall_handler(
-        rust_syscall_handler,
-    )));
+    LStar::write(VirtAddr::from_ptr(syscall_handler.as_ptr()));
 }

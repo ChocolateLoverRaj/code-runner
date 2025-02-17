@@ -1,5 +1,7 @@
 use core::{
+    arch::{asm, naked_asm},
     cmp::Ordering,
+    mem::MaybeUninit,
     ops::{Deref, DerefMut},
     str,
 };
@@ -22,12 +24,12 @@ use x86_64::{
     structures::paging::{
         FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTableFlags, Size4KiB,
     },
-    VirtAddr,
+    PrivilegeLevel, VirtAddr,
 };
 
 use crate::{
     cool_keyboard_interrupt_handler::CoolKeyboard, hlt_loop::hlt_loop,
-    memory::BootInfoFrameAllocator, modules::syscall::handle_syscall::RustSyscallHandler,
+    memory::BootInfoFrameAllocator, modules::syscall::syscall_handler::SyscallHandler,
     restore_context::restore_context, user_space_state::State,
 };
 
@@ -56,6 +58,129 @@ struct StaticStuff {
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
 
+// save the registers, handle the syscall and return to usermode
+#[naked]
+unsafe extern "sysv64" fn raw_syscall_handler() {
+    unsafe {
+        naked_asm!("\
+            // backup registers for sysretq
+            push rcx
+            push r11
+
+            // save callee-saved registers on the stack
+            push rbp
+            push rbx
+            push r12
+            push r13
+            push r14
+            push r15
+
+            // Do the call
+            // Save the stack pointer (`rsp`) to `rbp`
+            mov rbp, rsp
+            // Convert `syscall`s `r10` input to `sysv64`s `rcx` input
+            mov rcx, r10
+            // After the first 6 inputs, additional inputs go on the stack. So we put `rax` on the stack
+            push rax // Move rax to the stack which is where additional inputs go in sysv64
+            call {handle_syscall_with_temp_stack}
+            // restore `rsp` from `rbp`
+            mov rsp, rbp
+
+            // restore callee-saved registers from the stack
+            pop r15
+            pop r14
+            pop r13
+            pop r12
+            pop rbx
+            pop rbp
+
+            // restore registers from the stack for sysretq
+            pop r11
+            pop rcx
+
+            // go back to user mode
+            sysretq
+            ",
+            handle_syscall_with_temp_stack = sym handle_syscall_with_temp_stack
+        );
+    }
+}
+
+const SYSCALL_HANDLER: SyscallHandler =
+    unsafe { SyscallHandler::new_unchecked(raw_syscall_handler) };
+
+const TEMP_STACK_SIZE: usize = 0x10000;
+#[repr(C, align(16))]
+struct TempStack(MaybeUninit<[u8; TEMP_STACK_SIZE]>);
+static mut TEMP_STACK: TempStack = TempStack(MaybeUninit::uninit());
+
+#[inline(always)]
+extern "sysv64" fn handle_syscall_with_temp_stack(
+    arg0: u64,
+    arg1: u64,
+    arg2: u64,
+    arg3: u64,
+    arg4: u64,
+    arg5: u64,
+    arg6: u64,
+) -> u64 {
+    // The bug is caused by the same temp stack being written to by two syscall handlers at the same time. For the 2nd syscall handler, we need to set the `rsp` to the `rsp` of the currently paused syscall handler
+    let temp_stack_rsp = {
+        let temp_stack_start = VirtAddr::from_ptr(unsafe { TEMP_STACK.0.as_ptr() });
+        let temp_stack_end = temp_stack_start + TEMP_STACK_SIZE as u64;
+        let temp_stack_range = temp_stack_start..temp_stack_end;
+        let state = STATIC_STUFF.try_get().unwrap().state.lock();
+        let contexts = &state.as_ref().unwrap().stack_of_saved_contexts;
+        let temp_stack_rsp = contexts
+            .iter()
+            .rev()
+            .filter(|context| context.privilege_level() == PrivilegeLevel::Ring0)
+            .find(|context| temp_stack_range.contains(&VirtAddr::new(context.rsp)))
+            .map(|context| VirtAddr::new((context.rsp - 0x410).div_floor(16) * 16))
+            .unwrap_or(temp_stack_end);
+        log::info!(
+            "Contexts: {:#x?}. Temp stack rsp: {:?}. Temp stack range: {:?}",
+            contexts,
+            temp_stack_rsp,
+            temp_stack_range
+        );
+        temp_stack_rsp.as_u64()
+    };
+
+    // I suspect that messing with rsp in the middle of a non-naked rust function is messing stuff up. Let's instead return the temp stack and do the rsp changing stuff in the naked fn.
+    let old_stack: *const u8;
+    unsafe {
+        asm!("\
+            mov {old_stack}, rsp
+            mov rsp, {temp_stack_base_plus_stack_size} // move our stack to the newly allocated one
+            ",
+            temp_stack_base_plus_stack_size = in(reg) temp_stack_rsp, old_stack = out(reg) old_stack
+        );
+    }
+
+    // unwrap shouldn't panic cuz this handler will only be called after setting the handler
+    let ret_val = syscall_handler(
+        arg0,
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6,
+        VirtAddr::from_ptr(old_stack),
+    );
+
+    unsafe {
+        asm!("\
+            mov rsp, {old_stack} // restore the old stack
+            ",
+            old_stack = in(reg) old_stack
+        );
+    }
+    ret_val
+}
+
+#[inline(never)]
 extern "sysv64" fn syscall_handler(
     input0: u64,
     input1: u64,
@@ -64,6 +189,7 @@ extern "sysv64" fn syscall_handler(
     input4: u64,
     input5: u64,
     input6: u64,
+    user_space_stack_pointer: VirtAddr,
 ) -> u64 {
     let inputs = [input0, input1, input2, input3, input4, input5, input6];
     match Syscall::deserialize_from_input(inputs) {
@@ -226,24 +352,29 @@ extern "sysv64" fn syscall_handler(
                 }
             }
             Syscall::BlockUntilEvent => {
+                let static_stuff = STATIC_STUFF.try_get().unwrap();
                 // This method only works since we aren't doing anything else while we wait
                 // If we want to run other user space threads or kernel tasks then we can't `hlt` here
-                if let Some(queue) = STATIC_STUFF
-                    .try_get()
-                    .unwrap()
-                    .cool_keyboard
-                    .queue()
-                    .queue()
-                {
+                if let Some(queue) = static_stuff.cool_keyboard.queue().queue() {
+                    {
+                        static_stuff.state.lock().as_mut().unwrap().stack_pointer =
+                            Some(user_space_stack_pointer);
+                    }
+                    log::warn!("Waiting...");
                     loop {
-                        interrupts::disable();
                         if queue.is_empty() {
                             interrupts::enable_and_hlt();
                         } else {
-                            interrupts::enable();
                             break;
                         }
+                        interrupts::disable();
                     }
+                    log::warn!("Done waiting...");
+                    interrupts::disable();
+                    {
+                        static_stuff.state.lock().as_mut().unwrap().stack_pointer = None;
+                    }
+                    // We need to disable interrupts so that we don't get interrupted during stack switching after this function returns
                 }
                 Default::default()
             }
@@ -300,7 +431,7 @@ extern "sysv64" fn syscall_handler(
                 let action = {
                     {
                         log::info!(
-                            "State: {:#?}",
+                            "[{syscall:?}] State: {:#x?}",
                             STATIC_STUFF.try_get().unwrap().state.lock().deref()
                         );
                     };
@@ -341,7 +472,7 @@ pub fn get_syscall_handler(
     cool_keyboard: CoolKeyboard,
     user_space_mem_info: Arc<spin::Mutex<Option<UserSpaceMemInfo>>>,
     state: Arc<Mutex<State>>,
-) -> RustSyscallHandler {
+) -> SyscallHandler {
     STATIC_STUFF
         .try_init_once(|| StaticStuff {
             frame_buffer,
@@ -352,5 +483,5 @@ pub fn get_syscall_handler(
             state,
         })
         .unwrap();
-    syscall_handler
+    SYSCALL_HANDLER
 }

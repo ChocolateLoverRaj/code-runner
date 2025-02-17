@@ -1,3 +1,5 @@
+use x86_64::{structures::gdt::SegmentSelector, PrivilegeLevel};
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct Context {
@@ -21,4 +23,10 @@ pub struct Context {
     pub rflags: u64,
     pub rsp: u64,
     pub ss: u64,
+}
+
+impl Context {
+    pub fn privilege_level(&self) -> PrivilegeLevel {
+        SegmentSelector(self.cs as u16).rpl()
+    }
 }
