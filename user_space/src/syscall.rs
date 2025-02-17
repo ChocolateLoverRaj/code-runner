@@ -107,3 +107,11 @@ pub fn syscall_done_with_interrupt_handler() -> ! {
     syscall(&Syscall::DoneWithInterruptHandler);
     unreachable!()
 }
+
+pub fn syscall_disable_my_interrupts() {
+    syscall(&Syscall::DisableMyInterrupts);
+}
+
+pub fn syscall_enable_my_interrupts() {
+    syscall(&Syscall::EnableMyInterrupts);
+}

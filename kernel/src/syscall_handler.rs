@@ -22,7 +22,7 @@ use x86_64::{
 };
 
 use crate::{
-    context::{FullContext, RestoreContext, SyscallContext},
+    context::{AnyContext, Context, SyscallContext},
     cool_keyboard_interrupt_handler::{CoolKeyboard, USER_SPACE_INTERRUPT_HANDLER},
     enter_user_mode::enter_user_mode,
     hlt_loop::hlt_loop,
@@ -163,6 +163,10 @@ extern "sysv64" fn get_temp_rsp() -> u64 {
     let temp_stack_rsp = contexts
         .iter()
         .rev()
+        .filter_map(|context| match context {
+            AnyContext::Full(context) => Some(context),
+            AnyContext::Syscall(_) => None,
+        })
         .filter(|context| context.privilege_level() == PrivilegeLevel::Ring0)
         .find(|context| temp_stack_range.contains(&VirtAddr::new(context.rsp)))
         .map(|context| {
@@ -190,6 +194,34 @@ extern "sysv64" fn handle_syscall(
     input6: u64,
     user_space_stack_pointer: u64,
 ) -> ! {
+    let get_syscall_context = |return_value: u64| {
+        #[repr(C)]
+        #[derive(Debug, Clone, Copy)]
+        struct PushedRegisters {
+            pub r15: u64,
+            pub r14: u64,
+            pub r13: u64,
+            pub r12: u64,
+            pub rbx: u64,
+            pub rbp: u64,
+            pub r11: u64,
+            pub rcx: u64,
+        }
+        let pushed_registers = unsafe { *(user_space_stack_pointer as *const PushedRegisters) };
+        let rsp_to_restore = user_space_stack_pointer + size_of::<PushedRegisters>() as u64;
+        SyscallContext {
+            r15: pushed_registers.r15,
+            r14: pushed_registers.r14,
+            r13: pushed_registers.r13,
+            r12: pushed_registers.r12,
+            rbx: pushed_registers.rbx,
+            rbp: pushed_registers.rbp,
+            r11: pushed_registers.r11,
+            rcx: pushed_registers.rcx,
+            rax: return_value,
+            rsp: rsp_to_restore,
+        }
+    };
     let inputs = [input0, input1, input2, input3, input4, input5, input6];
     let return_value = match Syscall::deserialize_from_input(inputs) {
         Ok(syscall) => match syscall {
@@ -354,26 +386,18 @@ extern "sysv64" fn handle_syscall(
                 let static_stuff = STATIC_STUFF.try_get().unwrap();
                 // This method only works since we aren't doing anything else while we wait
                 // If we want to run other user space threads or kernel tasks then we can't `hlt` here
-                if let Some(queue) = static_stuff.cool_keyboard.queue().queue() {
-                    {
-                        static_stuff.state.lock().as_mut().unwrap().stack_pointer =
-                            Some(VirtAddr::new(user_space_stack_pointer));
-                    }
-                    // log::warn!("Waiting...");
-                    loop {
-                        if queue.is_empty() {
-                            interrupts::enable_and_hlt();
-                        } else {
-                            break;
-                        }
-                        interrupts::disable();
-                    }
-                    // log::warn!("Done waiting...");
-                    {
-                        static_stuff.state.lock().as_mut().unwrap().stack_pointer = None;
-                    }
+                {
+                    static_stuff
+                        .state
+                        .lock()
+                        .as_mut()
+                        .unwrap()
+                        .stack_of_saved_contexts
+                        .push(AnyContext::Syscall(get_syscall_context(Default::default())));
+                    Some(VirtAddr::new(user_space_stack_pointer));
                 }
-                Default::default()
+                interrupts::enable_and_hlt();
+                hlt_loop();
             }
             Syscall::AllocatePages(pages) => {
                 let stuff = STATIC_STUFF.try_get().unwrap();
@@ -427,7 +451,7 @@ extern "sysv64" fn handle_syscall(
                 // Make sure lock is dropped
                 enum Action {
                     JmpToUserMode(VirtAddr, VirtAddr),
-                    RestoreContext(FullContext),
+                    RestoreContext(AnyContext),
                 }
                 let action = {
                     {
@@ -436,62 +460,51 @@ extern "sysv64" fn handle_syscall(
                         //     STATIC_STUFF.try_get().unwrap().state.lock().deref()
                         // );
                     };
-                    match STATIC_STUFF.try_get().unwrap().state.lock().as_mut() {
-                        Some(user_space_state) => {
-                            user_space_state.in_keyboard_interrupt_handler = false;
-                            if !user_space_state.keyboard_interrupt_queued {
-                                match user_space_state.stack_of_saved_contexts.pop() {
-                                    Some(context) => Some(Action::RestoreContext(context)),
-                                    None => {
-                                        log::warn!(
-                                            "Called {:?} outside of an interrupt handler",
-                                            syscall
-                                        );
-                                        None
-                                    }
-                                }
-                            } else {
-                                log::info!("Entering queued keyboard interrupt handler");
-                                // FIXME: The stack_pointer could be `None` if this syscall is called outside of a user space interrupt handler. Do not unwrap.
-                                let interrupt_handler_stack_end =
-                                    user_space_state.stack_pointer.unwrap_or(VirtAddr::new(
-                                        user_space_state
-                                            .stack_of_saved_contexts
-                                            .last()
-                                            .unwrap()
-                                            .rsp,
-                                    ));
-                                user_space_state.in_keyboard_interrupt_handler = true;
-                                user_space_state.keyboard_interrupt_queued = false;
-                                match USER_SPACE_INTERRUPT_HANDLER.lock().as_ref() {
-                                    Some(user_space_interrupt_handler) => {
-                                        Some(Action::JmpToUserMode(
-                                            *user_space_interrupt_handler,
-                                            interrupt_handler_stack_end,
-                                        ))
-                                    }
-                                    None => {
-                                        log::warn!("Need to enter queued keyboard interrupt handler, but the handler address is not set.");
-                                        None
-                                    }
-                                }
+                    let mut user_space_state = STATIC_STUFF.try_get().unwrap().state.lock();
+                    let user_space_state = user_space_state.as_mut().unwrap();
+                    // TODO: Return with `Err`
+                    if !user_space_state.in_keyboard_interrupt_handler {
+                        unreachable!("{:?} called outside of interrupt handler", syscall);
+                    }
+                    user_space_state.in_keyboard_interrupt_handler = false;
+                    if !user_space_state.keyboard_interrupt_queued {
+                        Action::RestoreContext(
+                            user_space_state.stack_of_saved_contexts.pop().unwrap(),
+                        )
+                    } else {
+                        log::info!("Entering queued keyboard interrupt handler");
+                        user_space_state.in_keyboard_interrupt_handler = true;
+                        user_space_state.keyboard_interrupt_queued = false;
+                        match USER_SPACE_INTERRUPT_HANDLER.lock().as_ref() {
+                            Some(user_space_interrupt_handler) => {
+                                let interrupt_handler_stack_end = VirtAddr::new(
+                                    match user_space_state.stack_of_saved_contexts.last().unwrap() {
+                                        AnyContext::Full(full_context) => full_context.rsp,
+                                        AnyContext::Syscall(syscall_context) => syscall_context.rsp,
+                                    },
+                                );
+                                Action::JmpToUserMode(
+                                    *user_space_interrupt_handler,
+                                    interrupt_handler_stack_end,
+                                )
                             }
+                            None => Action::RestoreContext(
+                                user_space_state.stack_of_saved_contexts.pop().unwrap(),
+                            ),
                         }
-                        None => None,
                     }
                 };
                 match action {
-                    None => {}
-                    Some(Action::RestoreContext(context)) => {
-                        unsafe { context.restore() };
+                    Action::RestoreContext(context) => {
+                        unsafe { context.context().restore() };
                     }
-                    Some(Action::JmpToUserMode(code, stack_end)) => {
+                    Action::JmpToUserMode(code, stack_end) => {
                         unsafe { enter_user_mode(code, stack_end) };
                     }
                 }
 
                 // TODO: Return a `Result` for better error handling (although there should never be an error)
-                Default::default()
+                // Default::default()
             }
             Syscall::DisableMyInterrupts => {
                 STATIC_STUFF
@@ -501,7 +514,7 @@ extern "sysv64" fn handle_syscall(
                     .lock()
                     .as_mut()
                     .unwrap()
-                    .interrupts_enabled = true;
+                    .interrupts_enabled = false;
                 Default::default()
             }
             Syscall::EnableMyInterrupts => {
@@ -512,7 +525,7 @@ extern "sysv64" fn handle_syscall(
                     .lock()
                     .as_mut()
                     .unwrap()
-                    .interrupts_enabled = false;
+                    .interrupts_enabled = true;
                 todo!("Call the interrupt handlers if queued")
             }
             Syscall::EnableMyInterruptsAndBlockUntilEvent => {
@@ -529,34 +542,7 @@ extern "sysv64" fn handle_syscall(
             Default::default()
         }
     };
-    let syscall_context = {
-        #[repr(C)]
-        #[derive(Debug, Clone, Copy)]
-        struct PushedRegisters {
-            pub r15: u64,
-            pub r14: u64,
-            pub r13: u64,
-            pub r12: u64,
-            pub rbx: u64,
-            pub rbp: u64,
-            pub r11: u64,
-            pub rcx: u64,
-        }
-        let pushed_registers = unsafe { *(user_space_stack_pointer as *const PushedRegisters) };
-        let rsp_to_restore = user_space_stack_pointer + size_of::<PushedRegisters>() as u64;
-        SyscallContext {
-            r15: pushed_registers.r15,
-            r14: pushed_registers.r14,
-            r13: pushed_registers.r13,
-            r12: pushed_registers.r12,
-            rbx: pushed_registers.rbx,
-            rbp: pushed_registers.rbp,
-            r11: pushed_registers.r11,
-            rcx: pushed_registers.rcx,
-            rax: return_value,
-            rsp: rsp_to_restore,
-        }
-    };
+    let syscall_context = get_syscall_context(return_value);
     unsafe { syscall_context.restore() };
 }
 

@@ -2,10 +2,12 @@ use core::arch::asm;
 
 use x86_64::{structures::gdt::SegmentSelector, PrivilegeLevel};
 
-pub trait RestoreContext {
+pub trait Context {
     /// # Safety
     /// Completely changes context
     unsafe fn restore(&self) -> !;
+
+    fn privilege_level(&self) -> PrivilegeLevel;
 }
 
 #[repr(C)]
@@ -33,13 +35,7 @@ pub struct FullContext {
     pub ss: u64,
 }
 
-impl FullContext {
-    pub fn privilege_level(&self) -> PrivilegeLevel {
-        SegmentSelector(self.cs as u16).rpl()
-    }
-}
-
-impl RestoreContext for FullContext {
+impl Context for FullContext {
     unsafe fn restore(&self) -> ! {
         unsafe {
             asm!("\
@@ -66,6 +62,10 @@ impl RestoreContext for FullContext {
         }
         unreachable!()
     }
+
+    fn privilege_level(&self) -> PrivilegeLevel {
+        SegmentSelector(self.cs as u16).rpl()
+    }
 }
 
 #[repr(C)]
@@ -84,7 +84,7 @@ pub struct SyscallContext {
     pub rsp: u64,
 }
 
-impl RestoreContext for SyscallContext {
+impl Context for SyscallContext {
     unsafe fn restore(&self) -> ! {
         unsafe {
             asm!("\
@@ -106,6 +106,11 @@ impl RestoreContext for SyscallContext {
         }
         unreachable!()
     }
+
+    fn privilege_level(&self) -> PrivilegeLevel {
+        // Because restoring this context will immediately enter Ring3
+        PrivilegeLevel::Ring3
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -114,11 +119,11 @@ pub enum AnyContext {
     Syscall(SyscallContext),
 }
 
-impl RestoreContext for AnyContext {
-    unsafe fn restore(&self) -> ! {
+impl AnyContext {
+    pub fn context(&self) -> &dyn Context {
         match self {
-            AnyContext::Full(full_context) => unsafe { full_context.restore() },
-            AnyContext::Syscall(syscall_context) => unsafe { syscall_context.restore() },
+            AnyContext::Full(full_context) => full_context,
+            AnyContext::Syscall(syscall_context) => syscall_context,
         }
     }
 }

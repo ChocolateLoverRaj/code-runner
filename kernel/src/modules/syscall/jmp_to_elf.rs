@@ -299,12 +299,10 @@ pub unsafe fn jmp_to_elf(
         // Interrupt handlers can stack on top of each other, but the same interrupt handler can't stack on itself
         // For example, a timer interrupt handler can interrupt a keyboard interrupt handler, but a keyboard interrupt handler can't interrupt a keyboard interrupt handler
         stack_of_saved_contexts: Vec::with_capacity(1),
-        stack_pointer: None,
+        // stack_pointer: None,
         keyboard_interrupt_queued: false,
         in_keyboard_interrupt_handler: false,
         interrupts_enabled: true,
     });
     unsafe { enter_user_mode(start_addr, stack_end.start_address()) };
-
-    Ok(())
 }

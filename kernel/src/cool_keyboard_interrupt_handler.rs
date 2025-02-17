@@ -21,7 +21,7 @@ use x86_64::{
 };
 
 use crate::{
-    context::{FullContext, RestoreContext},
+    context::{AnyContext, FullContext},
     enter_user_mode::enter_user_mode,
     modules::idt::IdtBuilder,
     pic8259_interrupts::Pic8259Interrupts,
@@ -85,7 +85,7 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
     #[derive(Debug)]
     enum JmpTo {
         UserMode(VirtAddr, VirtAddr),
-        RestoreContext(FullContext),
+        RestoreContext(AnyContext),
     }
     let jmp_to = {
         let mut port = Port::new(0x60);
@@ -106,28 +106,67 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
         };
         let mut local_apic = LOCAL_APIC.try_get().unwrap().try_get().unwrap().lock();
         unsafe { local_apic.end_of_interrupt() };
-        match (
-            STATE.try_get().unwrap().lock().as_mut(),
-            USER_SPACE_INTERRUPT_HANDLER.lock().as_ref(),
-        ) {
-            (Some(user_space_state), Some(user_space_interrupt_handler)) => {
-                if !user_space_state.in_keyboard_interrupt_handler {
-                    user_space_state
-                        .stack_of_saved_contexts
-                        // TODO: If a keyboard interrupt happens while the keyboard interrupt is running, don't enter the keyboard interrupt handler. Instead, call the keyboard interrupt handler again after the current keyboard interrupt handler is done.
-                        .push_within_capacity(context)
-                        .unwrap();
-                    user_space_state.in_keyboard_interrupt_handler = true;
-                    let interrupt_handler_stack_end = user_space_state
-                        .stack_pointer
-                        .unwrap_or(VirtAddr::new(context.rsp));
-                    JmpTo::UserMode(*user_space_interrupt_handler, interrupt_handler_stack_end)
+
+        let mut user_space_state = STATE.try_get().unwrap().lock();
+        let user_space_state = user_space_state.as_mut().unwrap();
+        let user_space_interrupt_handler = USER_SPACE_INTERRUPT_HANDLER.lock();
+        let user_space_interrupt_handler = user_space_interrupt_handler.as_ref();
+        // This interrupt interrupted one of two things
+        // - A hlt loop from a syscall handler. We just enter the handler then. If no handler exists then we restore context.
+        // - The user space process. We save this context and enter the handler.
+        match user_space_state.stack_of_saved_contexts.last() {
+            None => {
+                if let Some(user_space_interrupt_handler) = user_space_interrupt_handler {
+                    if !user_space_state.in_keyboard_interrupt_handler
+                        && user_space_state.interrupts_enabled
+                    {
+                        user_space_state
+                            .stack_of_saved_contexts
+                            .push_within_capacity(AnyContext::Full(context))
+                            .unwrap();
+                        // Continue the stack
+                        let interrupt_handler_stack_end = VirtAddr::new(context.rsp);
+                        user_space_state.in_keyboard_interrupt_handler = true;
+                        JmpTo::UserMode(*user_space_interrupt_handler, interrupt_handler_stack_end)
+                    } else {
+                        user_space_state.keyboard_interrupt_queued = true;
+                        JmpTo::RestoreContext(AnyContext::Full(context))
+                    }
                 } else {
-                    user_space_state.keyboard_interrupt_queued = true;
-                    JmpTo::RestoreContext(context)
+                    // Just exit this interrupt handler
+                    JmpTo::RestoreContext(AnyContext::Full(context))
                 }
             }
-            _ => JmpTo::RestoreContext(context),
+            Some(AnyContext::Syscall(syscall_context)) => {
+                if let Some(user_space_interrupt_handler) = user_space_interrupt_handler {
+                    if !user_space_state.interrupts_enabled {
+                        unreachable!("You can't disable interrupts and then wait for an interrupt to happen, because then the function would never be called. The syscall for waiting for an interrupt to happen should've returned an error.");
+                    }
+                    if !user_space_state.in_keyboard_interrupt_handler {
+                        // Continue the stack
+                        let interrupt_handler_stack_end = VirtAddr::new(syscall_context.rsp);
+                        user_space_state.in_keyboard_interrupt_handler = true;
+                        JmpTo::UserMode(*user_space_interrupt_handler, interrupt_handler_stack_end)
+                    } else {
+                        // Queue up
+                        user_space_state.keyboard_interrupt_queued = true;
+                        JmpTo::RestoreContext(AnyContext::Full(context))
+                    }
+                } else {
+                    // sysretq
+                    JmpTo::RestoreContext(AnyContext::Syscall(*syscall_context))
+                }
+            }
+            Some(AnyContext::Full(_full_context)) => {
+                // This means that we have an interrupt in the middle of a user space interrupt handler
+                // Sine we only have one interrupt handler (keyboard), we just queue another one
+                if !user_space_state.in_keyboard_interrupt_handler {
+                    unreachable!("In a user space interrupt handler that is not a keyboard interrupt handler. Impossible.");
+                } else {
+                    user_space_state.keyboard_interrupt_queued = true;
+                    JmpTo::RestoreContext(AnyContext::Full(context))
+                }
+            }
         }
     };
     // log::info!("jmp_to: {:#?}", jmp_to);
@@ -136,7 +175,7 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
             unsafe { enter_user_mode(user_space_interrupt_handler, interrupt_handler_stack_end) };
         }
         JmpTo::RestoreContext(context) => {
-            unsafe { context.restore() };
+            unsafe { context.context().restore() };
         }
     }
 }
