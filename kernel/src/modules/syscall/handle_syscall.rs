@@ -28,7 +28,7 @@ static RUST_HANDLER: OnceCell<RustSyscallHandler> = OnceCell::uninit();
 
 // save the registers, handle the syscall and return to usermode
 #[naked]
-unsafe extern "sysv64" fn handle_syscall_wrapper() {
+unsafe extern "C" fn handle_syscall_wrapper() {
     unsafe {
         naked_asm!("\
             // backup registers for sysretq
