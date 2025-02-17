@@ -50,7 +50,6 @@ use alloc::sync::Arc;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use common::mem::KERNEL_VIRT_MEM_START;
 use conquer_once::noblock::OnceCell;
-use context_switching_logging_timer_interrupt_handler::get_context_switching_logging_timer_interrupt_handler;
 use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
 use core::{ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
@@ -74,6 +73,7 @@ use modules::{
     get_local_apic::get_local_apic,
     idt::IdtBuilder,
     logging_breakpoint_handler::logging_breakpoint_handler,
+    logging_timer_interrupt_handler::get_logging_timer_interrupt_handler,
     panicking_double_fault_handler::panicking_double_fault_handler,
     panicking_general_protection_fault_handler::panicking_general_protection_fault_handler,
     panicking_invalid_opcode_handler::panicking_invalid_opcode_handler,
@@ -89,10 +89,8 @@ use modules::{
     tss::TssBuilder,
 };
 use phys_mapper::PhysMapper;
-use raw_cpuid::CpuId;
 use spin::Mutex;
 use syscall_handler::get_syscall_handler;
-use x2apic::lapic::TimerDivide;
 use x86_64::{
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
@@ -210,12 +208,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 panicking_spurious_interrupt_handler,
             )
             .unwrap();
-            let timer_interrupt_handler =
-                get_context_switching_logging_timer_interrupt_handler(&LOCAL_APIC);
             let timer_interrupt_index = idt_builder
                 .set_flexible_entry({
                     let mut entry = idt::Entry::missing();
-                    entry.set_handler_fn(timer_interrupt_handler);
+                    entry.set_handler_fn(get_logging_timer_interrupt_handler(&LOCAL_APIC));
                     entry
                 })
                 .unwrap();
@@ -284,7 +280,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .headers()
         .for_each(|header| log::info!("ACPI table header: {header:#?}"));
     let apic = get_apic(&acpi_tables).unwrap();
-    let mut local_apic = get_local_apic(
+    let local_apic = get_local_apic(
         &apic,
         &mut phys_mapper.clone(),
         static_stuff.spurious_interrupt_handler_index,
@@ -292,16 +288,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         static_stuff.local_apic_error_interrupt_index,
     )
     .unwrap();
-    // This is only for testing
-    let cpuid = CpuId::default();
-    let info = cpuid.get_processor_frequency_info();
-    log::info!("Freq info: {:?}", info);
-    let info = cpuid.get_tsc_info();
-    log::info!("TSC info: {:?}", info);
-    unsafe {
-        local_apic.set_timer_divide(TimerDivide::Div256);
-        // local_apic.enable_timer()
-    };
     static_local_apic::store(local_apic);
 
     #[allow(unused)]

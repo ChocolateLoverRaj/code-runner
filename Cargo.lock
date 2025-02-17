@@ -273,7 +273,7 @@ dependencies = [
  "noto-sans-mono-bitmap",
  "rand",
  "rand_hc",
- "raw-cpuid 10.7.0",
+ "raw-cpuid",
  "spinning_top",
  "uart_16550",
  "usize_conversions",
@@ -858,7 +858,6 @@ dependencies = [
  "num_enum",
  "pc-keyboard",
  "pic8259",
- "raw-cpuid 11.3.0",
  "spin",
  "tinytga",
  "unicode-segmentation",
@@ -1236,15 +1235,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c297679cb867470fa8c9f67dbba74a78d78e3e98d7cf2b08d6d71540f797332"
 dependencies = [
  "bitflags 1.3.2",
-]
-
-[[package]]
-name = "raw-cpuid"
-version = "11.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6928fa44c097620b706542d428957635951bade7143269085389d42c8a4927e"
-dependencies = [
- "bitflags 2.8.0",
 ]
 
 [[package]]
@@ -1905,7 +1895,7 @@ dependencies = [
  "bit",
  "bitflags 1.3.2",
  "paste",
- "raw-cpuid 10.7.0",
+ "raw-cpuid",
  "x86_64 0.15.2",
 ]
 
