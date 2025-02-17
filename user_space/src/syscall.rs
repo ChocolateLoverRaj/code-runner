@@ -81,9 +81,9 @@ pub fn syscall_start_recording_keyboard(input: SyscallStartRecordingKeyboardInpu
     syscall(&Syscall::StartRecordingKeyboard(input));
 }
 
-pub fn syscall_poll_keyboard(buffer: &mut [u8]) -> &mut [u8] {
+pub fn syscall_poll_keyboard(buffer: &mut [MaybeUninit<u8>]) -> &mut [u8] {
     let count = syscall(&Syscall::PollKeyboard(buffer.into())) as usize;
-    &mut buffer[..count]
+    unsafe { buffer[..count].assume_init_mut() }
 }
 
 pub fn syscall_block_until_event() {

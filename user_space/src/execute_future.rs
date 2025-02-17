@@ -1,12 +1,13 @@
 use core::{
     future::Future,
-    pin::Pin,
     sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll, Waker},
 };
 
-use alloc::{boxed::Box, sync::Arc, task::Wake};
-use x86_64::instructions::interrupts;
+use alloc::{sync::Arc, task::Wake};
+use futures::pin_mut;
+
+use crate::syscall::syscall_block_until_event;
 
 struct SingleWaker {
     woke_up: Arc<AtomicBool>,
@@ -23,7 +24,8 @@ impl Wake for SingleWaker {
 }
 
 /// Execute a single future
-pub fn execute_future<T>(mut future: Pin<Box<dyn Future<Output = T>>>) -> T {
+pub fn execute_future<T>(future: impl Future<Output = T>) -> T {
+    pin_mut!(future);
     let woke_up = Arc::new(AtomicBool::new(false));
     let waker = Waker::from(Arc::new(SingleWaker {
         woke_up: woke_up.clone(),
@@ -34,12 +36,10 @@ pub fn execute_future<T>(mut future: Pin<Box<dyn Future<Output = T>>>) -> T {
             Poll::Ready(value) => break value,
             Poll::Pending => {}
         }
-        interrupts::disable();
         if !woke_up.load(Ordering::Relaxed) {
-            interrupts::enable_and_hlt();
+            // FIXME: We could get woken up right here, between the check and the block, resulting in a missed wake-up. This needs a new syscall to simulate `interrupts::disable`, `interrupts::enable_and_hlt`, and `interrupts::enable`.
+            syscall_block_until_event();
             woke_up.store(false, Ordering::Relaxed);
-        } else {
-            interrupts::enable();
         }
     }
 }
