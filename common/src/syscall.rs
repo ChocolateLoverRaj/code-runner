@@ -59,7 +59,7 @@ mod test2 {
             len: 0xa,
         });
         let serialized_syscall = syscall.serialize_to_input().unwrap();
-        let deserialiezd_syscall = Syscall::deserialize_from_input(serialized_syscall).unwrap();
-        assert_eq!(deserialiezd_syscall, syscall);
+        let deserialized_syscall = Syscall::deserialize_from_input(serialized_syscall).unwrap();
+        assert_eq!(deserialized_syscall, syscall);
     }
 }
