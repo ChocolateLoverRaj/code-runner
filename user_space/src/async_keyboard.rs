@@ -54,17 +54,7 @@ impl<const N: usize> Stream for AsyncKeyboard<N> {
 unsafe extern "sysv64" fn keyboard_interrupt_handler() -> ! {
     // We cannot allocate during the interrupt handler because that would cause a lock forever.
     // Same reason why we can't allocate in kernel interrupt handlers
-    // use core::fmt::Write;
-    // syscall_print(&{
-    //     let mut message = heapless::String::<100>::default();
-    //     message
-    //         .write_fmt(format_args!("Got keyboard interrupt; {:?}", unsafe { C }))
-    //         .unwrap();
-    //     message
-    // })
-    // .unwrap();
-    // unsafe { C += 1 };
-    for _ in 0..1_000_000 {}
+    // for _ in 0..1_000_000 {}
     WAKER.wake();
     syscall_done_with_interrupt_handler();
 }

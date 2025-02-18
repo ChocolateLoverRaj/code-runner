@@ -194,19 +194,20 @@ extern "sysv64" fn handle_syscall(
     input6: u64,
     user_space_stack_pointer: u64,
 ) -> ! {
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy)]
+    struct PushedRegisters {
+        pub r15: u64,
+        pub r14: u64,
+        pub r13: u64,
+        pub r12: u64,
+        pub rbx: u64,
+        pub rbp: u64,
+        pub r11: u64,
+        pub rcx: u64,
+    }
+    let rsp_to_restore = user_space_stack_pointer + size_of::<PushedRegisters>() as u64;
     let get_syscall_context = |return_value: u64| {
-        #[repr(C)]
-        #[derive(Debug, Clone, Copy)]
-        struct PushedRegisters {
-            pub r15: u64,
-            pub r14: u64,
-            pub r13: u64,
-            pub r12: u64,
-            pub rbx: u64,
-            pub rbp: u64,
-            pub r11: u64,
-            pub rcx: u64,
-        }
         let pushed_registers = unsafe { *(user_space_stack_pointer as *const PushedRegisters) };
         let rsp_to_restore = user_space_stack_pointer + size_of::<PushedRegisters>() as u64;
         SyscallContext {
@@ -382,23 +383,6 @@ extern "sysv64" fn handle_syscall(
                     0
                 }
             }
-            Syscall::BlockUntilEvent => {
-                let static_stuff = STATIC_STUFF.try_get().unwrap();
-                // This method only works since we aren't doing anything else while we wait
-                // If we want to run other user space threads or kernel tasks then we can't `hlt` here
-                {
-                    static_stuff
-                        .state
-                        .lock()
-                        .as_mut()
-                        .unwrap()
-                        .stack_of_saved_contexts
-                        .push(AnyContext::Syscall(get_syscall_context(Default::default())));
-                    Some(VirtAddr::new(user_space_stack_pointer));
-                }
-                interrupts::enable_and_hlt();
-                hlt_loop();
-            }
             Syscall::AllocatePages(pages) => {
                 let stuff = STATIC_STUFF.try_get().unwrap();
                 let mut user_space_mem_info = stuff.user_space_mem_info.lock();
@@ -473,7 +457,6 @@ extern "sysv64" fn handle_syscall(
                         )
                     } else {
                         log::info!("Entering queued keyboard interrupt handler");
-                        user_space_state.in_keyboard_interrupt_handler = true;
                         user_space_state.keyboard_interrupt_queued = false;
                         match USER_SPACE_INTERRUPT_HANDLER.lock().as_ref() {
                             Some(user_space_interrupt_handler) => {
@@ -483,6 +466,7 @@ extern "sysv64" fn handle_syscall(
                                         AnyContext::Syscall(syscall_context) => syscall_context.rsp,
                                     },
                                 );
+                                user_space_state.in_keyboard_interrupt_handler = true;
                                 Action::JmpToUserMode(
                                     *user_space_interrupt_handler,
                                     interrupt_handler_stack_end,
@@ -502,11 +486,8 @@ extern "sysv64" fn handle_syscall(
                         unsafe { enter_user_mode(code, stack_end) };
                     }
                 }
-
-                // TODO: Return a `Result` for better error handling (although there should never be an error)
-                // Default::default()
             }
-            Syscall::DisableMyInterrupts => {
+            Syscall::DisableAndDeferMyInterrupts => {
                 STATIC_STUFF
                     .try_get()
                     .unwrap()
@@ -517,19 +498,89 @@ extern "sysv64" fn handle_syscall(
                     .interrupts_enabled = false;
                 Default::default()
             }
-            Syscall::EnableMyInterrupts => {
-                STATIC_STUFF
-                    .try_get()
-                    .unwrap()
-                    .state
-                    .lock()
-                    .as_mut()
-                    .unwrap()
-                    .interrupts_enabled = true;
-                todo!("Call the interrupt handlers if queued")
+            Syscall::EnableAndCatchUpOnMyInterrupts => {
+                let interrupt_to_jmp_to = {
+                    let mut user_space_state = STATIC_STUFF.try_get().unwrap().state.lock();
+                    let user_space_state = user_space_state.as_mut().unwrap();
+                    user_space_state.interrupts_enabled = true;
+                    if user_space_state.keyboard_interrupt_queued {
+                        user_space_state.keyboard_interrupt_queued = false;
+                        if let Some(user_space_interrupt_handler) =
+                            USER_SPACE_INTERRUPT_HANDLER.lock().as_ref()
+                        {
+                            let interrupt_handler_stack_end = VirtAddr::new(rsp_to_restore);
+                            user_space_state.in_keyboard_interrupt_handler = true;
+                            user_space_state
+                                .stack_of_saved_contexts
+                                .push_within_capacity(AnyContext::Syscall(get_syscall_context(
+                                    Default::default(),
+                                )))
+                                .unwrap();
+                            Some((*user_space_interrupt_handler, interrupt_handler_stack_end))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                };
+                if let Some((code, stack_end)) = interrupt_to_jmp_to {
+                    unsafe { enter_user_mode(code, stack_end) }
+                }
+                Default::default()
             }
-            Syscall::EnableMyInterruptsAndBlockUntilEvent => {
-                todo!()
+            Syscall::EnableMyInterruptsAndWaitUntilOneHappens => {
+                enum Action {
+                    Return(u64),
+                    JmpToUserMode(VirtAddr, VirtAddr),
+                    WaitForInterruptToHappen,
+                }
+                let action = {
+                    let mut user_space_state = STATIC_STUFF.try_get().unwrap().state.lock();
+                    let user_space_state = user_space_state.as_mut().unwrap();
+                    user_space_state.interrupts_enabled = true;
+                    if user_space_state.keyboard_interrupt_queued {
+                        user_space_state.keyboard_interrupt_queued = false;
+                        if let Some(user_space_interrupt_handler) =
+                            USER_SPACE_INTERRUPT_HANDLER.lock().as_ref()
+                        {
+                            let interrupt_handler_stack_end = VirtAddr::new(rsp_to_restore);
+                            user_space_state.in_keyboard_interrupt_handler = true;
+                            user_space_state
+                                .stack_of_saved_contexts
+                                .push_within_capacity(AnyContext::Syscall(get_syscall_context(
+                                    Default::default(),
+                                )))
+                                .unwrap();
+                            Action::JmpToUserMode(
+                                *user_space_interrupt_handler,
+                                interrupt_handler_stack_end,
+                            )
+                        } else {
+                            // Consider the interrupt to have happened (cuz there is no handler)
+                            Action::Return(Default::default())
+                        }
+                    } else {
+                        // Wait until one happens
+                        user_space_state
+                            .stack_of_saved_contexts
+                            .push_within_capacity(AnyContext::Syscall(get_syscall_context(
+                                Default::default(),
+                            )))
+                            .unwrap();
+                        Action::WaitForInterruptToHappen
+                    }
+                };
+                match action {
+                    Action::JmpToUserMode(code, stack_end) => unsafe {
+                        enter_user_mode(code, stack_end)
+                    },
+                    Action::WaitForInterruptToHappen => {
+                        interrupts::enable_and_hlt();
+                        unreachable!()
+                    }
+                    Action::Return(return_value) => return_value,
+                }
             }
         },
         Err(e) => {

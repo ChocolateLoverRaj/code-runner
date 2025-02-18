@@ -3,22 +3,26 @@ use common::syscall_start_recording_keyboard::{
 };
 
 use crate::syscall::{
-    syscall_block_until_event, syscall_disable_my_interrupts, syscall_done_with_interrupt_handler,
-    syscall_enable_my_interrupts, syscall_print, syscall_set_keyboard_interrupt_handler,
-    syscall_start_recording_keyboard,
+    syscall_disable_and_defer_my_interrupts, syscall_done_with_interrupt_handler,
+    syscall_enable_and_catch_up_on_my_interrupts,
+    syscall_enable_my_interrupts_and_wait_until_one_happens, syscall_print,
+    syscall_set_keyboard_interrupt_handler, syscall_start_recording_keyboard,
 };
 
+/// This is used to make sure that enabling and disabling interrupt works
 pub fn test_disable_interrupts() -> ! {
-    syscall_disable_my_interrupts();
+    syscall_disable_and_defer_my_interrupts();
     syscall_start_recording_keyboard(SyscallStartRecordingKeyboardInput {
         queue_size: 256,
         behavior_on_full_queue: FullQueueBehavior::DropNewest,
     });
     syscall_set_keyboard_interrupt_handler(Some(keyboard_interrupt_handler));
-    for _ in 0..10_000_000 {}
-    syscall_enable_my_interrupts();
+    syscall_print("Interrupts disabled").unwrap();
+    for _ in 0..50_000_000 {}
+    syscall_enable_and_catch_up_on_my_interrupts();
+    syscall_print("Interrupts enabled").unwrap();
     loop {
-        syscall_block_until_event();
+        syscall_enable_my_interrupts_and_wait_until_one_happens();
     }
 }
 

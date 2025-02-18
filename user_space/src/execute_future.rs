@@ -7,23 +7,27 @@ use core::{
 use alloc::{sync::Arc, task::Wake};
 use futures::pin_mut;
 
-use crate::syscall::syscall_block_until_event;
+use crate::syscall::{
+    syscall_disable_and_defer_my_interrupts, syscall_enable_and_catch_up_on_my_interrupts,
+    syscall_enable_my_interrupts_and_wait_until_one_happens,
+};
 
 struct SingleWaker {
     woke_up: Arc<AtomicBool>,
 }
 
 impl Wake for SingleWaker {
-    fn wake(self: alloc::sync::Arc<Self>) {
+    fn wake(self: Arc<Self>) {
         self.wake_by_ref();
     }
 
-    fn wake_by_ref(self: &alloc::sync::Arc<Self>) {
+    fn wake_by_ref(self: &Arc<Self>) {
         self.woke_up.store(true, Ordering::Relaxed);
     }
 }
 
 /// Execute a single future
+/// Very similar to how the kernel does it
 pub fn execute_future<T>(future: impl Future<Output = T>) -> T {
     pin_mut!(future);
     let woke_up = Arc::new(AtomicBool::new(false));
@@ -36,10 +40,15 @@ pub fn execute_future<T>(future: impl Future<Output = T>) -> T {
             Poll::Ready(value) => break value,
             Poll::Pending => {}
         }
+        // Disable interrupts here so that an interrupt doesn't happen in between checking if we woke up and getting woken up
+        syscall_disable_and_defer_my_interrupts();
         if !woke_up.load(Ordering::Relaxed) {
-            // FIXME: We could get woken up right here, between the check and the block, resulting in a missed wake-up. This needs a new syscall to simulate `interrupts::disable`, `interrupts::enable_and_hlt`, and `interrupts::enable`.
-            syscall_block_until_event();
+            // Wait for an interrupt to happen
+            syscall_enable_my_interrupts_and_wait_until_one_happens();
             woke_up.store(false, Ordering::Relaxed);
+        } else {
+            // We got woken up. Don't forget to enable interrupts again.
+            syscall_enable_and_catch_up_on_my_interrupts();
         }
     }
 }

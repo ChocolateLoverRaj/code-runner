@@ -86,10 +86,6 @@ pub fn syscall_poll_keyboard(buffer: &mut [MaybeUninit<u8>]) -> &mut [u8] {
     unsafe { buffer[..count].assume_init_mut() }
 }
 
-pub fn syscall_block_until_event() {
-    syscall(&Syscall::BlockUntilEvent);
-}
-
 pub fn syscall_allocate_pages(total_pages: u64) -> VirtAddr {
     VirtAddr::new(syscall(&Syscall::AllocatePages(total_pages)))
 }
@@ -108,10 +104,14 @@ pub fn syscall_done_with_interrupt_handler() -> ! {
     unreachable!()
 }
 
-pub fn syscall_disable_my_interrupts() {
-    syscall(&Syscall::DisableMyInterrupts);
+pub fn syscall_disable_and_defer_my_interrupts() {
+    syscall(&Syscall::DisableAndDeferMyInterrupts);
 }
 
-pub fn syscall_enable_my_interrupts() {
-    syscall(&Syscall::EnableMyInterrupts);
+pub fn syscall_enable_and_catch_up_on_my_interrupts() {
+    syscall(&Syscall::EnableAndCatchUpOnMyInterrupts);
+}
+
+pub fn syscall_enable_my_interrupts_and_wait_until_one_happens() {
+    syscall(&Syscall::EnableMyInterruptsAndWaitUntilOneHappens);
 }

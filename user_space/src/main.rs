@@ -23,11 +23,10 @@ use embedded_graphics_frame_buffer::FrameBufferDisplay;
 use execute_future::execute_future;
 use futures::StreamExt;
 use syscall::{syscall_exit, syscall_print, syscall_take_frame_buffer};
-use test_disable_interrupts::test_disable_interrupts;
 
 #[unsafe(no_mangle)]
 extern "C" fn _start() -> ! {
-    // test_disable_interrupts();
+    // test_disable_interrupts::test_disable_interrupts();
 
     allocator::init();
 
