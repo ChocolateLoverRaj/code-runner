@@ -90,7 +90,8 @@ pub fn syscall_allocate_pages(total_pages: u64) -> VirtAddr {
     VirtAddr::new(syscall(&Syscall::AllocatePages(total_pages)))
 }
 
-/// Set your handler to `unsafe` to avoid accidentally calling it in your code
+/// Set your handler to `unsafe` to avoid accidentally calling it in your code.
+/// Call [`syscall_done_with_interrupt_handler`](syscall_done_with_interrupt_handler) at the end of your handler.
 pub type KeyboardInterruptHandler = unsafe extern "sysv64" fn() -> !;
 
 pub fn syscall_set_keyboard_interrupt_handler(handler: Option<KeyboardInterruptHandler>) {

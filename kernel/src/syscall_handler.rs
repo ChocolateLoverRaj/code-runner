@@ -456,7 +456,7 @@ extern "sysv64" fn handle_syscall(
                             user_space_state.stack_of_saved_contexts.pop().unwrap(),
                         )
                     } else {
-                        log::info!("Entering queued keyboard interrupt handler");
+                        // log::info!("Entering queued keyboard interrupt handler");
                         user_space_state.keyboard_interrupt_queued = false;
                         match USER_SPACE_INTERRUPT_HANDLER.lock().as_ref() {
                             Some(user_space_interrupt_handler) => {

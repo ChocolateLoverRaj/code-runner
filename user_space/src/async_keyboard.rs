@@ -55,6 +55,7 @@ unsafe extern "sysv64" fn keyboard_interrupt_handler() -> ! {
     // We cannot allocate during the interrupt handler because that would cause a lock forever.
     // Same reason why we can't allocate in kernel interrupt handlers
     // for _ in 0..1_000_000 {}
+    // syscall_print("Keyboard interrupt handler").unwrap();
     WAKER.wake();
     syscall_done_with_interrupt_handler();
 }
