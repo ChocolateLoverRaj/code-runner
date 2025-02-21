@@ -37,6 +37,7 @@
               gdb
               rust-analyzer
               lldb
+              pkgsCross.riscv64.stdenv.cc
             ];
             shellHook = ''
               export OVMF_PATH="${ovmf}/FV/OVMF.fd"

@@ -1,5 +1,6 @@
-/target
+target
 .direnv
-debug.lldb
-debug_userspace.lldb
+/debug.lldb
+/debug_userspace.lldb
 rustc-ice-*.txt
+riscv/hdd.dsk
