@@ -1,4 +1,4 @@
-use core::{arch::naked_asm, cmp::Ordering, mem::MaybeUninit, ops::DerefMut, str};
+use core::{arch::naked_asm, cmp::Ordering, mem::MaybeUninit, ops::DerefMut};
 
 use alloc::sync::Arc;
 use bootloader_api::info::FrameBuffer;
@@ -6,7 +6,6 @@ use common::{
     mem::{KERNEL_VIRT_MEM_START, USER_SPACE_MMIO_START},
     syscall::Syscall,
     syscall_output::SyscallOutput,
-    syscall_print::{SyscallPrintError, SyscallPrintOutput},
     syscall_take_frame_buffer::{
         TakeFrameBufferError, TakeFrameBufferOutput, TakeFrameBufferOutputData,
     },
@@ -28,6 +27,10 @@ use crate::{
     hlt_loop::hlt_loop,
     memory::BootInfoFrameAllocator,
     modules::syscall::syscall_handler::SyscallHandler,
+    syscall_enable_hpet::syscall_enable_hpet,
+    syscall_get_hpet_main_counter_period::syscall_get_hpet_main_counter_period,
+    syscall_hpet_read_main_counter_value::syscall_hpet_read_main_counter_value,
+    syscall_print_handler::syscall_print_handler,
     user_space_state::State,
 };
 
@@ -56,7 +59,7 @@ struct StaticStuff {
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
 
-// save the registers, handle the syscall and return to usermode
+// save the registers, handle the syscall and return to user mode
 #[naked]
 unsafe extern "sysv64" fn raw_syscall_handler() {
     unsafe {
@@ -226,29 +229,7 @@ extern "sysv64" fn handle_syscall(
     let inputs = [input0, input1, input2, input3, input4, input5, input6];
     let return_value = match Syscall::deserialize_from_input(inputs) {
         Ok(syscall) => match syscall {
-            Syscall::Print(message) => {
-                let output = SyscallPrintOutput({
-                    let pointer: *const u8 = message.into();
-                    if pointer.is_null() {
-                        Err(SyscallPrintError::PointerIsNull)
-                    } else if !pointer.is_aligned() {
-                        Err(SyscallPrintError::PointerNotAligned)
-                    } else if VirtAddr::from_ptr(pointer.wrapping_add(message.len() as usize))
-                        > VirtAddr::new_truncate(KERNEL_VIRT_MEM_START)
-                    {
-                        Err(SyscallPrintError::PointerNotAllowed)
-                    } else {
-                        match str::from_utf8(unsafe { message.to_slice() }) {
-                            Ok(message) => {
-                                log::info!("[U] {:?}", message);
-                                Ok(())
-                            }
-                            Err(_e) => Err(SyscallPrintError::InvalidString),
-                        }
-                    }
-                });
-                output.to_syscall_output().unwrap()
-            }
+            Syscall::Print(message) => syscall_print_handler(message),
             Syscall::TakeFrameBuffer(output) => {
                 let return_value = TakeFrameBufferOutput({
                     let output: *mut TakeFrameBufferOutputData = output.into();
@@ -582,6 +563,9 @@ extern "sysv64" fn handle_syscall(
                     Action::Return(return_value) => return_value,
                 }
             }
+            Syscall::EnableHpet => syscall_enable_hpet(),
+            Syscall::HpetReadMainCounterValue => syscall_hpet_read_main_counter_value(),
+            Syscall::GetHpetMainCounterPeriod => syscall_get_hpet_main_counter_period(),
         },
         Err(e) => {
             log::warn!(

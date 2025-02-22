@@ -1,24 +1,63 @@
-use core::ptr::NonNull;
+use core::{arch::naked_asm, ptr::NonNull};
 
 use acpi::{AcpiHandler, AcpiTables, HpetInfo};
 use anyhow::anyhow;
-use volatile::VolatilePtr;
+use volatile::VolatileRef;
 use x86_64::{
-    instructions::interrupts,
-    structures::paging::{frame::PhysFrameRange, PageSize, PageTableFlags, PhysFrame, Size4KiB},
+    structures::{
+        idt::InterruptStackFrame,
+        paging::{frame::PhysFrameRange, PageSize, PageTableFlags, PhysFrame, Size4KiB},
+    },
     PhysAddr,
 };
 
 use crate::{
-    hlt_loop::hlt_loop,
-    hpet_memory::{HpetMemory, HpetMemoryVolatileFieldAccess, HpetTimerMemoryVolatileFieldAccess},
+    context::{Context, FullContext},
+    hpet_memory::HpetMemory,
     phys_mapper::PhysMapper,
 };
+
+#[naked]
+unsafe extern "sysv64" fn raw_hpet_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    unsafe {
+        naked_asm!("\
+            push r15 
+            push r14
+            push r13
+            push r12
+            push r11
+            push r10
+            push r9
+            push r8
+            push rdi
+            push rsi
+            push rdx
+            push rcx
+            push rbx
+            push rax
+            push rbp
+            
+            mov rdi, rsp   // first arg of context switch is the context which is all the registers saved above
+            
+            // The function should never return
+            call {rust}
+            // asm! version of unreachable!() 
+            ud2
+            ", 
+            rust = sym hpet_interrupt_handler
+        );
+    };
+}
+
+unsafe extern "sysv64" fn hpet_interrupt_handler(context: *const FullContext) -> ! {
+    let context = unsafe { *context };
+    unsafe { context.restore() }
+}
 
 pub fn init<H: AcpiHandler>(
     acpi_tables: &AcpiTables<H>,
     phys_mapper: PhysMapper,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<VolatileRef<'static, HpetMemory>> {
     let hpet_info = HpetInfo::new(acpi_tables).map_err(|e| anyhow!("{:?}", e))?;
     let virt_mapping = unsafe {
         phys_mapper.map_to_phys(
@@ -35,60 +74,13 @@ pub fn init<H: AcpiHandler>(
                 | PageTableFlags::NO_EXECUTE,
         )
     };
+    log::info!("HPET INfo: {:#?}", hpet_info);
     let virt_start =
         virt_mapping.start.start_address() + (hpet_info.base_address as u64 % Size4KiB::SIZE);
 
-    let hpet_volatile_ptr =
-        unsafe { VolatilePtr::<HpetMemory>::new(NonNull::new(virt_start.as_mut_ptr()).unwrap()) };
-    log::info!("HPET info: {:#?}", hpet_info);
-    let period_femtoseconds = hpet_volatile_ptr
-        .capabilities_and_id()
-        .read()
-        .get_counter_clk_period();
-    let number_of_timers = hpet_volatile_ptr
-        .capabilities_and_id()
-        .read()
-        .get_num_tim_cap()
-        + 1;
-    log::info!("HPET has {} timers", number_of_timers);
+    // Safety: The pointer is pointing to the start address of the HPET and we will never unmap the pages
+    let hpet_volatile_ref =
+        unsafe { VolatileRef::<HpetMemory>::new(NonNull::new(virt_start.as_mut_ptr()).unwrap()) };
 
-    // Enable the first timer
-    let timer = hpet_volatile_ptr.timers().as_slice().index(0);
-    timer
-        .configuration_and_capability_register()
-        .update(|mut r| {
-            r.set_int_route_cnf(2);
-            r.set_int_enb_cnf(true);
-            r
-        });
-    timer.comparator_register().write(293733257);
-
-    hpet_volatile_ptr.config().update(|mut config| {
-        config.set_enable_cnf(true);
-        config
-    });
-
-    let comparator = timer.comparator_register().read();
-    let timer = timer.configuration_and_capability_register().read();
-    log::info!("TImer 0: {:#?}. Comparator: {}", timer, comparator);
-
-    interrupts::enable();
-    log::info!(
-        "HPET general config: {:#?}. INterrupts enabled?: {}",
-        hpet_volatile_ptr.config().read(),
-        interrupts::are_enabled()
-    );
-
-    hlt_loop();
-    loop {
-        let counter = hpet_volatile_ptr.main_counter_value_register().read();
-        let counter_in_femtoseconds = counter * period_femtoseconds as u64;
-        log::info!(
-            "Main counter value: {}. Period (in s^-15): {}. Counter in (s^-15): {}",
-            counter,
-            period_femtoseconds,
-            counter_in_femtoseconds
-        );
-    }
-    Ok(())
+    Ok(hpet_volatile_ref)
 }

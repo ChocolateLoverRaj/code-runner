@@ -42,7 +42,11 @@ pub mod pic8259_interrupts;
 pub mod serial_logger;
 pub mod set_color;
 pub mod split_draw_target;
+pub mod syscall_enable_hpet;
+pub mod syscall_get_hpet_main_counter_period;
 pub mod syscall_handler;
+pub mod syscall_hpet_read_main_counter_value;
+pub mod syscall_print_handler;
 pub mod user_space_state;
 pub mod virt_addr_from_indexes;
 pub mod virt_mem_tracker;
@@ -64,6 +68,7 @@ use demo_maze_roller_game::demo_maze_roller_game;
 #[allow(unused)]
 use draw_rust::draw_rust;
 use hlt_loop::hlt_loop;
+use hpet_memory::HpetMemory;
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use modules::{
@@ -90,9 +95,9 @@ use modules::{
     tss::TssBuilder,
 };
 use phys_mapper::PhysMapper;
-use spin::Mutex;
+use spin::{Mutex, RwLock};
 use syscall_handler::get_syscall_handler;
-use x2apic::ioapic::RedirectionTableEntry;
+use volatile::VolatileRef;
 use x86_64::{
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
@@ -130,6 +135,8 @@ struct StaticStuff {
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
 static GDT: OnceCell<Gdt> = OnceCell::uninit();
+
+static HPET: OnceCell<RwLock<VolatileRef<HpetMemory>>> = OnceCell::uninit();
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let frame_buffer = boot_info.framebuffer.as_mut();
@@ -294,17 +301,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     #[allow(unused)]
     let mut io_apic = unsafe { get_io_apic(&apic, &mut phys_mapper.clone()) };
-    unsafe {
-        io_apic.set_table_entry(2, {
-            let mut e = RedirectionTableEntry::default();
-            // Recognizable number
-            e.set_vector(0x69);
-            e
-        });
-        io_apic.enable_irq(2);
-    };
 
-    hpet::init(&acpi_tables, phys_mapper.clone()).unwrap();
+    let hpet = hpet::init(&acpi_tables, phys_mapper.clone()).unwrap();
+    HPET.try_init_once(|| RwLock::new(hpet)).unwrap();
 
     let state = Arc::new(Mutex::new(None));
     let keyboard = static_stuff

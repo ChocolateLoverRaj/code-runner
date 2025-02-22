@@ -8,19 +8,35 @@ use crate::{
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, MaxSize, PartialEq, Eq)]
 pub enum Syscall {
-    Print(SyscallSlice),
-    TakeFrameBuffer(SyscallPointer),
+    // General
     Exit,
-    StartRecordingKeyboard(SyscallStartRecordingKeyboardInput),
-    PollKeyboard(SyscallSlice),
-    /// Change the **total** number of allocated pages (the kernel increases / decreased depending on the current number and specified number)
-    AllocatePages(u64),
-    SetKeyboardInterruptHandler(Option<SyscallPointer>),
+
+    // Interrupts
     /// Do not return from the keyboard interrupt handler. Instead, call this syscall at the end of ur fn.
     DoneWithInterruptHandler,
     DisableAndDeferMyInterrupts,
     EnableAndCatchUpOnMyInterrupts,
     EnableMyInterruptsAndWaitUntilOneHappens,
+
+    // Memory
+    /// Change the **total** number of allocated pages (the kernel increases / decreased depending on the current number and specified number)
+    AllocatePages(u64),
+
+    // Print
+    Print(SyscallSlice),
+
+    // Drawing to the Screen
+    TakeFrameBuffer(SyscallPointer),
+
+    // Keyboard
+    StartRecordingKeyboard(SyscallStartRecordingKeyboardInput),
+    PollKeyboard(SyscallSlice),
+    SetKeyboardInterruptHandler(Option<SyscallPointer>),
+
+    // HPET
+    EnableHpet,
+    HpetReadMainCounterValue,
+    GetHpetMainCounterPeriod,
 }
 
 impl Syscall {

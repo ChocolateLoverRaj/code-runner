@@ -75,7 +75,7 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler(
 
 unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
     context: *const FullContext,
-) {
+) -> ! {
     let context = unsafe { *context };
     {
         // log::info!("State: {:#x?}", STATE.try_get().unwrap().lock().deref());

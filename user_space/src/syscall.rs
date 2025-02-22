@@ -116,3 +116,15 @@ pub fn syscall_enable_and_catch_up_on_my_interrupts() {
 pub fn syscall_enable_my_interrupts_and_wait_until_one_happens() {
     syscall(&Syscall::EnableMyInterruptsAndWaitUntilOneHappens);
 }
+
+pub fn syscall_enable_hpet() {
+    syscall(&Syscall::EnableHpet);
+}
+
+pub fn syscall_hpet_read_main_counter_value() -> u64 {
+    syscall(&Syscall::HpetReadMainCounterValue)
+}
+
+pub fn syscall_get_hpet_main_counter_period() -> u32 {
+    syscall(&Syscall::GetHpetMainCounterPeriod) as u32
+}
