@@ -189,6 +189,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc827186963e592360843fb5ba4b973e145841266c1357f7180c43526f2e5b61"
 
 [[package]]
+name = "bitfield"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c7e6caee68becd795bfd65f1a026e4d00d8f0c2bc9be5eb568e1015f9ce3c34"
+dependencies = [
+ "bitfield-macros",
+]
+
+[[package]]
+name = "bitfield-macros"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "331afbb18ce7b644c0b428726d369c5dd37ca0b815d72a459fcc2896c3c8ad32"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.98",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -841,6 +861,7 @@ version = "0.1.0"
 dependencies = [
  "acpi",
  "anyhow",
+ "bitfield",
  "bootloader-x86_64-common",
  "bootloader_api 0.11.10",
  "bytemuck",
@@ -862,6 +883,7 @@ dependencies = [
  "tinytga",
  "unicode-segmentation",
  "util",
+ "volatile 0.6.1",
  "x2apic",
  "x86_64 0.15.2",
  "x86_rtc",
@@ -1679,6 +1701,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "442887c63f2c839b346c192d047a7c87e73d0689c9157b00b53dcc27dd5ea793"
 
 [[package]]
+name = "volatile"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af8ca9a5d4debca0633e697c88269395493cebf2e10db21ca2dbde37c1356452"
+dependencies = [
+ "volatile-macro",
+]
+
+[[package]]
+name = "volatile-macro"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65c67ce935f3b4329e473ecaff7bab444fcdc3d1d19f8bae61fabfa90b84f93e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.98",
+]
+
+[[package]]
 name = "waker-fn"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1908,7 +1950,7 @@ dependencies = [
  "bit_field",
  "bitflags 2.8.0",
  "rustversion",
- "volatile",
+ "volatile 0.4.6",
 ]
 
 [[package]]
@@ -1920,7 +1962,7 @@ dependencies = [
  "bit_field",
  "bitflags 2.8.0",
  "rustversion",
- "volatile",
+ "volatile 0.4.6",
 ]
 
 [[package]]

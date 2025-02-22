@@ -30,6 +30,8 @@ pub mod find_used_virt_addrs;
 pub mod frame_buffer;
 pub mod get_rgb_color;
 pub mod hlt_loop;
+pub mod hpet;
+pub mod hpet_memory;
 pub mod insert;
 pub mod logger;
 pub mod logger_without_interrupts;
@@ -90,6 +92,7 @@ use modules::{
 use phys_mapper::PhysMapper;
 use spin::Mutex;
 use syscall_handler::get_syscall_handler;
+use x2apic::ioapic::RedirectionTableEntry;
 use x86_64::{
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
@@ -291,6 +294,18 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     #[allow(unused)]
     let mut io_apic = unsafe { get_io_apic(&apic, &mut phys_mapper.clone()) };
+    unsafe {
+        io_apic.set_table_entry(2, {
+            let mut e = RedirectionTableEntry::default();
+            // Recognizable number
+            e.set_vector(0x69);
+            e
+        });
+        io_apic.enable_irq(2);
+    };
+
+    hpet::init(&acpi_tables, phys_mapper.clone()).unwrap();
+
     let state = Arc::new(Mutex::new(None));
     let keyboard = static_stuff
         .keyboard

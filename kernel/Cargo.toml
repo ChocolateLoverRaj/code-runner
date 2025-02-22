@@ -22,6 +22,8 @@ elf = { version = "0.7.4", default-features = false, features = ["nightly"] }
 util = { version = "0.1.0", path = "../util" }
 common = { version = "0.1.0", path = "../common" }
 bytemuck = "1.21.0"
+volatile = { version = "0.6.1", features = ["derive", "unstable"] }
+bitfield = "0.18.1"
 
 [dependencies.crossbeam-queue]
 version = "0.3.12"
