@@ -23,12 +23,12 @@ use x86_64::{
 use crate::{
     context::{AnyContext, FullContext},
     enter_user_mode::enter_user_mode,
-    modules::idt::IdtBuilder,
+    modules::{idt::IdtBuilder, unsafe_local_apic::UnsafeLocalApic},
     pic8259_interrupts::Pic8259Interrupts,
     user_space_state::State,
 };
 
-static LOCAL_APIC: OnceCell<&'static OnceCell<Mutex<LocalApic>>> = OnceCell::uninit();
+static LOCAL_APIC: OnceCell<&'static OnceCell<Mutex<UnsafeLocalApic>>> = OnceCell::uninit();
 
 struct RecordingKeyboard {
     full_queue_behavior: FullQueueBehavior,
@@ -195,7 +195,7 @@ pub struct CoolKeyboardBuilder {
 impl CoolKeyboardBuilder {
     pub fn set_interrupt(
         idt_builder: &mut IdtBuilder,
-        local_apic: &'static OnceCell<Mutex<LocalApic>>,
+        local_apic: &'static OnceCell<Mutex<UnsafeLocalApic>>,
     ) -> Option<Self> {
         LOCAL_APIC.try_init_once(|| local_apic).unwrap();
         let interrupt_index = idt_builder.set_flexible_entry({

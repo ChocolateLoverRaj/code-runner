@@ -7,6 +7,7 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(unsigned_is_multiple_of)]
 #![feature(vec_push_within_capacity)]
+#![feature(thread_local)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
@@ -62,12 +63,13 @@ use demo_async::demo_async;
 #[allow(unused)]
 use demo_async_keyboard_drop::demo_async_keyboard_drop;
 #[allow(unused)]
-use demo_async_rtc_drop::demo_asyc_rtc_drop;
+use demo_async_rtc_drop::demo_async_rtc_drop;
 #[allow(unused)]
 use demo_maze_roller_game::demo_maze_roller_game;
 #[allow(unused)]
 use draw_rust::draw_rust;
 use hlt_loop::hlt_loop;
+use hpet::{HpetBuilderStage0, HpetBuilderStage1};
 use hpet_memory::HpetMemory;
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
@@ -93,12 +95,15 @@ use modules::{
     static_local_apic::{self, LOCAL_APIC},
     syscall::{init_syscalls::init_syscalls, jmp_to_elf::jmp_to_elf},
     tss::TssBuilder,
+    unsafe_local_apic::UnsafeLocalApic,
 };
 use phys_mapper::PhysMapper;
 use spin::{Mutex, RwLock};
+use syscall_enable_hpet::syscall_enable_hpet;
 use syscall_handler::get_syscall_handler;
 use volatile::VolatileRef;
 use x86_64::{
+    instructions::interrupts,
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
         tss::TaskStateSegment,
@@ -109,6 +114,7 @@ use x86_64::{
 /// This function is called on panic.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    interrupts::disable();
     // TODO: Blue screen with a frowny face and a QR Code
     log::error!("{}", info);
     hlt_loop()
@@ -131,6 +137,7 @@ struct StaticStuff {
     timer_interrupt_index: u8,
     local_apic_error_interrupt_index: u8,
     keyboard: CoolKeyboardBuilder,
+    hpet: HpetBuilderStage1,
 }
 
 static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
@@ -220,7 +227,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             let timer_interrupt_index = idt_builder
                 .set_flexible_entry({
                     let mut entry = idt::Entry::missing();
-                    entry.set_handler_fn(get_logging_timer_interrupt_handler(&LOCAL_APIC));
+                    // entry.set_handler_fn(get_logging_timer_interrupt_handler(&LOCAL_APIC));
                     entry
                 })
                 .unwrap();
@@ -245,6 +252,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .unwrap();
             let keyboard =
                 CoolKeyboardBuilder::set_interrupt(&mut idt_builder, &LOCAL_APIC).unwrap();
+            let hpet = HpetBuilderStage0::default()
+                .set_interrupt(&mut idt_builder)
+                .unwrap();
 
             StaticStuff {
                 tss: tss.get_tss(),
@@ -253,6 +263,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 timer_interrupt_index,
                 local_apic_error_interrupt_index,
                 keyboard,
+                hpet,
             }
         })
         .unwrap();
@@ -297,48 +308,54 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         static_stuff.local_apic_error_interrupt_index,
     )
     .unwrap();
-    static_local_apic::store(local_apic);
+    static_local_apic::store(UnsafeLocalApic(local_apic));
 
     #[allow(unused)]
     let mut io_apic = unsafe { get_io_apic(&apic, &mut phys_mapper.clone()) };
 
-    let hpet = hpet::init(&acpi_tables, phys_mapper.clone()).unwrap();
-    HPET.try_init_once(|| RwLock::new(hpet)).unwrap();
+    let mut hpet_ref = hpet::init(&acpi_tables, phys_mapper.clone()).unwrap();
+    static_stuff.hpet.configure_io_apic(
+        hpet_ref.as_mut_ptr(),
+        &mut io_apic,
+        LOCAL_APIC.try_get().unwrap(),
+    );
+    HPET.try_init_once(|| RwLock::new(hpet_ref)).unwrap();
 
-    let state = Arc::new(Mutex::new(None));
-    let keyboard = static_stuff
-        .keyboard
-        .configure_io_apic(Arc::new(Mutex::new(io_apic)), state.clone());
+    // let state = Arc::new(Mutex::new(None));
+    // let keyboard = static_stuff
+    //     .keyboard
+    //     .configure_io_apic(Arc::new(Mutex::new(io_apic)), state.clone());
 
-    if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
-        let elf_bytes = unsafe {
-            slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
-        };
-        log::info!("Entering ELF as user space");
-        let user_space_mem_info = Arc::new(spin::Mutex::new(None));
-        init_syscalls(get_syscall_handler(
-            frame_buffer,
-            mapper.clone(),
-            frame_allocator.clone(),
-            keyboard,
-            user_space_mem_info.clone(),
-            state.clone(),
-        ));
-        unsafe {
-            jmp_to_elf(
-                elf_bytes,
-                mapper.clone(),
-                frame_allocator.clone(),
-                user_space_mem_info,
-                state,
-            )
-        }
-        .unwrap();
-    }
+    // if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
+    //     let elf_bytes = unsafe {
+    //         slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
+    //     };
+    //     log::info!("Entering ELF as user space");
+    //     let user_space_mem_info = Arc::new(spin::Mutex::new(None));
+    //     init_syscalls(get_syscall_handler(
+    //         frame_buffer,
+    //         mapper.clone(),
+    //         frame_allocator.clone(),
+    //         keyboard,
+    //         user_space_mem_info.clone(),
+    //         state.clone(),
+    //     ));
+    //     unsafe {
+    //         jmp_to_elf(
+    //             elf_bytes,
+    //             mapper.clone(),
+    //             frame_allocator.clone(),
+    //             user_space_mem_info,
+    //             state,
+    //         )
+    //     }
+    //     .unwrap();
+    // }
 
     log::info!("It did not crash");
+    syscall_enable_hpet();
 
-    // draw_rust(frame_buffer_for_drawing);
+    interrupts::enable();
 
     hlt_loop();
 }

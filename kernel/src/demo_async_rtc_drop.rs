@@ -6,7 +6,7 @@ use x86_rtc::{interrupts::DividerValue, Rtc};
 
 use crate::modules::async_rtc::AsyncRtc;
 
-pub async fn demo_asyc_rtc_drop(async_rtc: &mut AsyncRtc) {
+pub async fn demo_async_rtc_drop(async_rtc: &mut AsyncRtc) {
     let rtc = Arc::new(Rtc::new());
     loop {
         async_rtc

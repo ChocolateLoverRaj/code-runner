@@ -16,7 +16,7 @@ user_space = { path = "user_space", artifact = "bin", target = "x86_64-unknown-n
 bootloader = "0.11.9"
 
 [patch.crates-io]
-x2apic = { git = "https://github.com/ChocolateLoverRaj/x2apic-rs", rev = "e275e7aaa9341b185ddd9f10bbce77c53862a618" }
+# x2apic = { git = "https://github.com/ChocolateLoverRaj/x2apic-rs", rev = "e275e7aaa9341b185ddd9f10bbce77c53862a618" }
 bootloader-x86_64-common = { git = "https://github.com/rust-osdev/bootloader", rev = "2419f2f6bcc81839043b1a0b21c65302b34037d1" }
 x86_rtc = { git = "https://github.com/ChocolateLoverRaj/x86_rtc", rev = "ee80ee63fc2eacb55727493be435eee472e3279f" }
 

@@ -11,6 +11,7 @@ use crate::phys_mapper::PhysMapper;
 /// # Safety
 /// Calls `IoApic::new`
 pub unsafe fn get_io_apic(apic: &Apic<Global>, phys_mapper: &mut PhysMapper) -> IoApic {
+    log::info!("APIC: {:#?}", apic);
     // Map IO APIC
     // From https://wiki.osdev.org/APIC#IO_APIC_Registers, there are 64 32-bit registers, so 256 bytes need to be mapped to access the IO APIC. We can map a single frame.
     let phys_frame_range = {

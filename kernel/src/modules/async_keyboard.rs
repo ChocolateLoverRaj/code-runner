@@ -20,11 +20,11 @@ use x86_64::{
 
 use crate::pic8259_interrupts::Pic8259Interrupts;
 
-use super::idt::IdtBuilder;
+use super::{idt::IdtBuilder, unsafe_local_apic::UnsafeLocalApic};
 
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 static WAKER: AtomicWaker = AtomicWaker::new();
-static LOCAL_APIC: OnceCell<&'static OnceCell<Mutex<LocalApic>>> = OnceCell::uninit();
+static LOCAL_APIC: OnceCell<&'static OnceCell<Mutex<UnsafeLocalApic>>> = OnceCell::uninit();
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
     let mut port = Port::new(0x60);
@@ -72,7 +72,7 @@ impl AsyncKeyboardBuilder {
     pub fn configure_io_apic(
         &'static self,
         io_apic: Arc<Mutex<IoApic>>,
-        local_apic: &'static OnceCell<Mutex<LocalApic>>,
+        local_apic: &'static OnceCell<Mutex<UnsafeLocalApic>>,
         queue_size: usize,
     ) -> AsyncKeyboard {
         LOCAL_APIC.try_init_once(|| local_apic).unwrap();

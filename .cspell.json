@@ -4,6 +4,7 @@
         "addrs",
         "Apic",
         "bitfield",
+        "chrono",
         "eflags",
         "hpet",
         "ioapic",

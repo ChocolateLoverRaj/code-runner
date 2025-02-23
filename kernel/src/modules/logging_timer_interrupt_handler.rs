@@ -3,7 +3,9 @@ use spin::Mutex;
 use x2apic::lapic::LocalApic;
 use x86_64::structures::idt::{HandlerFunc, InterruptStackFrame};
 
-static LOCAL_APIC: OnceCell<&'static OnceCell<Mutex<LocalApic>>> = OnceCell::uninit();
+use super::unsafe_local_apic::UnsafeLocalApic;
+
+static LOCAL_APIC: OnceCell<&'static OnceCell<Mutex<UnsafeLocalApic>>> = OnceCell::uninit();
 
 /// This is private so that the getter must be initialized before using
 extern "x86-interrupt" fn logging_timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
@@ -13,7 +15,7 @@ extern "x86-interrupt" fn logging_timer_interrupt_handler(_stack_frame: Interrup
 }
 
 pub fn get_logging_timer_interrupt_handler(
-    local_apic: &'static OnceCell<Mutex<LocalApic>>,
+    local_apic: &'static OnceCell<Mutex<UnsafeLocalApic>>,
 ) -> HandlerFunc {
     LOCAL_APIC.try_init_once(|| local_apic).unwrap();
     logging_timer_interrupt_handler

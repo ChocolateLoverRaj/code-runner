@@ -22,3 +22,4 @@ pub mod spurious_interrupt_handler;
 pub mod static_local_apic;
 pub mod syscall;
 pub mod tss;
+pub mod unsafe_local_apic;
