@@ -145,6 +145,10 @@ impl HpetBuilderStage1 {
         let m = unsafe { io_apic.max_table_entry() };
 
         log::info!("First route IRQ: {}", first_route);
+        log::info!(
+            "Period (fs): {}",
+            hpet.capabilities_and_id().read().get_counter_clk_period()
+        );
 
         log::info!("Max table entry: {}", m);
         timer0.configuration_and_capability_register().write({
@@ -168,7 +172,7 @@ impl HpetBuilderStage1 {
 
         LOCAL_APIC.try_init_once(|| local_apic).unwrap();
 
-        timer0.comparator_register().write(500_000_000);
+        timer0.comparator_register().write(1000_000_000);
 
         Some(())
     }

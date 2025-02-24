@@ -46,10 +46,10 @@ pub fn spin_fs(duration_fs: u128) {
 extern "C" fn _start() -> ! {
     allocator::init();
 
-    let duration = 3 * 10_u128.pow(15);
-    syscall_print(&format!("Spinning for {} fs", duration)).unwrap();
-    spin_fs(duration);
-    syscall_print("Done spinning").unwrap();
+    // let duration = 3 * 10_u128.pow(15);
+    // syscall_print(&format!("Spinning for {} fs", duration)).unwrap();
+    // spin_fs(duration);
+    // syscall_print("Done spinning").unwrap();
 
     let mut frame_buffer = syscall_take_frame_buffer().unwrap();
     syscall_print("Playing Maze Roller Game!").unwrap();

@@ -17,10 +17,12 @@
         "repr",
         "rflags",
         "roundings",
+        "Spcr",
         "Syscall",
         "syscalls",
         "sysretq",
         "sysv64",
+        "uart",
         "uninit",
         "Virt"
     ]
