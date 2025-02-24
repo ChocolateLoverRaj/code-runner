@@ -54,7 +54,7 @@ pub mod virt_addr_from_indexes;
 pub mod virt_mem_tracker;
 
 use ::acpi::spcr::Spcr;
-use alloc::sync::Arc;
+use alloc::{format, sync::Arc};
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use bootloader_x86_64_common::serial::SerialPort;
 use common::mem::KERNEL_VIRT_MEM_START;
@@ -118,6 +118,7 @@ use x86_64::{
     instructions::interrupts,
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
+        paging::{Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB},
         tss::TaskStateSegment,
     },
     VirtAddr,
@@ -310,7 +311,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let phys_mapper = PhysMapper::new(
         phys_mem_offset.as_u64(),
         mapper.clone(),
-        virt_mem_tracker,
+        virt_mem_tracker.clone(),
         frame_allocator.clone(),
     );
 
@@ -394,7 +395,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         }
     }
 
-    spin_fs(3 * 10_u128.pow(15));
+    pub fn spin_s(duration_s: u128) {
+        spin_fs(duration_s * 10_u128.pow(15));
+    }
+
     let headers = acpi_tables.headers();
 
     headers.for_each(|header| log::info!("ACPI table header: {:?}", header.signature));
@@ -415,63 +419,132 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         spcr_16550_base_phys_addr
     );
     if let Some(spcr_16550_base_phys_addr) = spcr_16550_base_phys_addr {
-        let base_virt_addr =
-            (phys_mem_offset + spcr_16550_base_phys_addr.as_u64()).as_mut_ptr::<u8>();
+        let aligned_down_phys_addr = spcr_16550_base_phys_addr.align_down(Size4KiB::SIZE);
+        let offset_in_page = spcr_16550_base_phys_addr - aligned_down_phys_addr;
+        let page = virt_mem_tracker
+            .lock()
+            .allocate_pages::<Size4KiB>(1)
+            .unwrap();
+        let frame = PhysFrame::from_start_address(aligned_down_phys_addr).unwrap();
         unsafe {
+            mapper
+                .lock()
+                .map_to(
+                    page,
+                    frame,
+                    PageTableFlags::PRESENT
+                        | PageTableFlags::WRITABLE
+                        | PageTableFlags::NO_CACHE
+                        | PageTableFlags::WRITE_THROUGH,
+                    frame_allocator.lock().deref_mut(),
+                )
+                .unwrap()
+                .flush();
+        };
+
+        let base_virt_addr = (page.start_address() + offset_in_page).as_mut_ptr::<u8>();
+        let register_memory_mapped_size = 4;
+        unsafe {
+            log::info!(
+                "MMIO Registers: {:#x?}",
+                (base_virt_addr as *mut [u32; 8]).read_volatile()
+            );
+
             // outb(PORT + 1, 0x00); // Disable all interrupts
-            base_virt_addr.offset(1).write_volatile(0x00);
+            base_virt_addr
+                .offset(1 * register_memory_mapped_size)
+                .write_volatile(0x00);
             // outb(PORT + 3, 0x80); // Enable DLAB (set baud rate divisor)
-            base_virt_addr.offset(3).write_volatile(0x80);
+            base_virt_addr
+                .offset(3 * register_memory_mapped_size)
+                .write_volatile(1 << 7);
             // outb(PORT + 0, 0x03); // Set divisor to 3 (lo byte) 38400 baud
-            base_virt_addr.offset(0).write_volatile(0x01);
+            base_virt_addr
+                .offset(0 * register_memory_mapped_size)
+                .write_volatile(0x01);
             // outb(PORT + 1, 0x00); //                  (hi byte)
-            base_virt_addr.offset(1).write_volatile(0x00);
+            base_virt_addr
+                .offset(1 * register_memory_mapped_size)
+                .write_volatile(0x00);
             // outb(PORT + 3, 0x03); // 8 bits, no parity, one stop bit
-            base_virt_addr.offset(3).write_volatile(0x03);
+            base_virt_addr
+                .offset(3 * register_memory_mapped_size)
+                .write_volatile(0b00000011);
             // outb(PORT + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-            base_virt_addr.offset(2).write_volatile(0xC7);
+            base_virt_addr
+                .offset(2 * register_memory_mapped_size)
+                .write_volatile(0b11000111);
             // outb(PORT + 4, 0x0B); // IRQs enabled, RTS/DSR set
-            base_virt_addr.offset(4).write_volatile(0x0B);
+            base_virt_addr
+                .offset(4 * register_memory_mapped_size)
+                .write_volatile(0b11);
+
+            log::info!(
+                "MMIO Registers: {:#x?}",
+                (base_virt_addr as *mut [u32; 8]).read_volatile()
+            );
+
             // outb(PORT + 4, 0x1E); // Set in loopback mode, test the serial chip
-            base_virt_addr.offset(4).write_volatile(0x1E);
+            // base_virt_addr.offset(4).write_volatile(0x1E);
             // outb(PORT + 0, 0xAE);
-            base_virt_addr.offset(0).write_volatile(0xAE);
+            // base_virt_addr.offset(0).write_volatile(0xAE);
 
             // Check if serial is faulty (i.e: not same byte as sent)
             // if (inb(PORT + 0) != 0xAE) {
             //     return 1;
             // }
-            if base_virt_addr.offset(0).read_volatile() != 0xAE {
-                log::error!("Serial is faulty. Loopback mode set but received something else.");
-                spin_fs(3 * 10_u128.pow(15));
-            }
+            // if base_virt_addr.offset(0).read_volatile() != 0xAE {
+            //     log::error!("Serial is faulty. Loopback mode set but received something else.");
+            //     spin_fs(1 * 10_u128.pow(15));
+            // }
 
             // If serial is not faulty set it in normal operation mode
             // (not-loopback with IRQs enabled and OUT#1 and OUT#2 bits enabled)
             // outb(PORT + 4, 0x0F);
-            base_virt_addr.offset(4).write_volatile(0x0F);
+            // base_virt_addr.offset(4).write_volatile(0b11);
 
             // Sending data
             // int is_transmit_empty() {
             //     return inb(PORT + 5) & 0x20;
             //  }
-            let is_transmit_empty =
-                || -> bool { base_virt_addr.offset(5).read_volatile() & 0x20 == 0 };
+            let is_ready_to_transmit = || -> bool {
+                base_virt_addr
+                    .offset(5 * register_memory_mapped_size)
+                    .read_volatile()
+                    & (1 << 5)
+                    != 0
+                // && base_virt_addr.offset(6).read_volatile() & (1 << 7) == 0
+            };
 
             // void write_serial(char a) {
             //     while (is_transmit_empty() == 0);
 
             //     outb(PORT,a);
             //  }
-            let write_serial = |char: u8| {
-                while is_transmit_empty() {
-                    log::info!("Transmit is empty");
-                    base_virt_addr.offset(0).write_volatile(char)
+            let write_serial = |char: u8| loop {
+                if is_ready_to_transmit() {
+                    base_virt_addr
+                        .offset(0 * register_memory_mapped_size)
+                        .write_volatile(char);
+                    log::info!("Transmitted");
+                    break;
+                } else {
+                    // log::info!("Not ready to transmit");
+                }
+            };
+
+            let write_str = |str: &str| {
+                for byte in str.bytes() {
+                    write_serial(byte)
                 }
             };
 
             loop {
-                write_serial(b'a');
+                write_str(&format!(
+                    "Hello! HPET counter: {}\r\n",
+                    syscall_hpet_read_main_counter_value()
+                ));
+                spin_s(1);
             }
         }
 
