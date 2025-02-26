@@ -66,7 +66,7 @@ pub fn run_qemu(boot_type: BootType) {
         }
     ));
     if let BootType::Uefi = boot_type {
-        qemu.arg("-bios").arg(ovmf_prebuilt::ovmf_pure_efi());
+        qemu.arg("-bios").arg(env!("OVMF_PATH"));
     }
     env::args().skip(1).for_each(|arg| {
         qemu.arg(arg);

@@ -28,6 +28,10 @@
             ovmf = OVMF.fd;
           in
           mkShell {
+            OVMF_PATH = "${ovmf}/FV/OVMF.fd";
+            nativeBuildInputs = [
+              rustPlatform.bindgenHook
+            ];
             buildInputs = [
               (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
               cargo-bootimage
@@ -38,9 +42,6 @@
               rust-analyzer
               lldb
             ];
-            shellHook = ''
-              export OVMF_PATH="${ovmf}/FV/OVMF.fd"
-            '';
           };
       }
     );

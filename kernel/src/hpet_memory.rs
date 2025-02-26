@@ -128,7 +128,7 @@ bitfield! {
     impl Debug;
 
     /// `Tn_INT_ROUTE_CAP` in the docs. Each bit represents a IO APIC interrupt. If a bit is 1, that means that this timer supports sending interrupt to the corresponding IO APIC interrupt based on the bit index, where bit 0 is the rightmost.
-    pub u32, get_int_route_cap, _: 63, 32;
+    pub bool, get_int_route_cap, set_int_route_cap: 32, 32, 32;
     pub bool, get_fsp_int_del_cap, set_fsp_int_del_cap: 15;
     pub bool, get_fsp_en_cnf, set_fsp_en_cnf: 14;
     pub u8, get_int_route_cnf, set_int_route_cnf: 13, 9;

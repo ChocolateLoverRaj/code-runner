@@ -2,11 +2,11 @@ use log::Log;
 use x86_64::instructions::interrupts::without_interrupts;
 
 pub struct LockedLoggerWithoutInterrupts<T: Log> {
-    logger: T,
+    pub logger: T,
 }
 
 impl<T: Log> LockedLoggerWithoutInterrupts<T> {
-    pub fn new(logger: T) -> Self {
+    pub const fn new(logger: T) -> Self {
         Self { logger }
     }
 }

@@ -127,20 +127,21 @@ impl HpetBuilderStage1 {
         let timer0 = hpet.timers().as_slice().index(0);
 
         let r = timer0.configuration_and_capability_register().read();
+        log::info!("Timer 0 capabilities: {:#?}", r);
         let first_route = {
-            let routes = r.get_int_route_cap();
             let mut i = 0_u8;
             loop {
                 if i == 32 {
                     break None;
                 }
-                if routes & (1 << i) != 0 {
+                if r.get_int_route_cap(i as usize) {
                     break Some(i);
                 }
                 i += 1;
             }
         }
         .unwrap();
+        // FIXME: Qemu claims only interrupt index 2 is supported when actually it supports any, but on real hardware we must actually follow the capabilities
         let first_route = 20;
         let m = unsafe { io_apic.max_table_entry() };
 
@@ -153,13 +154,10 @@ impl HpetBuilderStage1 {
         log::info!("Max table entry: {}", m);
         timer0.configuration_and_capability_register().write({
             let mut r = r;
-            r.set_int_route_cnf(first_route);
-            r.set_int_enb_cnf(true);
+            // r.set_int_route_cnf(first_route);
+            // r.set_int_enb_cnf(true);
             r
         });
-
-        let existing_table_entry = unsafe { io_apic.table_entry(first_route) };
-        log::info!("Existing table entry: {:#?}", existing_table_entry);
 
         unsafe {
             io_apic.set_table_entry(first_route, {
@@ -172,7 +170,7 @@ impl HpetBuilderStage1 {
 
         LOCAL_APIC.try_init_once(|| local_apic).unwrap();
 
-        timer0.comparator_register().write(1000_000_000);
+        // timer0.comparator_register().write(1000_000_000);
 
         Some(())
     }

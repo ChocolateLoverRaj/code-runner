@@ -8,12 +8,11 @@ default-run = "qemu-uefi"
 members = ["kernel", "util", "user_space", "common"]
 
 [dependencies]
-ovmf-prebuilt = "0.1.0-alpha"
 
 [build-dependencies]
 kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
 user_space = { path = "user_space", artifact = "bin", target = "x86_64-unknown-none" }
-bootloader = "0.11.9"
+bootloader = "0.11.10"
 
 [patch.crates-io]
 # x2apic = { git = "https://github.com/ChocolateLoverRaj/x2apic-rs", rev = "e275e7aaa9341b185ddd9f10bbce77c53862a618" }

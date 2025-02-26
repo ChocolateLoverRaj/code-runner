@@ -15,7 +15,6 @@ pub mod panic_handler;
 pub mod syscall;
 pub mod test_disable_interrupts;
 
-use alloc::format;
 use async_keyboard::AsyncKeyboard;
 use common::syscall_start_recording_keyboard::FullQueueBehavior;
 use demo_maze_roller_game::demo_maze_roller_game;

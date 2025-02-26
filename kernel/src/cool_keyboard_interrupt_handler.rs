@@ -10,10 +10,7 @@ use common::syscall_start_recording_keyboard::{
 use conquer_once::noblock::OnceCell;
 use crossbeam_queue::ArrayQueue;
 use spin::{Mutex, RwLock, RwLockReadGuard};
-use x2apic::{
-    ioapic::{IoApic, RedirectionTableEntry},
-    lapic::LocalApic,
-};
+use x2apic::ioapic::{IoApic, RedirectionTableEntry};
 use x86_64::{
     instructions::port::Port,
     structures::idt::{self, HandlerFunc, InterruptStackFrame},
@@ -105,7 +102,9 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
             }
         };
         let mut local_apic = LOCAL_APIC.try_get().unwrap().try_get().unwrap().lock();
+        // log::info!("Notifying end of interrupt");
         unsafe { local_apic.end_of_interrupt() };
+        // log::info!("Done Notifying end of interrupt");
 
         let mut user_space_state = STATE.try_get().unwrap().lock();
         let user_space_state = user_space_state.as_mut().unwrap();

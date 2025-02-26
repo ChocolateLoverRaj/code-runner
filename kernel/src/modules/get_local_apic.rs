@@ -28,7 +28,7 @@ pub fn get_local_apic(
                 | PageTableFlags::NO_EXECUTE,
         )
     };
-    let local_apic = LocalApicBuilder::new()
+    let mut local_apic = LocalApicBuilder::new()
         .spurious_vector(spurious_interrupt_index as usize)
         .timer_vector(timer_interrupt_index as usize)
         // .timer_mode(TimerMode::Periodic)
@@ -38,5 +38,7 @@ pub fn get_local_apic(
         .set_xapic_base(local_mapping.start.start_address().as_u64())
         .build()
         .map_err(|e| anyhow!("{e}"))?;
+    unsafe { local_apic.enable() };
+    unsafe { local_apic.disable_timer() };
     Ok(local_apic)
 }

@@ -7,7 +7,6 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(unsigned_is_multiple_of)]
 #![feature(vec_push_within_capacity)]
-#![feature(thread_local)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
@@ -24,6 +23,7 @@ pub mod demo_async_keyboard_drop;
 pub mod demo_async_rtc_drop;
 pub mod demo_maze_roller_game;
 pub mod draw_rust;
+pub mod dynamic_combined_logger;
 pub mod embedded_graphics_writer;
 pub mod enter_user_mode;
 pub mod execute_future;
@@ -40,7 +40,6 @@ pub mod memory;
 pub mod modules;
 pub mod phys_mapper;
 pub mod pic8259_interrupts;
-pub mod serial_logger;
 pub mod set_color;
 pub mod spcr;
 pub mod split_draw_target;
@@ -52,20 +51,15 @@ pub mod syscall_print_handler;
 pub mod user_space_state;
 pub mod virt_addr_from_indexes;
 pub mod virt_mem_tracker;
+pub mod write_logger;
+pub mod write_with_cr;
 
-use ::acpi::spcr::Spcr;
-use alloc::{format, sync::Arc};
+use alloc::sync::Arc;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
-use bootloader_x86_64_common::serial::SerialPort;
 use common::mem::KERNEL_VIRT_MEM_START;
 use conquer_once::noblock::OnceCell;
 use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
-use core::{
-    fmt::Write,
-    ops::{Deref, DerefMut},
-    panic::PanicInfo,
-    slice,
-};
+use core::{ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
 use demo_async::demo_async;
 #[allow(unused)]
@@ -106,19 +100,14 @@ use modules::{
     unsafe_local_apic::UnsafeLocalApic,
 };
 use phys_mapper::PhysMapper;
-use spcr::get_16550_base_address;
+use spcr::replace_serial_logger_if_redirected;
 use spin::{Mutex, RwLock};
-use syscall_enable_hpet::syscall_enable_hpet;
-use syscall_get_hpet_main_counter_period::syscall_get_hpet_main_counter_period;
 use syscall_handler::get_syscall_handler;
-use syscall_hpet_read_main_counter_value::syscall_hpet_read_main_counter_value;
-use uart_16550_2::{DivisorLatchFlags, FifoCtrlFlags, ModemCtrlFlags};
 use volatile::VolatileRef;
 use x86_64::{
     instructions::interrupts,
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
-        paging::{Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB},
         tss::TaskStateSegment,
     },
     VirtAddr,
@@ -129,9 +118,6 @@ use x86_64::{
 fn panic(info: &PanicInfo) -> ! {
     interrupts::disable();
     // TODO: Blue screen with a frowny face and a QR Code
-    for _ in 0..60 {
-        log::info!("hi");
-    }
     log::error!("{}", info);
     hlt_loop()
 }
@@ -166,7 +152,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     if let Some(frame_buffer) = frame_buffer.as_mut() {
         frame_buffer.buffer_mut().fill(0);
     }
-    init_logger_with_framebuffer(frame_buffer);
+    init_logger_with_framebuffer(None);
 
     log::info!(
         "Ramdisk len: {:?}. Ramdisk addr: {:?}",
@@ -247,7 +233,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             let timer_interrupt_index = idt_builder
                 .set_flexible_entry({
                     let mut entry = idt::Entry::missing();
-                    // entry.set_handler_fn(get_logging_timer_interrupt_handler(&LOCAL_APIC));
+                    entry.set_handler_fn(get_logging_timer_interrupt_handler(&LOCAL_APIC));
                     entry
                 })
                 .unwrap();
@@ -323,7 +309,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     }
     .expect("Error getting ACPI tables");
 
-    // hlt_loop();
+    replace_serial_logger_if_redirected(
+        &acpi_tables,
+        virt_mem_tracker.lock().deref_mut(),
+        mapper.lock().deref_mut(),
+        frame_allocator.lock().deref_mut(),
+    )
+    .unwrap();
 
     let apic = get_apic(&acpi_tables).unwrap();
     let local_apic = get_local_apic(
@@ -334,6 +326,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         static_stuff.local_apic_error_interrupt_index,
     )
     .unwrap();
+    log::info!("Local APIC: {:#?}", local_apic);
     static_local_apic::store(UnsafeLocalApic(local_apic));
 
     #[allow(unused)]
@@ -352,218 +345,33 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .keyboard
         .configure_io_apic(Arc::new(Mutex::new(io_apic)), state.clone());
 
-    // if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
-    //     let elf_bytes = unsafe {
-    //         slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
-    //     };
-    //     log::info!("Entering ELF as user space");
-    //     let user_space_mem_info = Arc::new(spin::Mutex::new(None));
-    //     init_syscalls(get_syscall_handler(
-    //         frame_buffer,
-    //         mapper.clone(),
-    //         frame_allocator.clone(),
-    //         keyboard,
-    //         user_space_mem_info.clone(),
-    //         state.clone(),
-    //     ));
-    //     unsafe {
-    //         jmp_to_elf(
-    //             elf_bytes,
-    //             mapper.clone(),
-    //             frame_allocator.clone(),
-    //             user_space_mem_info,
-    //             state,
-    //         )
-    //     }
-    //     .unwrap();
-    // }
-
-    log::info!("It did not crash");
-
-    /// Blocks until the given amount of femtoseconds have passed
-    pub fn spin_fs(duration_fs: u128) {
-        // Doesn't hurt to enable if it's already enabled
-        syscall_enable_hpet();
-        let period_fs = syscall_get_hpet_main_counter_period();
-        let counter_before = syscall_hpet_read_main_counter_value();
-        loop {
-            let counter_now = syscall_hpet_read_main_counter_value();
-            let elapsed_fs = (counter_now - counter_before) as u128 * period_fs as u128;
-            if elapsed_fs >= duration_fs {
-                break;
-            }
-        }
-    }
-
-    pub fn spin_s(duration_s: u128) {
-        spin_fs(duration_s * 10_u128.pow(15));
-    }
-
-    let headers = acpi_tables.headers();
-
-    headers.for_each(|header| log::info!("ACPI table header: {:?}", header.signature));
-    log::info!("It did not crash 2");
-
-    let r = acpi_tables.find_table::<Spcr>();
-    if let Ok(r) = r {
-        let r = r.deref();
-        log::info!("Found SPCR: {:#?}", r);
-    }
-
-    let spcr_16550_base_phys_addr = acpi_tables
-        .find_table::<Spcr>()
-        .ok()
-        .and_then(|spcr| get_16550_base_address(&spcr));
-    log::info!(
-        "SPCR 16550 Base (Physical) Address: {:?}",
-        spcr_16550_base_phys_addr
-    );
-    if let Some(spcr_16550_base_phys_addr) = spcr_16550_base_phys_addr {
-        let aligned_down_phys_addr = spcr_16550_base_phys_addr.align_down(Size4KiB::SIZE);
-        let offset_in_page = spcr_16550_base_phys_addr - aligned_down_phys_addr;
-        let page = virt_mem_tracker
-            .lock()
-            .allocate_pages::<Size4KiB>(1)
-            .unwrap();
-        let frame = PhysFrame::from_start_address(aligned_down_phys_addr).unwrap();
-        unsafe {
-            mapper
-                .lock()
-                .map_to(
-                    page,
-                    frame,
-                    PageTableFlags::PRESENT
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::NO_CACHE
-                        | PageTableFlags::WRITE_THROUGH,
-                    frame_allocator.lock().deref_mut(),
-                )
-                .unwrap()
-                .flush();
+    if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
+        let elf_bytes = unsafe {
+            slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
         };
-
-        let base_virt_addr = (page.start_address() + offset_in_page).as_mut_ptr::<u8>();
-        let register_memory_mapped_size = 4;
+        log::info!("Entering ELF as user space");
+        let user_space_mem_info = Arc::new(spin::Mutex::new(None));
+        init_syscalls(get_syscall_handler(
+            frame_buffer,
+            mapper.clone(),
+            frame_allocator.clone(),
+            keyboard,
+            user_space_mem_info.clone(),
+            state.clone(),
+        ));
         unsafe {
-            log::info!(
-                "MMIO Registers: {:#x?}",
-                (base_virt_addr as *mut [u32; 8]).read_volatile()
-            );
-
-            // outb(PORT + 1, 0x00); // Disable all interrupts
-            base_virt_addr
-                .offset(1 * register_memory_mapped_size)
-                .write_volatile(0x00);
-            // outb(PORT + 3, 0x80); // Enable DLAB (set baud rate divisor)
-            base_virt_addr
-                .offset(3 * register_memory_mapped_size)
-                .write_volatile(1 << 7);
-            // outb(PORT + 0, 0x03); // Set divisor to 3 (lo byte) 38400 baud
-            base_virt_addr
-                .offset(0 * register_memory_mapped_size)
-                .write_volatile(0x01);
-            // outb(PORT + 1, 0x00); //                  (hi byte)
-            base_virt_addr
-                .offset(1 * register_memory_mapped_size)
-                .write_volatile(0x00);
-            // outb(PORT + 3, 0x03); // 8 bits, no parity, one stop bit
-            base_virt_addr
-                .offset(3 * register_memory_mapped_size)
-                .write_volatile(0b00000011);
-            // outb(PORT + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-            base_virt_addr
-                .offset(2 * register_memory_mapped_size)
-                .write_volatile(0b11000111);
-            // outb(PORT + 4, 0x0B); // IRQs enabled, RTS/DSR set
-            base_virt_addr
-                .offset(4 * register_memory_mapped_size)
-                .write_volatile(0b11);
-
-            log::info!(
-                "MMIO Registers: {:#x?}",
-                (base_virt_addr as *mut [u32; 8]).read_volatile()
-            );
-
-            // outb(PORT + 4, 0x1E); // Set in loopback mode, test the serial chip
-            // base_virt_addr.offset(4).write_volatile(0x1E);
-            // outb(PORT + 0, 0xAE);
-            // base_virt_addr.offset(0).write_volatile(0xAE);
-
-            // Check if serial is faulty (i.e: not same byte as sent)
-            // if (inb(PORT + 0) != 0xAE) {
-            //     return 1;
-            // }
-            // if base_virt_addr.offset(0).read_volatile() != 0xAE {
-            //     log::error!("Serial is faulty. Loopback mode set but received something else.");
-            //     spin_fs(1 * 10_u128.pow(15));
-            // }
-
-            // If serial is not faulty set it in normal operation mode
-            // (not-loopback with IRQs enabled and OUT#1 and OUT#2 bits enabled)
-            // outb(PORT + 4, 0x0F);
-            // base_virt_addr.offset(4).write_volatile(0b11);
-
-            // Sending data
-            // int is_transmit_empty() {
-            //     return inb(PORT + 5) & 0x20;
-            //  }
-            let is_ready_to_transmit = || -> bool {
-                base_virt_addr
-                    .offset(5 * register_memory_mapped_size)
-                    .read_volatile()
-                    & (1 << 5)
-                    != 0
-                // && base_virt_addr.offset(6).read_volatile() & (1 << 7) == 0
-            };
-
-            // void write_serial(char a) {
-            //     while (is_transmit_empty() == 0);
-
-            //     outb(PORT,a);
-            //  }
-            let write_serial = |char: u8| loop {
-                if is_ready_to_transmit() {
-                    base_virt_addr
-                        .offset(0 * register_memory_mapped_size)
-                        .write_volatile(char);
-                    log::info!("Transmitted");
-                    break;
-                } else {
-                    // log::info!("Not ready to transmit");
-                }
-            };
-
-            let write_str = |str: &str| {
-                for byte in str.bytes() {
-                    write_serial(byte)
-                }
-            };
-
-            loop {
-                write_str(&format!(
-                    "Hello! HPET counter: {}\r\n",
-                    syscall_hpet_read_main_counter_value()
-                ));
-                spin_s(1);
-            }
+            jmp_to_elf(
+                elf_bytes,
+                mapper.clone(),
+                frame_allocator.clone(),
+                user_space_mem_info,
+                state,
+            )
         }
-
-        // let mut serial_port =
-        //     unsafe { uart_16550_2::MmioSerialPort::new(base_virt_addr.as_u64() as usize) };
-        // log::info!("initializing serial port");
-        // serial_port.init_values(
-        //     DivisorLatchFlags::baud_115200(),
-        //     FifoCtrlFlags::ENABLE,
-        //     ModemCtrlFlags::DATA_TERMINAL_READY | ModemCtrlFlags::REQUEST_TO_SEND,
-        // );
-        // log::info!("Writing to serial port");
-        // loop {
-        //     serial_port
-        //         .write_str("Hello from a computer which has a SPCR ACPI header!\r\n")
-        //         .unwrap();
-        //     log::info!("Wrote to the SPCR 16550 serial port");
-        // }
+        .unwrap();
     }
+
+    log::info!("There is no ramdisk so this kernel has nothing to do. Nothing. Interrupts aren't even enabled. This is the last message you will see. After that the CPU will be halted, and the computer will do nothing. You should probably turn off the computer now to save energy.");
 
     hlt_loop();
 }
