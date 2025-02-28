@@ -56,10 +56,11 @@ pub mod write_with_cr;
 
 use alloc::sync::Arc;
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
+use bootloader_x86_64_common::serial::SerialPort;
 use common::mem::KERNEL_VIRT_MEM_START;
 use conquer_once::noblock::OnceCell;
 use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
-use core::{ops::DerefMut, panic::PanicInfo, slice};
+use core::{fmt::Write, ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
 use demo_async::demo_async;
 #[allow(unused)]
@@ -117,6 +118,11 @@ use x86_64::{
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     interrupts::disable();
+    unsafe {
+        SerialPort::init()
+            .write_fmt(format_args!("{}", info))
+            .unwrap()
+    }
     // TODO: Blue screen with a frowny face and a QR Code
     log::error!("{}", info);
     hlt_loop()

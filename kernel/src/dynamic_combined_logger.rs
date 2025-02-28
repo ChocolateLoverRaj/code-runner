@@ -21,7 +21,7 @@ impl<'a> Deref for DynamicLogger<'a> {
 }
 
 pub struct DynamicCombinedLogger<'a, const N: usize> {
-    pub loggers: Spinlock<heapless::Vec<DynamicLogger<'a>, N>>,
+    pub loggers: spin::Mutex<heapless::Vec<DynamicLogger<'a>, N>>,
 }
 
 impl<const N: usize> Log for DynamicCombinedLogger<'_, N> {

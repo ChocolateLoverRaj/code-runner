@@ -75,9 +75,9 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
 ) -> ! {
     let context = unsafe { *context };
     {
-        // log::info!("State: {:#x?}", STATE.try_get().unwrap().lock().deref());
+        log::info!("State: {:#x?}", STATE.try_get().unwrap().lock().deref());
     }
-    // log::info!("Context: {:#x?}", context);
+    log::info!("Context: {:#x?}", context);
     // Make sure to drop all locks before exiting
     #[derive(Debug)]
     enum JmpTo {
@@ -102,9 +102,9 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
             }
         };
         let mut local_apic = LOCAL_APIC.try_get().unwrap().try_get().unwrap().lock();
-        // log::info!("Notifying end of interrupt");
+        log::info!("Notifying end of interrupt");
         unsafe { local_apic.end_of_interrupt() };
-        // log::info!("Done Notifying end of interrupt");
+        log::info!("Done Notifying end of interrupt");
 
         let mut user_space_state = STATE.try_get().unwrap().lock();
         let user_space_state = user_space_state.as_mut().unwrap();
@@ -168,7 +168,7 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
             }
         }
     };
-    // log::info!("jmp_to: {:#?}", jmp_to);
+    log::info!("jmp_to: {:#?}", jmp_to);
     match jmp_to {
         JmpTo::UserMode(user_space_interrupt_handler, interrupt_handler_stack_end) => {
             unsafe { enter_user_mode(user_space_interrupt_handler, interrupt_handler_stack_end) };

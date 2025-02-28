@@ -24,7 +24,7 @@ static SERIAL_LOGGER: LockedWriteLogger<Uart16550Registers<PortAccessedRegister>
 static LOGGERS: OnceCell<heapless::Vec<&'static dyn Log, 2>> = OnceCell::uninit();
 static LOGGER: LockedLoggerWithoutInterrupts<DynamicCombinedLogger<'static, 2>> =
     LockedLoggerWithoutInterrupts::new(DynamicCombinedLogger {
-        loggers: Spinlock::new(heapless::Vec::new()),
+        loggers: spin::Mutex::new(heapless::Vec::new()),
     });
 
 /// This function should only be called once.
