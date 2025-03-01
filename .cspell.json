@@ -5,12 +5,16 @@
         "Apic",
         "bitfield",
         "chrono",
+        "distro",
+        "EFER",
         "eflags",
+        "FMASK",
         "hpet",
         "ioapic",
         "iretq",
         "lapic",
         "lateout",
+        "LSTAR",
         "MMIO",
         "noblock",
         "ramdisk",
@@ -23,7 +27,9 @@
         "sysretq",
         "sysv64",
         "uart",
+        "UEFI",
         "uninit",
+        "Ventoy",
         "Virt"
     ]
 }

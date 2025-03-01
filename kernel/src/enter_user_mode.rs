@@ -9,7 +9,7 @@ pub unsafe fn enter_user_mode(code: VirtAddr, stack_end: VirtAddr) -> ! {
     // 0x0002 should always be set
     // https://en.wikipedia.org/wiki/FLAGS_register
     // "Reserved, always 1 in EFLAGS"
-    let eflags = RFlags::INTERRUPT_FLAG.bits() | 0x0002;
+    let eflags = (RFlags::INTERRUPT_FLAG | RFlags::PARITY_FLAG).bits();
     let rip = code.as_u64();
     let rsp = stack_end.as_u64();
     unsafe {
