@@ -50,7 +50,7 @@ We just need to know what instruction to jump to and what the end of the stack s
 # Syscalls
 ## Inputs and Outputs
 ### `syscall` instruction's calling convention
-The registers `rdi`, `rsi`, `rdx`, `r10`, `r8`, `r9`, and `rax` can be set by user space before `syscall` and then accessed by the syscall handler. Then `rax` is set by the syscall handler and read by user space. 
+The registers `rdi`, `rsi`, `rdx`, `r10`, `r8`, `r9`, and `rax` can be set by user space before `syscall` and then accessed by the syscall handler. Then `rax` is set by the syscall handler and read by user space.
 
 I am not sure why more registers aren't used as inputs and outputs. It seems to be fore performance reasons. Linux uses the 7 registers as input and 1 output as mentioned above (althought it says it has 6 inputs and `rax` is the syscall number).
 
@@ -76,7 +76,7 @@ Because `syscall` does not switch stacks, the syscall handler runs on the user s
 It might be necessary to zero some registers before `sysret`ing too, but idk.
 
 # Running `async` in user space
-Without `async`, why bother trying to do two things at once in your code? It's possible, but imo it's not fun. 
+Without `async`, why bother trying to do two things at once in your code? It's possible, but imo it's not fun.
 
 Here are some things we can and can't (funly) do in our OS:
 
@@ -160,7 +160,7 @@ To a user space program, many things could be seen as happening "in parallel" wh
 When we design an API for user space processes to interact with the kernel, we should treat interrupt handlers as running "in parallel" so we can do cool things like run the interrupt handler at the same time as the main code run multiple interrupt handlers in parallel, and interrupt the interrupt handler and run a higher priority interrupt handler.
 
 ## Priority of interrupt handlers
-Especially when there is only 1 CPU, we will have times when two parts of code want to run at the same time, but they physically can't. We should hopefully explicitly prioritize certain things so that things work nicely. For example, a game shouldn't have missed keyboard input. 
+Especially when there is only 1 CPU, we will have times when two parts of code want to run at the same time, but they physically can't. We should hopefully explicitly prioritize certain things so that things work nicely. For example, a game shouldn't have missed keyboard input.
 
 ### We need a way for the user space program to specify the priority of one interrupt handler over the other
 Imagine two interrupts: a timer, and a keyboard. A program might set a timer, and do something in the timer interrupt. And it might have a "press escape to cancel" feature. So in this case, we would want the keyboard interrupt to have higher priority than the timer interrupt (in the case of a single core CPU it means the keyboard interrupt interrupt the timer interrupt if the timer interrupt was executing).
@@ -239,7 +239,7 @@ We could just specify a priority number (can be a `u64` for high flexibility). T
 
 We could also specify relative priority compared to other threads. This would definitely be harder to implement in the kernel. This might make user space programs easier, but also it would create complication if the relative thread was deleted.
 
-I think for now we should just have a priority number. Better to start simple and then make things more advanced when we encounter scenarios that require more advanced scheduling than to start off with a complicated scheduling method and then realize that it doesn't really work. 
+I think for now we should just have a priority number. Better to start simple and then make things more advanced when we encounter scenarios that require more advanced scheduling than to start off with a complicated scheduling method and then realize that it doesn't really work.
 
 ### The Plan
 - Create a syscall such as `enable_interrupts_and_block_until_interrupt_received_and_process_all_interrupts_and_then_disable_interrupts`. This name is too long (imo) so we need to find a better name for this.
@@ -248,3 +248,20 @@ I think for now we should just have a priority number. Better to start simple an
 - Figure out if the kernel should have a different Cr3 than user space programs instead of mapping the kernel memory to the address space of every user space program (for security reasons).
 - Figure out how to run stuff on multiple CPUs.
 - Figure out how prioritization will work when there are multiple threads and processes.
+
+## Multiple Processes
+Currently, the kernel starts a single user space process. A proper code runner can run *arbitrary* code.
+
+### Methods for user space processes to create new user space processes
+#### Specify an elf to the kernel
+The user space process can just be like "This ELF is in memory starting at X with X bytes. Create a new process from that elf."
+
+Good:
+- ELF loading code can just be part of the kernel
+- User space code doesn't need to have ELF loading code
+- The user space program can get the ELF file however it wants (like through the network, disk, const bytes, etc)
+
+Bad:
+- Memory would need to be copied, espec
+
+#### Map ELF in user space and specify page table entries for new process
