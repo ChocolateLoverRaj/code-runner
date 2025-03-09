@@ -3,6 +3,8 @@ use std::{
     process::{self, Command},
 };
 
+pub mod server;
+
 pub enum BootType {
     Bios,
     Uefi,
@@ -74,3 +76,8 @@ pub fn run_qemu(boot_type: BootType) {
     let exit_status = qemu.status().unwrap();
     process::exit(exit_status.code().unwrap_or(-1));
 }
+
+pub const PORT: u16 = 64017;
+pub const FOLDER: &str = "iPXE";
+pub const CERT_FILE: &str = "ca.crt";
+pub const SERVER_KEY: &str = "key.pem";

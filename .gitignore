@@ -3,3 +3,5 @@
 debug.lldb
 debug_userspace.lldb
 rustc-ice-*.txt
+http_boot.ipxe
+/iPXE

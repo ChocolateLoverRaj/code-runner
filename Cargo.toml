@@ -8,6 +8,10 @@ default-run = "qemu-uefi"
 members = ["kernel", "util", "user_space", "common"]
 
 [dependencies]
+gethostname = "1.0.0"
+rcgen = { version = "0.13.2", features = ["aws_lc_rs"] }
+rocket = { version = "0.5.1", features = ["tls"] }
+serialport = { git = "https://github.com/sirhcel/serialport-rs", branch = "set-dtr-on-open-best-effort", features = ["usbportinfo-interface"] }
 
 [build-dependencies]
 kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
@@ -15,8 +19,6 @@ user_space = { path = "user_space", artifact = "bin", target = "x86_64-unknown-n
 bootloader = "0.11.10"
 
 [patch.crates-io]
-# x2apic = { git = "https://github.com/ChocolateLoverRaj/x2apic-rs", rev = "e275e7aaa9341b185ddd9f10bbce77c53862a618" }
-bootloader-x86_64-common = { git = "https://github.com/rust-osdev/bootloader", rev = "2419f2f6bcc81839043b1a0b21c65302b34037d1" }
 x86_rtc = { git = "https://github.com/ChocolateLoverRaj/x86_rtc", rev = "ee80ee63fc2eacb55727493be435eee472e3279f" }
 
 # [patch.crates-io.x86_64]
