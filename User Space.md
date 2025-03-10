@@ -241,6 +241,17 @@ We could also specify relative priority compared to other threads. This would de
 
 I think for now we should just have a priority number. Better to start simple and then make things more advanced when we encounter scenarios that require more advanced scheduling than to start off with a complicated scheduling method and then realize that it doesn't really work.
 
+#### Dependency Prioritization
+Think about the task of logging. Currently, logging just goes through a UART interface, and on real hardware (I tested this on  Chromebooks so idk about other computers), UART interrupts are not supported so writing to UART needs frequent polling.
+
+We could implement logging as a multi-producer single-consumer channel. The kernel (and user space programs) can send bytes to the UART logging task to log stuff. Then the logging task can consume the bytes and send them to the UART. We can keep a queue for stuff to log and always prioritize the actual program tasks over the logging task. However, there are some situations where we need to eventually have the main task wait for the logging task:
+- The main task needs to log so much information that it doesn't all fit in the buffer
+- The buffer is full and you don't want to drop any data
+
+And in some cases the main task might try to write data at a faster rate than the UART can process, and it will have to be throttled. Increasing the buffer size won't help in this scenario.
+
+So basically, the logging task is low priority (and by that I mean the lowest of the two tasks in this example (the main task and the logging task)). But when the main task wants to log something and either the buffer is full or the main task wants to flush the buffer, the logging task becomes high priority because the main task depends on it.
+
 ### The Plan
 - Create a syscall such as `enable_interrupts_and_block_until_interrupt_received_and_process_all_interrupts_and_then_disable_interrupts`. This name is too long (imo) so we need to find a better name for this.
 - Create a syscall for exiting from a user space interrupt handler.
@@ -262,6 +273,44 @@ Good:
 - The user space program can get the ELF file however it wants (like through the network, disk, const bytes, etc)
 
 Bad:
-- Memory would need to be copied, espec
+- Memory would need to be copied
 
 #### Map ELF in user space and specify page table entries for new process
+The user space process has to actually copy / make sure the ELF is located in memory, and do relocations. Then it has to tell the kernel which pages to map for the new process and with which flags.
+
+Good:
+- A lot of flexibility
+- Not actually limited to ELFs, can use other formats
+- Could even generate code at run time without needing to generate an ELF
+- Easily obtain the ELF from other methods such as the network
+- Less copying needed
+
+Bad:
+- Both the kernel and user space binaries have to have ELF loading code in them, resulting in duplicated code
+- The process that creates the process has complete control over the process that it created since it could inject whatever code it wants into the elf. In Linux, a program can spawn an executable as long as it has read access to the executable file and the file is marked as executable, and you know that the program being run is not modified if th program which spawned it doesn't have write access to the file. This isn't the case with this approach.
+- More page unmapping and mapping is needed
+- The kernel needs to do many checks
+
+#### Decision
+At this point I don't know how programs will be loaded in the future. They will probably be stored on disk and loaded from disk on demand or loaded through the network. So I will go with the "map ELF in user space" method because it seems cooler and more flexible and more micro-kernel-like.
+
+## Inter-Process Communication
+First use case for this:
+
+There are two tasks:
+- Main task (a user space program)
+- Logging task (as user space program which uses syscalls to access UART)
+
+The main task tells the logging task, "log this string". Then to the main task it is as if the logging is asynchronous, even if the logging task needs to busy-poll to log. Once it is done logging the logging task notifies the main task that it is done logging. So in the main task there would be an `async` function for logging.
+
+So we need to design some syscalls so that any process can send a message to any other process, and then that process can send a message back to the process that messaged it, without being aware of what processes will actually message it. For example, the logging task needs to be able to receive messages from *any other task*. Then it needs to be able to send a message back to the task that asked it to log something. It doesn't make sense to broadcast messages and interrupt every process even if it didn't ask.
+
+### Security
+For now we let pretty much any task do anything. Any task can access UART, any task can access the frame buffer, any task can set HPET interrupts. All we are really protecting is user space processes interacting with the hardware in an unsafe or invalid way. But when we design the messaging-between-tasks system we need to make sure that a 3rd process can't access messages between two other processes. Imagine 3 tasks:
+- Task A
+- Task B
+- Logger Task
+
+Both task A and task B can send messages to the logger task, but task B shouldn't be able to access messages that task A sent to the logger task.
+
+One way we could do this is make every task that receives a message have a uuid for the 
