@@ -9,3 +9,7 @@
 	path = x86_rtc
 	url = https://github.com/ChocolateLoverRaj/x86_rtc
 	branch = interrupts
+[submodule "uart_16550"]
+	path = uart_16550
+	url = https://github.com/ChocolateLoverRaj/uart_16550
+	branch = custom-baud-rate
