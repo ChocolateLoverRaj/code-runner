@@ -5,7 +5,7 @@ use embedded_graphics::{
 };
 use log::Log;
 use spinning_top::Spinlock;
-use uart_16550_2::{port::PortAccessedRegister, uart_16550::Uart16550Registers};
+use uart_16550::{port::PortAccessedRegister, uart_16550::Uart16550Registers};
 
 use crate::{
     colorful_logger::ColorfulLogger,
@@ -20,7 +20,7 @@ use crate::{
 static SCREEN_LOGGER: OnceCell<ColorfulLogger<Rgb888, EmbeddedGraphicsWriter<Display>>> =
     OnceCell::uninit();
 static SERIAL_LOGGER: LockedWriteLogger<Uart16550Registers<PortAccessedRegister>> =
-    LockedWriteLogger::new(unsafe { uart_16550_2::port::new(0x3F8) });
+    LockedWriteLogger::new(unsafe { uart_16550::port::new(0x3F8) });
 static LOGGERS: OnceCell<heapless::Vec<&'static dyn Log, 2>> = OnceCell::uninit();
 static LOGGER: LockedLoggerWithoutInterrupts<DynamicCombinedLogger<'static, 2>> =
     LockedLoggerWithoutInterrupts::new(DynamicCombinedLogger {

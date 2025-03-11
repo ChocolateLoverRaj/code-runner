@@ -1,3 +1,11 @@
 [submodule "nixpkgs"]
 	path = nixpkgs
 	url = https://github.com/NixOS/nixpkgs.git
+[submodule "serialport-rs"]
+	path = serialport-rs
+	url = https://github.com/sirhcel/serialport-rs
+	branch = set-dtr-on-open-best-effort
+[submodule "x86_rtc"]
+	path = x86_rtc
+	url = https://github.com/ChocolateLoverRaj/x86_rtc
+	branch = interrupts

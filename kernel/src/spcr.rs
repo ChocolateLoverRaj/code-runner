@@ -6,7 +6,7 @@ use acpi::{
     AcpiHandler, AcpiTables,
 };
 use alloc::boxed::Box;
-use uart_16550_2::uart_16550::Uart16550;
+use uart_16550::uart_16550::Uart16550;
 use x86_64::{
     structures::paging::{FrameAllocator, Mapper, PageSize, PageTableFlags, PhysFrame, Size4KiB},
     PhysAddr,
@@ -73,9 +73,8 @@ pub fn replace_serial_logger_if_redirected(
                         .flush();
                 };
                 let base_virt_addr = (page.start_address() + offset_in_page).as_mut_ptr();
-                let mut uart = unsafe {
-                    uart_16550_2::mmio::new(NonNull::new(base_virt_addr).unwrap(), stride)
-                };
+                let mut uart =
+                    unsafe { uart_16550::mmio::new(NonNull::new(base_virt_addr).unwrap(), stride) };
                 // Baud rate for Chromebooks: 115200
                 // TODO: Determine baud rate for computers that are not Chromebooks
                 uart.init_with_dl(0x01, 0x00);

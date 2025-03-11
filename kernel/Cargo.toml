@@ -24,8 +24,7 @@ common = { version = "0.1.0", path = "../common" }
 bytemuck = "1.21.0"
 volatile = { version = "0.6.1", features = ["derive", "unstable"] }
 bitfield = "0.19.0"
-uart_16550 = "0.3.2"
-uart_16550_2 = { path = "../../uart_16550", package = "uart_16550" }
+uart_16550 = { path = "../uart_16550" }
 spinning_top = "0.3.0"
 
 [dependencies.crossbeam-queue]
