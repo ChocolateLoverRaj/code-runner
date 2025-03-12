@@ -293,24 +293,3 @@ Bad:
 
 #### Decision
 At this point I don't know how programs will be loaded in the future. They will probably be stored on disk and loaded from disk on demand or loaded through the network. So I will go with the "map ELF in user space" method because it seems cooler and more flexible and more micro-kernel-like.
-
-## Inter-Process Communication
-First use case for this:
-
-There are two tasks:
-- Main task (a user space program)
-- Logging task (as user space program which uses syscalls to access UART)
-
-The main task tells the logging task, "log this string". Then to the main task it is as if the logging is asynchronous, even if the logging task needs to busy-poll to log. Once it is done logging the logging task notifies the main task that it is done logging. So in the main task there would be an `async` function for logging.
-
-So we need to design some syscalls so that any process can send a message to any other process, and then that process can send a message back to the process that messaged it, without being aware of what processes will actually message it. For example, the logging task needs to be able to receive messages from *any other task*. Then it needs to be able to send a message back to the task that asked it to log something. It doesn't make sense to broadcast messages and interrupt every process even if it didn't ask.
-
-### Security
-For now we let pretty much any task do anything. Any task can access UART, any task can access the frame buffer, any task can set HPET interrupts. All we are really protecting is user space processes interacting with the hardware in an unsafe or invalid way. But when we design the messaging-between-tasks system we need to make sure that a 3rd process can't access messages between two other processes. Imagine 3 tasks:
-- Task A
-- Task B
-- Logger Task
-
-Both task A and task B can send messages to the logger task, but task B shouldn't be able to access messages that task A sent to the logger task.
-
-One way we could do this is make every task that receives a message have a uuid for the 

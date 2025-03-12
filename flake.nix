@@ -41,6 +41,8 @@
               gdb
               rust-analyzer
               lldb
+              libudev-zero
+              pkg-config
             ];
           };
       }

@@ -13,3 +13,5 @@
 	path = uart_16550
 	url = https://github.com/ChocolateLoverRaj/uart_16550
 	branch = custom-baud-rate
+[submodule "*"]
+	depth = 1
