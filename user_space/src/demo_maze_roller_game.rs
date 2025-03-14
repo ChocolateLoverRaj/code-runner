@@ -11,7 +11,7 @@ use futures::{pin_mut, Stream, StreamExt};
 // use futures_util::StreamExt;
 use pc_keyboard::{layouts, HandleControl, KeyCode, KeyState, Keyboard, ScancodeSet1};
 
-use crate::{embedded_graphics_frame_buffer::Position, spin_fs};
+use crate::embedded_graphics_frame_buffer::Position;
 
 // use crate::{
 //     frame_buffer::{Display, Position},
@@ -299,7 +299,6 @@ pub async fn demo_maze_roller_game<D: DrawTarget, K: Stream<Item = u8>>(
                         {
                             current_position = attempted_position_to_move_to;
                             draw_level(display, current_position);
-                            spin_fs(1 * 10_u128.pow(15));
                             break match get_cell(current_position) {
                                 Cell::End => {
                                     Text::with_baseline(

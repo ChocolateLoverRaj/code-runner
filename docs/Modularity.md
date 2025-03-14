@@ -17,4 +17,15 @@ So we will need to make syscalls dynamic. Some syscalls may be available and som
 
 So imagine there are different groups of syscalls: core (always included), A (additional syscalls), B (additional syscalls). Some systems might have just core, some might have core + a, core + b, or core + a + b. The syscall numbers / ids for syscalls should not overlap. We could use a [uuid v4](https://docs.rs/uuid/latest/uuid/) for every syscall. This way if a bunch of people are making their own installable syscalls, there won't be conflicts (assuming everyone randomly generates one).
 
+Even core syscalls will have a uuid v4 cuz they are subject to change. This isn't a huge critical project like Linux and we can break user space whenever we want. Code can check if a syscall exists (but the syscall to check if a syscall exist doesn't have any stability guarantees either).
 
+## Core Syscalls
+- CheckIfSyscallExists
+- Exit
+- WaitForEvent
+
+## Port based serial driver
+Allows reading and writing to [COM1 (8 ports starting at 0x3F8)](https://wiki.osdev.org/Serial_Ports#Port_Addresses). Even if this doesn't actually write logs (such as on Chromebooks) at worst this is a no-op and it's safe to read/write to it for any x86 or x86_64 device.
+
+## MMIO based serial driver
+If UART is memory mapped (which can be detected by the `SPCR` ACPI table, if it exists), allows reading and writing to the memory for the 8 registers (not the rest of the 4KiB frame).

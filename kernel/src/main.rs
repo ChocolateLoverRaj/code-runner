@@ -7,6 +7,8 @@
 #![feature(pointer_is_aligned_to)]
 #![feature(unsigned_is_multiple_of)]
 #![feature(vec_push_within_capacity)]
+#![feature(never_type)]
+#![feature(fn_traits)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
@@ -96,7 +98,10 @@ use modules::{
     panicking_stack_segment_fault_handler::panicking_stack_segment_fault_handler,
     spurious_interrupt_handler::set_spurious_interrupt_handler,
     static_local_apic::{self, LOCAL_APIC},
-    syscall::{init_syscalls::init_syscalls, jmp_to_elf::jmp_to_elf},
+    syscall::{
+        init_syscalls::init_syscalls, jmp_to_elf::jmp_to_elf,
+        syscall_handler_closure::set_syscall_handler_closure,
+    },
     tss::TssBuilder,
     unsafe_local_apic::UnsafeLocalApic,
 };
@@ -357,13 +362,38 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         };
         log::info!("Entering ELF as user space");
         let user_space_mem_info = Arc::new(spin::Mutex::new(None));
-        init_syscalls(get_syscall_handler(
-            frame_buffer,
-            mapper.clone(),
-            frame_allocator.clone(),
-            keyboard,
-            user_space_mem_info.clone(),
-            state.clone(),
+        // init_syscalls(get_syscall_handler(
+        //     frame_buffer,
+        //     mapper.clone(),
+        //     frame_allocator.clone(),
+        //     keyboard,
+        //     user_space_mem_info.clone(),
+        //     state.clone(),
+        // ));
+        init_syscalls(set_syscall_handler_closure(
+            &|input0,
+              input1,
+              input2,
+              input3,
+              input4,
+              input5,
+              input6,
+              user_space_rsp_to_restore,
+              pushed_registers| {
+                log::info!(
+                    "{} {} {} {} {} {} {} {} {:#?}",
+                    input0,
+                    input1,
+                    input2,
+                    input3,
+                    input4,
+                    input5,
+                    input6,
+                    user_space_rsp_to_restore,
+                    pushed_registers
+                );
+                panic!();
+            },
         ));
         unsafe {
             jmp_to_elf(
