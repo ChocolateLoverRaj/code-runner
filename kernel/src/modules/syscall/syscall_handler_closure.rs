@@ -99,10 +99,9 @@ pub struct PushedRegisters {
 //     }
 // }
 
-pub type SyscallHandlerClosure =
-    dyn Fn(u64, u64, u64, u64, u64, u64, u64, u64, &PushedRegisters) -> ! + Sync + Send;
-
-static CLOSURE: OnceCell<Box<SyscallHandlerClosure>> = OnceCell::uninit();
+static CLOSURE: OnceCell<
+    Box<dyn Fn(u64, u64, u64, u64, u64, u64, u64, u64, &PushedRegisters) -> ! + Send + Sync>,
+> = OnceCell::uninit();
 
 extern "sysv64" fn syscall_handler(
     input0: u64,
@@ -127,7 +126,10 @@ extern "sysv64" fn syscall_handler(
     );
 }
 
-pub fn set_syscall_handler_closure(closure: Box<SyscallHandlerClosure>) -> SyscallHandler {
+pub fn set_syscall_handler_closure<C>(closure: Box<C>) -> SyscallHandler
+where
+    C: Fn(u64, u64, u64, u64, u64, u64, u64, u64, &PushedRegisters) -> ! + Send + Sync + 'static,
+{
     CLOSURE.try_init_once(|| closure).unwrap();
     unsafe { SyscallHandler::new_unchecked(raw_syscall_handler) }
 }

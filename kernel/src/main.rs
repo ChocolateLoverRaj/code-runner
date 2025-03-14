@@ -99,8 +99,10 @@ use modules::{
     spurious_interrupt_handler::set_spurious_interrupt_handler,
     static_local_apic::{self, LOCAL_APIC},
     syscall::{
-        init_syscalls::init_syscalls, jmp_to_elf::jmp_to_elf, run_with_rsp::run_with_rsp,
-        syscall_handler_closure::set_syscall_handler_closure,
+        init_syscalls::init_syscalls,
+        jmp_to_elf::jmp_to_elf,
+        run_with_rsp::run_with_rsp,
+        syscall_handler_closure::{set_syscall_handler_closure, PushedRegisters},
     },
     tss::TssBuilder,
     unsafe_local_apic::UnsafeLocalApic,
@@ -108,7 +110,6 @@ use modules::{
 use phys_mapper::PhysMapper;
 use spcr::replace_serial_logger_if_redirected;
 use spin::{Mutex, RwLock};
-use syscall_handler::get_syscall_handler;
 use volatile::VolatileRef;
 use x86_64::{
     instructions::interrupts,
@@ -380,15 +381,17 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                   input5,
                   input6,
                   user_space_rsp_to_restore,
-                  pushed_registers| {
+                  pushed_registers: &PushedRegisters| {
                 const TEMP_STACK_SIZE: usize = 0x10000;
                 #[repr(C, align(16))]
                 struct TempStack([u8; TEMP_STACK_SIZE]);
                 static mut TEMP_STACK: MaybeUninit<TempStack> = MaybeUninit::uninit();
 
-                run_with_rsp(unsafe { TEMP_STACK.as_mut_ptr() } as u64, || {
+                // a += 1;
+                let new_rsp = unsafe { TEMP_STACK.as_mut_ptr() } as u64;
+                run_with_rsp(new_rsp, || {
                     log::info!(
-                        "{} {} {} {} {} {} {} {} {:#?} {}",
+                        "This is running on the kernel's temp stack. {} {} {} {} {} {} {} {} {:#?} {}",
                         input0,
                         input1,
                         input2,
@@ -400,8 +403,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                         pushed_registers,
                         a
                     );
-                    panic!();
                 });
+                log::warn!("This is running on the user space stack");
                 unreachable!()
             },
         )));
