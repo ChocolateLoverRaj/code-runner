@@ -114,7 +114,7 @@ extern "sysv64" fn syscall_handler(
     input6: u64,
     user_space_stack_pointer: u64,
 ) -> ! {
-    CLOSURE.try_get().unwrap().call((
+    CLOSURE.try_get().unwrap()(
         input0,
         input1,
         input2,
@@ -124,7 +124,7 @@ extern "sysv64" fn syscall_handler(
         input6,
         user_space_stack_pointer + size_of::<PushedRegisters>() as u64,
         unsafe { mem::transmute(user_space_stack_pointer as *const PushedRegisters) },
-    ));
+    );
 }
 
 pub fn set_syscall_handler_closure(closure: Box<SyscallHandlerClosure>) -> SyscallHandler {

@@ -62,7 +62,7 @@ use bootloader_x86_64_common::serial::SerialPort;
 use common::mem::KERNEL_VIRT_MEM_START;
 use conquer_once::noblock::OnceCell;
 use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
-use core::{fmt::Write, ops::DerefMut, panic::PanicInfo, slice};
+use core::{fmt::Write, mem::MaybeUninit, ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
 use demo_async::demo_async;
 #[allow(unused)]
@@ -99,7 +99,7 @@ use modules::{
     spurious_interrupt_handler::set_spurious_interrupt_handler,
     static_local_apic::{self, LOCAL_APIC},
     syscall::{
-        init_syscalls::init_syscalls, jmp_to_elf::jmp_to_elf,
+        init_syscalls::init_syscalls, jmp_to_elf::jmp_to_elf, run_with_rsp::run_with_rsp,
         syscall_handler_closure::set_syscall_handler_closure,
     },
     tss::TssBuilder,
@@ -381,20 +381,28 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                   input6,
                   user_space_rsp_to_restore,
                   pushed_registers| {
-                log::info!(
-                    "{} {} {} {} {} {} {} {} {:#?} {}",
-                    input0,
-                    input1,
-                    input2,
-                    input3,
-                    input4,
-                    input5,
-                    input6,
-                    user_space_rsp_to_restore,
-                    pushed_registers,
-                    a
-                );
-                panic!();
+                const TEMP_STACK_SIZE: usize = 0x10000;
+                #[repr(C, align(16))]
+                struct TempStack([u8; TEMP_STACK_SIZE]);
+                static mut TEMP_STACK: MaybeUninit<TempStack> = MaybeUninit::uninit();
+
+                run_with_rsp(unsafe { TEMP_STACK.as_mut_ptr() } as u64, || {
+                    log::info!(
+                        "{} {} {} {} {} {} {} {} {:#?} {}",
+                        input0,
+                        input1,
+                        input2,
+                        input3,
+                        input4,
+                        input5,
+                        input6,
+                        user_space_rsp_to_restore,
+                        pushed_registers,
+                        a
+                    );
+                    panic!();
+                });
+                unreachable!()
             },
         )));
         unsafe {
