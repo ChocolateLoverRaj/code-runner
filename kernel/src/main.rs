@@ -56,7 +56,7 @@ pub mod virt_mem_tracker;
 pub mod write_logger;
 pub mod write_with_cr;
 
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use bootloader_x86_64_common::serial::SerialPort;
 use common::mem::KERNEL_VIRT_MEM_START;
@@ -370,18 +370,19 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         //     user_space_mem_info.clone(),
         //     state.clone(),
         // ));
-        init_syscalls(set_syscall_handler_closure(
-            &|input0,
-              input1,
-              input2,
-              input3,
-              input4,
-              input5,
-              input6,
-              user_space_rsp_to_restore,
-              pushed_registers| {
+        let a = 3;
+        init_syscalls(set_syscall_handler_closure(Box::new(
+            move |input0,
+                  input1,
+                  input2,
+                  input3,
+                  input4,
+                  input5,
+                  input6,
+                  user_space_rsp_to_restore,
+                  pushed_registers| {
                 log::info!(
-                    "{} {} {} {} {} {} {} {} {:#?}",
+                    "{} {} {} {} {} {} {} {} {:#?} {}",
                     input0,
                     input1,
                     input2,
@@ -390,11 +391,12 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                     input5,
                     input6,
                     user_space_rsp_to_restore,
-                    pushed_registers
+                    pushed_registers,
+                    a
                 );
                 panic!();
             },
-        ));
+        )));
         unsafe {
             jmp_to_elf(
                 elf_bytes,

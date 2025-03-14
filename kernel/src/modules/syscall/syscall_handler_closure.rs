@@ -1,5 +1,6 @@
 use core::{arch::naked_asm, mem};
 
+use alloc::boxed::Box;
 use conquer_once::noblock::OnceCell;
 
 use super::syscall_handler::SyscallHandler;
@@ -98,11 +99,10 @@ pub struct PushedRegisters {
 //     }
 // }
 
-pub type C = dyn Fn(u64, u64, u64, u64, u64, u64, u64, u64, &PushedRegisters) -> ! + Sync;
+pub type SyscallHandlerClosure =
+    dyn Fn(u64, u64, u64, u64, u64, u64, u64, u64, &PushedRegisters) -> ! + Sync + Send;
 
-static CLOSURE: OnceCell<
-    &'static (dyn Fn(u64, u64, u64, u64, u64, u64, u64, u64, &PushedRegisters) -> ! + Sync),
-> = OnceCell::uninit();
+static CLOSURE: OnceCell<Box<SyscallHandlerClosure>> = OnceCell::uninit();
 
 extern "sysv64" fn syscall_handler(
     input0: u64,
@@ -127,7 +127,7 @@ extern "sysv64" fn syscall_handler(
     ));
 }
 
-pub fn set_syscall_handler_closure(closure: &'static C) -> SyscallHandler {
+pub fn set_syscall_handler_closure(closure: Box<SyscallHandlerClosure>) -> SyscallHandler {
     CLOSURE.try_init_once(|| closure).unwrap();
     unsafe { SyscallHandler::new_unchecked(raw_syscall_handler) }
 }
