@@ -1,6 +1,7 @@
 [submodule "nixpkgs"]
 	path = nixpkgs
 	url = https://github.com/NixOS/nixpkgs.git
+	depth = 1
 [submodule "serialport-rs"]
 	path = serialport-rs
 	url = https://github.com/sirhcel/serialport-rs
@@ -13,5 +14,6 @@
 	path = uart_16550
 	url = https://github.com/ChocolateLoverRaj/uart_16550
 	branch = custom-baud-rate
-[submodule "*"]
-	depth = 1
+[submodule "x86_64"]
+	path = x86_64
+	url = https://github.com/ChocolateLoverRaj/x86_64

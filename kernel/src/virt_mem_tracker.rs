@@ -15,7 +15,7 @@ use crate::insert::Insert;
 #[derive(Debug)]
 pub struct VirtMemTracker {
     starting_addr: VirtAddr,
-    used_addresses: ContinuousBoolVec<heapless::Vec<usize, 50>>,
+    used_addresses: ContinuousBoolVec<heapless::Vec<usize, 250>>,
 }
 
 impl VirtMemTracker {

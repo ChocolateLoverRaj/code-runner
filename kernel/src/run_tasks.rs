@@ -1,0 +1,32 @@
+use crate::{
+    enter_user_mode::enter_user_mode,
+    hlt_loop::hlt_loop,
+    tasks::{TaskState, TaskType, TASKS},
+};
+
+pub fn run_tasks() -> ! {
+    match TASKS.lock().first_mut() {
+        Some(task) => {
+            match task.state {
+                TaskState::ReadyToStart(state) => {
+                    match &task.task_type {
+                        TaskType::User(data) => {
+                            // TODO: Change Cr3 if needed and flush TLB
+                            task.state = TaskState::Running;
+                            unsafe {
+                                enter_user_mode(state.instruction_pointer, state.stack_pointer)
+                            };
+                        }
+                    }
+                }
+                TaskState::Running => {
+                    unreachable!("If the task is running, how is this code running? They both can't be running at the same time. Was the task state not updating from running to something else?");
+                }
+            }
+        }
+        None => {
+            log::warn!("No tasks to run. Halting.");
+            hlt_loop();
+        }
+    }
+}

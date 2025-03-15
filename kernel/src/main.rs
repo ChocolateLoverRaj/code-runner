@@ -42,7 +42,9 @@ pub mod memory;
 pub mod modules;
 pub mod phys_mapper;
 pub mod pic8259_interrupts;
+pub mod run_tasks;
 pub mod set_color;
+pub mod spawn_task;
 pub mod spcr;
 pub mod split_draw_target;
 pub mod syscall_enable_hpet;
@@ -51,6 +53,7 @@ pub mod syscall_handler;
 pub mod syscall_handler_closure;
 pub mod syscall_hpet_read_main_counter_value;
 pub mod syscall_print_handler;
+pub mod tasks;
 pub mod user_space_state;
 pub mod virt_addr_from_indexes;
 pub mod virt_mem_tracker;
@@ -64,7 +67,13 @@ use common::mem::KERNEL_VIRT_MEM_START;
 use conquer_once::noblock::OnceCell;
 use context::{Context, SyscallContext};
 use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
-use core::{fmt::Write, mem::MaybeUninit, ops::DerefMut, panic::PanicInfo, slice};
+use core::{
+    fmt::Write,
+    mem::MaybeUninit,
+    ops::{Deref, DerefMut},
+    panic::PanicInfo,
+    slice,
+};
 #[allow(unused)]
 use demo_async::demo_async;
 #[allow(unused)]
@@ -112,9 +121,12 @@ use modules::{
     unsafe_local_apic::UnsafeLocalApic,
 };
 use phys_mapper::PhysMapper;
+use run_tasks::run_tasks;
+use spawn_task::spawn_task;
 use spcr::replace_serial_logger_if_redirected;
 use spin::{Mutex, RwLock};
 use syscall_handler_closure::syscall_handler_closure;
+use tasks::TASKS;
 use volatile::VolatileRef;
 use x86_64::{
     instructions::interrupts,
@@ -370,8 +382,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         let elf_bytes = unsafe {
             slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
         };
-        log::info!("Entering ELF as user space");
-        let user_space_mem_info = Arc::new(spin::Mutex::new(None));
+        // let user_space_mem_info = Arc::new(spin::Mutex::new(None));
         // init_syscalls(get_syscall_handler(
         //     frame_buffer,
         //     mapper.clone(),
@@ -399,16 +410,16 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             &THREAD_CONTROL_DATA as *const _
         }));
 
-        unsafe {
-            jmp_to_elf(
-                elf_bytes,
-                mapper.clone(),
-                frame_allocator.clone(),
-                user_space_mem_info,
-                state,
-            )
-        }
+        spawn_task(
+            elf_bytes,
+            frame_allocator.lock().deref_mut(),
+            mapper.lock().deref_mut(),
+        )
         .unwrap();
+
+        log::info!("Tasks: {:#?}", TASKS.lock());
+
+        run_tasks();
     }
 
     log::info!("There is no ramdisk so this kernel has nothing to do. Nothing. Interrupts aren't even enabled. This is the last message you will see. After that the CPU will be halted, and the computer will do nothing. You should probably turn off the computer now to save energy.");
