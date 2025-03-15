@@ -1,6 +1,9 @@
+use x86_64::VirtAddr;
+
 use crate::{
     enter_user_mode::enter_user_mode,
     hlt_loop::hlt_loop,
+    syscall_handler_closure::set_syscall_stack_pointer,
     tasks::{TaskState, TaskType, TASKS},
 };
 
@@ -13,6 +16,9 @@ pub fn run_tasks() -> ! {
                         TaskType::User(data) => {
                             // TODO: Change Cr3 if needed and flush TLB
                             task.state = TaskState::Running;
+                            set_syscall_stack_pointer(VirtAddr::from_ptr(
+                                data.kernel_stack.as_ptr_range().end,
+                            ));
                             unsafe {
                                 enter_user_mode(state.instruction_pointer, state.stack_pointer)
                             };

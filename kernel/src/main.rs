@@ -9,6 +9,7 @@
 #![feature(vec_push_within_capacity)]
 #![feature(never_type)]
 #![feature(fn_traits)]
+#![feature(maybe_uninit_uninit_array)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
@@ -395,20 +396,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         init_syscalls(set_syscall_handler_closure(Box::new(
             syscall_handler_closure(),
         )));
-
-        const TEMP_STACK_SIZE: usize = 0x10000;
-        #[repr(C, align(16))]
-        struct TempStack([u8; TEMP_STACK_SIZE]);
-        static mut TEMP_STACK: MaybeUninit<TempStack> = MaybeUninit::uninit();
-
-        // This is needed to access `gs:` in asm
-        unsafe {
-            THREAD_CONTROL_DATA.kernel_stack_pointer =
-                MaybeUninit::new(TEMP_STACK.as_ptr() as *const ())
-        };
-        KernelGsBase::write(VirtAddr::from_ptr(unsafe {
-            &THREAD_CONTROL_DATA as *const _
-        }));
 
         spawn_task(
             elf_bytes,

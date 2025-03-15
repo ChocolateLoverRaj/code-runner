@@ -1,7 +1,4 @@
-use core::{
-    arch::naked_asm,
-    mem::{offset_of, MaybeUninit},
-};
+use core::{arch::naked_asm, mem::offset_of};
 
 use alloc::boxed::Box;
 use conquer_once::noblock::OnceCell;
@@ -10,13 +7,13 @@ use super::syscall_handler::SyscallHandler;
 
 #[derive(Debug)]
 pub struct ThreadControlData {
-    pub user_stack_pointer: MaybeUninit<*const ()>,
-    pub kernel_stack_pointer: MaybeUninit<*const ()>,
+    pub user_stack_pointer: u64,
+    pub kernel_stack_pointer: u64,
 }
 
 pub static mut THREAD_CONTROL_DATA: ThreadControlData = ThreadControlData {
-    user_stack_pointer: MaybeUninit::uninit(),
-    kernel_stack_pointer: MaybeUninit::uninit(),
+    user_stack_pointer: 0,
+    kernel_stack_pointer: 0,
 };
 
 // save the registers, handle the syscall and return to user mode

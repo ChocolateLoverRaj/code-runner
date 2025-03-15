@@ -1,13 +1,19 @@
-use alloc::vec::Vec;
+use core::mem::MaybeUninit;
+
+use alloc::{boxed::Box, vec::Vec};
 use spinning_top::Spinlock;
 use x86_64::{
     structures::paging::{PhysFrame, Size4KiB},
     VirtAddr,
 };
 
+#[repr(C, align(16))]
+pub struct StackChunk([u8; 16]);
+
 #[derive(Debug)]
 pub struct UserTaskData {
     pub cr3: PhysFrame<Size4KiB>,
+    pub kernel_stack: Box<[MaybeUninit<StackChunk>]>,
 }
 
 /// Kernel tasks will be added later

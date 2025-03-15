@@ -1,5 +1,6 @@
-use core::slice;
+use core::{mem::MaybeUninit, slice};
 
+use alloc::boxed::Box;
 use anyhow::{anyhow, Context};
 use common::mem::KERNEL_VIRT_MEM_START;
 use elf::{endian::NativeEndian, ElfBytes};
@@ -11,7 +12,7 @@ use x86_64::{
 
 use crate::{
     modules::syscall::jmp_to_elf::elf_flags_to_page_table_flags,
-    tasks::{ReadyToStartState, Task, TaskState, TaskType, UserTaskData, TASKS},
+    tasks::{ReadyToStartState, StackChunk, Task, TaskState, TaskType, UserTaskData, TASKS},
 };
 
 pub fn spawn_task(
@@ -243,7 +244,15 @@ pub fn spawn_task(
     let start_addr = VirtAddr::new(start_symbol.st_value);
 
     let task = Task {
-        task_type: TaskType::User(UserTaskData { cr3: Cr3::read().0 }),
+        task_type: TaskType::User(UserTaskData {
+            cr3: Cr3::read().0,
+            kernel_stack: Box::new({
+                // This is what Linux uses so let's do it too: https://lwn.net/Articles/600649/
+                const SYSCALL_STACK_SIZE: u64 = Size4KiB::SIZE * 4;
+                const CHUNKS: usize = SYSCALL_STACK_SIZE as usize / size_of::<StackChunk>();
+                MaybeUninit::uninit_array::<CHUNKS>()
+            }),
+        }),
         state: TaskState::ReadyToStart(ReadyToStartState {
             instruction_pointer: start_addr,
             stack_pointer: stack_end.start_address(),

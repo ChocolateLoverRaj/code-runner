@@ -1,7 +1,10 @@
 use alloc::collections::btree_map::BTreeMap;
 use common::syscall_uuids::{SYSCALL_EXISTS, SYSCALL_EXIT};
 use uuid::Uuid;
-use x86_64::registers::segmentation::GS;
+use x86_64::{
+    registers::{model_specific::KernelGsBase, segmentation::GS},
+    VirtAddr,
+};
 
 use crate::{
     context::{Context, SyscallContext},
@@ -42,13 +45,17 @@ pub fn syscall_handler_closure(
                 r11: pushed_registers.r11,
                 rcx: pushed_registers.rcx,
                 rax: return_value,
-                rsp: unsafe { THREAD_CONTROL_DATA.user_stack_pointer.assume_init() } as u64,
+                rsp: unsafe { THREAD_CONTROL_DATA.user_stack_pointer },
             };
             unsafe { GS::swap() };
             unsafe { s.restore() }
         });
         syscall_handlers
     };
+
+    KernelGsBase::write(VirtAddr::from_ptr(unsafe {
+        &THREAD_CONTROL_DATA as *const _
+    }));
 
     move |input0,
           input1,
@@ -70,4 +77,9 @@ pub fn syscall_handler_closure(
             ),
         };
     }
+}
+
+pub fn set_syscall_stack_pointer(syscall_stack_pointer: VirtAddr) {
+    // This is needed to access `gs:` in asm
+    unsafe { THREAD_CONTROL_DATA.kernel_stack_pointer = syscall_stack_pointer.as_u64() };
 }
