@@ -9,6 +9,8 @@ use x86_64::{
 use crate::{
     context::{Context, SyscallContext},
     modules::syscall::syscall_handler_closure::{PushedRegisters, THREAD_CONTROL_DATA},
+    run_tasks::run_tasks,
+    tasks::{TaskState, TaskType, TASKS},
 };
 
 trait Includes<K> {
@@ -28,7 +30,29 @@ pub fn syscall_handler_closure(
 ) -> impl Fn(u64, u64, u64, u64, u64, u64, u64, &mut PushedRegisters) -> ! + Send + Sync + 'static {
     let syscall_handlers = {
         let mut syscall_handlers = BTreeMap::<Uuid, &'static SyscallHandler>::new();
-        syscall_handlers.insert(SYSCALL_EXIT, &|inputs, pushed_registers, _| todo!("Exit"));
+        syscall_handlers.insert(SYSCALL_EXIT, &|_inputs, _pushed_registers, _| {
+            log::info!("Syscall exit called");
+            {
+                let mut tasks = TASKS.lock();
+                let (task_index, task) = tasks
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_index, task)| match task.state {
+                        TaskState::Running => true,
+                        _ => false,
+                    })
+                    .unwrap();
+                match &task.task_type {
+                    TaskType::User(_data) => {
+                        // FIXME: Cleanup Cr3 / page tables
+                        // Kernel stack will be cleaned up by the `Drop` trait
+                    }
+                }
+                tasks.remove(task_index);
+            }
+            log::info!("Running tasks");
+            run_tasks()
+        });
         syscall_handlers.insert(SYSCALL_EXISTS, &|inputs, pushed_registers, syscalls| {
             let return_value =
                 match syscalls.contains_key(&Uuid::from_u64_pair(inputs[0], inputs[1])) {
