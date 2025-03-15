@@ -8,12 +8,14 @@ use common::{
     syscall_take_frame_buffer::{
         TakeFrameBufferError, TakeFrameBufferOutput, TakeFrameBufferOutputData,
     },
+    syscall_uuids::SYSCALL_EXISTS,
 };
+use uuid::Uuid;
 use x86_64::VirtAddr;
 
 /// # Safety
 /// The inputs must be valid. Invalid inputs can lead to undefined behavior or the program being terminated.
-unsafe fn syscall_internal(
+pub unsafe fn syscall_internal(
     input0: u64,
     input1: u64,
     input2: u64,
@@ -25,26 +27,40 @@ unsafe fn syscall_internal(
     let return_value: u64;
     unsafe {
         asm!("\
-            mov rdi, {0}
-            mov rsi, {1}
-            mov rdx, {2}
-            mov r10, {3}
-            mov r8,  {4}
-            mov r9,  {5}
-            mov rax, {6}
             syscall
             ",
-            in(reg) input0,
-            in(reg) input1,
-            in(reg) input2,
-            in(reg) input3,
-            in(reg) input4,
-            in(reg) input5,
-            in(reg) input6,
+            in("rdi") input0,
+            in("rsi") input1,
+            in("rdx") input2,
+            in("r10") input3,
+            in("r8") input4,
+            in("r9") input5,
+            in("rax") input6,
             lateout("rax") return_value
         );
     }
     return_value
+}
+
+/// # Safety
+/// The inputs must be valid. Invalid inputs can lead to undefined behavior or the program being terminated.
+pub unsafe fn syscall_uuid(uuid: Uuid, inputs: [u64; 5]) -> u64 {
+    let (input0, input1) = uuid.as_u64_pair();
+    unsafe {
+        syscall_internal(
+            input0, input1, inputs[0], inputs[1], inputs[2], inputs[3], inputs[4],
+        )
+    }
+}
+
+pub fn syscall_exists(uuid: Uuid) -> bool {
+    let (input0, input1) = uuid.as_u64_pair();
+    let return_value = unsafe { syscall_uuid(SYSCALL_EXISTS, [input0, input1, 0, 0, 0]) };
+    match return_value {
+        1 => true,
+        0 => false,
+        _ => unreachable!(),
+    }
 }
 
 fn syscall(syscall: &Syscall) -> u64 {

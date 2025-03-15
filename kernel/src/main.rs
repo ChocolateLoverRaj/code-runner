@@ -48,6 +48,7 @@ pub mod split_draw_target;
 pub mod syscall_enable_hpet;
 pub mod syscall_get_hpet_main_counter_period;
 pub mod syscall_handler;
+pub mod syscall_handler_closure;
 pub mod syscall_hpet_read_main_counter_value;
 pub mod syscall_print_handler;
 pub mod user_space_state;
@@ -61,6 +62,7 @@ use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use bootloader_x86_64_common::serial::SerialPort;
 use common::mem::KERNEL_VIRT_MEM_START;
 use conquer_once::noblock::OnceCell;
+use context::{Context, SyscallContext};
 use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
 use core::{fmt::Write, mem::MaybeUninit, ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
@@ -102,7 +104,9 @@ use modules::{
         init_syscalls::init_syscalls,
         jmp_to_elf::jmp_to_elf,
         run_with_rsp::run_with_rsp,
-        syscall_handler_closure::{set_syscall_handler_closure, PushedRegisters},
+        syscall_handler_closure::{
+            set_syscall_handler_closure, PushedRegisters, THREAD_CONTROL_DATA,
+        },
     },
     tss::TssBuilder,
     unsafe_local_apic::UnsafeLocalApic,
@@ -110,9 +114,14 @@ use modules::{
 use phys_mapper::PhysMapper;
 use spcr::replace_serial_logger_if_redirected;
 use spin::{Mutex, RwLock};
+use syscall_handler_closure::syscall_handler_closure;
 use volatile::VolatileRef;
 use x86_64::{
     instructions::interrupts,
+    registers::{
+        model_specific::{GsBase, KernelGsBase},
+        segmentation::GS,
+    },
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
         tss::TaskStateSegment,
@@ -371,43 +380,25 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         //     user_space_mem_info.clone(),
         //     state.clone(),
         // ));
-        let a = 3;
-        init_syscalls(set_syscall_handler_closure(Box::new(
-            move |input0,
-                  input1,
-                  input2,
-                  input3,
-                  input4,
-                  input5,
-                  input6,
-                  user_space_rsp_to_restore,
-                  pushed_registers: &PushedRegisters| {
-                const TEMP_STACK_SIZE: usize = 0x10000;
-                #[repr(C, align(16))]
-                struct TempStack([u8; TEMP_STACK_SIZE]);
-                static mut TEMP_STACK: MaybeUninit<TempStack> = MaybeUninit::uninit();
 
-                // a += 1;
-                let new_rsp = unsafe { TEMP_STACK.as_mut_ptr() } as u64;
-                run_with_rsp(new_rsp, || {
-                    log::info!(
-                        "This is running on the kernel's temp stack. {} {} {} {} {} {} {} {} {:#?} {}",
-                        input0,
-                        input1,
-                        input2,
-                        input3,
-                        input4,
-                        input5,
-                        input6,
-                        user_space_rsp_to_restore,
-                        pushed_registers,
-                        a
-                    );
-                });
-                log::warn!("This is running on the user space stack");
-                unreachable!()
-            },
+        init_syscalls(set_syscall_handler_closure(Box::new(
+            syscall_handler_closure(),
         )));
+
+        const TEMP_STACK_SIZE: usize = 0x10000;
+        #[repr(C, align(16))]
+        struct TempStack([u8; TEMP_STACK_SIZE]);
+        static mut TEMP_STACK: MaybeUninit<TempStack> = MaybeUninit::uninit();
+
+        // This is needed to access `gs:` in asm
+        unsafe {
+            THREAD_CONTROL_DATA.kernel_stack_pointer =
+                MaybeUninit::new(TEMP_STACK.as_ptr() as *const ())
+        };
+        KernelGsBase::write(VirtAddr::from_ptr(unsafe {
+            &THREAD_CONTROL_DATA as *const _
+        }));
+
         unsafe {
             jmp_to_elf(
                 elf_bytes,

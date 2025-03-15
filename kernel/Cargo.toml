@@ -26,6 +26,7 @@ volatile = { version = "0.6.1", features = ["derive", "unstable"] }
 bitfield = "0.19.0"
 uart_16550 = { path = "../uart_16550" }
 spinning_top = "0.3.0"
+uuid = { version = "1.16.0", features = [], default-features = false }
 
 [dependencies.crossbeam-queue]
 version = "0.3.12"

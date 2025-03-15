@@ -8,3 +8,4 @@ pub mod syscall_print;
 pub mod syscall_slice;
 pub mod syscall_start_recording_keyboard;
 pub mod syscall_take_frame_buffer;
+pub mod syscall_uuids;

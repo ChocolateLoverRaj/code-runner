@@ -16,15 +16,17 @@ pub mod syscall;
 pub mod test_disable_interrupts;
 
 use async_keyboard::AsyncKeyboard;
-use common::syscall_start_recording_keyboard::FullQueueBehavior;
+use common::{syscall_start_recording_keyboard::FullQueueBehavior, syscall_uuids::SYSCALL_EXIT};
 use demo_maze_roller_game::demo_maze_roller_game;
 use embedded_graphics_frame_buffer::FrameBufferDisplay;
 use execute_future::execute_future;
 use futures::{stream, StreamExt};
 use syscall::{
-    syscall_enable_hpet, syscall_exit, syscall_get_hpet_main_counter_period,
-    syscall_hpet_read_main_counter_value, syscall_print, syscall_take_frame_buffer,
+    syscall_enable_hpet, syscall_exists, syscall_exit, syscall_get_hpet_main_counter_period,
+    syscall_hpet_read_main_counter_value, syscall_internal, syscall_print,
+    syscall_take_frame_buffer, syscall_uuid,
 };
+use uuid::Uuid;
 
 /// Blocks until the given amount of femtoseconds have passed
 pub fn spin_fs(duration_fs: u128) {
@@ -43,18 +45,25 @@ pub fn spin_fs(duration_fs: u128) {
 
 #[unsafe(no_mangle)]
 extern "C" fn _start() -> ! {
-    allocator::init();
+    let can_exit = syscall_exists(SYSCALL_EXIT);
+    let should_be_false = syscall_exists(Uuid::default());
+    let mut count = 0;
+    loop {
+        let return_value = unsafe { syscall_uuid(SYSCALL_EXIT, [100, 101, 102, 103, 104]) };
+        count += 1;
+    }
+    // allocator::init();
 
-    // let duration = 3 * 10_u128.pow(15);
-    // syscall_print(&format!("Spinning for {} fs", duration)).unwrap();
-    // spin_fs(duration);
-    // syscall_print("Done spinning").unwrap();
+    // // let duration = 3 * 10_u128.pow(15);
+    // // syscall_print(&format!("Spinning for {} fs", duration)).unwrap();
+    // // spin_fs(duration);
+    // // syscall_print("Done spinning").unwrap();
 
-    let mut frame_buffer = syscall_take_frame_buffer().unwrap();
-    syscall_print("Playing Maze Roller Game!").unwrap();
-    execute_future(demo_maze_roller_game(
-        &mut FrameBufferDisplay::new(&mut frame_buffer),
-        AsyncKeyboard::<256>::new(FullQueueBehavior::DropNewest).flat_map(stream::iter),
-    ));
-    syscall_exit();
+    // let mut frame_buffer = syscall_take_frame_buffer().unwrap();
+    // syscall_print("Playing Maze Roller Game!").unwrap();
+    // execute_future(demo_maze_roller_game(
+    //     &mut FrameBufferDisplay::new(&mut frame_buffer),
+    //     AsyncKeyboard::<256>::new(FullQueueBehavior::DropNewest).flat_map(stream::iter),
+    // ));
+    // syscall_exit();
 }
