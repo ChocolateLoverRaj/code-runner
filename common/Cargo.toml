@@ -9,3 +9,4 @@ bytemuck = { version = "1.21.0", default-features = false }
 postcard = { version = "1.1.1", features = ["experimental-derive"] }
 serde = { version = "1.0.217", features = ["derive"], default-features = false }
 uuid = { version = "1.16.0", default-features = false }
+zerocopy = { version = "0.8.23", features = ["derive"] }

@@ -5,8 +5,8 @@ use x86_64::{
 
 use super::tss::TssBuilder;
 
-pub fn get_double_fault_entry(
-    tss: &mut TssBuilder,
+pub fn get_double_fault_entry<const N: usize>(
+    tss: &mut TssBuilder<N>,
     handler: DivergingHandlerFuncWithErrCode,
 ) -> idt::Entry<DivergingHandlerFuncWithErrCode> {
     let mut entry = idt::Entry::missing();

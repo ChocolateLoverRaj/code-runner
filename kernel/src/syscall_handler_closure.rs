@@ -1,10 +1,14 @@
 use alloc::collections::btree_map::BTreeMap;
-use common::syscall_uuids::{SYSCALL_EXISTS, SYSCALL_EXIT};
+use common::syscall_uuids::{
+    SyscallAccessCom1IOItem, SyscallAccessCom1InputAndOutput, SyscallAccessCom1Memory,
+    SyscallAccessCom1Register, SYSCALL_ACCESS_COM1, SYSCALL_EXISTS, SYSCALL_EXIT,
+};
 use uuid::Uuid;
 use x86_64::{
     registers::{model_specific::KernelGsBase, segmentation::GS},
     VirtAddr,
 };
+use zerocopy::TryFromBytes;
 
 use crate::{
     context::{Context, SyscallContext},
@@ -74,6 +78,14 @@ pub fn syscall_handler_closure(
             unsafe { GS::swap() };
             unsafe { s.restore() }
         });
+        syscall_handlers.insert(
+            SYSCALL_ACCESS_COM1,
+            &|inputs, pushed_registers, syscalls| {
+                <SyscallAccessCom1Memory as TryFromBytes>::try_mut_from_bytes(&mut []);
+                todo!()
+            },
+        );
+
         syscall_handlers
     };
 

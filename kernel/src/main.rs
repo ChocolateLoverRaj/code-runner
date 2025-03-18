@@ -37,6 +37,7 @@ pub mod hlt_loop;
 pub mod hpet;
 pub mod hpet_memory;
 pub mod insert;
+pub mod iopb_size;
 pub mod logger;
 pub mod logger_without_interrupts;
 pub mod memory;
@@ -50,7 +51,7 @@ pub mod spcr;
 pub mod split_draw_target;
 pub mod syscall_enable_hpet;
 pub mod syscall_get_hpet_main_counter_period;
-pub mod syscall_handler;
+// pub mod syscall_handler;
 pub mod syscall_handler_closure;
 pub mod syscall_hpet_read_main_counter_value;
 pub mod syscall_print_handler;
@@ -66,15 +67,8 @@ use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use bootloader_x86_64_common::serial::SerialPort;
 use common::mem::KERNEL_VIRT_MEM_START;
 use conquer_once::noblock::OnceCell;
-use context::{Context, SyscallContext};
 use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
-use core::{
-    fmt::Write,
-    mem::MaybeUninit,
-    ops::{Deref, DerefMut},
-    panic::PanicInfo,
-    slice,
-};
+use core::{fmt::Write, ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
 use demo_async::demo_async;
 #[allow(unused)]
@@ -88,6 +82,7 @@ use draw_rust::draw_rust;
 use hlt_loop::hlt_loop;
 use hpet::{HpetBuilderStage0, HpetBuilderStage1};
 use hpet_memory::HpetMemory;
+use iopb_size::IOPB_SIZE;
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use modules::{
@@ -110,14 +105,7 @@ use modules::{
     panicking_stack_segment_fault_handler::panicking_stack_segment_fault_handler,
     spurious_interrupt_handler::set_spurious_interrupt_handler,
     static_local_apic::{self, LOCAL_APIC},
-    syscall::{
-        init_syscalls::init_syscalls,
-        jmp_to_elf::jmp_to_elf,
-        run_with_rsp::run_with_rsp,
-        syscall_handler_closure::{
-            set_syscall_handler_closure, PushedRegisters, THREAD_CONTROL_DATA,
-        },
-    },
+    syscall::{init_syscalls::init_syscalls, syscall_handler_closure::set_syscall_handler_closure},
     tss::TssBuilder,
     unsafe_local_apic::UnsafeLocalApic,
 };
@@ -126,15 +114,12 @@ use run_tasks::run_tasks;
 use spawn_task::spawn_task;
 use spcr::replace_serial_logger_if_redirected;
 use spin::{Mutex, RwLock};
+use spinning_top::Spinlock;
 use syscall_handler_closure::syscall_handler_closure;
 use tasks::TASKS;
 use volatile::VolatileRef;
 use x86_64::{
     instructions::interrupts,
-    registers::{
-        model_specific::{GsBase, KernelGsBase},
-        segmentation::GS,
-    },
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
         tss::TaskStateSegment,
@@ -167,7 +152,7 @@ pub static BOOTLOADER_CONFIG: BootloaderConfig = {
 entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 
 struct StaticStuff {
-    tss: TaskStateSegment,
+    tss: TaskStateSegment<IOPB_SIZE>,
     idt_builder: IdtBuilder,
     spurious_interrupt_handler_index: u8,
     timer_interrupt_index: u8,
@@ -195,7 +180,16 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     );
     let static_stuff = STATIC_STUFF
         .try_get_or_init(|| {
+            log::info!("hi");
             let mut tss = TssBuilder::default();
+            let addr = 0x3F8_u16;
+            // unsafe {
+            //     (tss.io_bitmap_mut() as *mut u8)
+            //         .offset((addr.div_floor(8)) as isize)
+            //         .write(!(1 << (addr % 8)))
+            // };
+            tss.tss.iomap[addr.div_floor(8) as usize] &= !(1 << (addr % 8));
+
             let mut idt_builder = IdtBuilder::default();
             idt_builder
                 .set_double_fault_entry(get_double_fault_entry(

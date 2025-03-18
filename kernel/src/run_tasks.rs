@@ -1,4 +1,4 @@
-use x86_64::VirtAddr;
+use x86_64::{registers::rflags::RFlags, VirtAddr};
 
 use crate::{
     enter_user_mode::enter_user_mode,
@@ -21,7 +21,13 @@ pub fn run_tasks() -> ! {
                                     data.kernel_stack.as_ptr_range().end,
                                 ));
                                 &move || unsafe {
-                                    enter_user_mode(state.instruction_pointer, state.stack_pointer)
+                                    enter_user_mode(
+                                        state.instruction_pointer,
+                                        state.stack_pointer,
+                                        RFlags::INTERRUPT_FLAG, // FIXME: Set IOBP
+                                                                // | RFlags::IOPL_HIGH
+                                                                // | RFlags::IOPL_LOW,
+                                    )
                                 }
                             }
                         }

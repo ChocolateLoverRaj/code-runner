@@ -11,9 +11,21 @@ use x86_64::{
 };
 
 use crate::{
-    modules::syscall::jmp_to_elf::elf_flags_to_page_table_flags,
+    iopb_size::IOPB_SIZE,
     tasks::{ReadyToStartState, StackChunk, Task, TaskState, TaskType, UserTaskData, TASKS},
 };
+
+/// Only specifies `WRITABLE` and `NO_EXECUTE` if needed. Other flags such as `PRESENT` and `USER_ACCESSIBLE` must be added.
+pub fn elf_flags_to_page_table_flags(elf_flags: u32) -> PageTableFlags {
+    let mut page_table_flags = PageTableFlags::empty();
+    if elf_flags & 0b001 == 0 {
+        page_table_flags |= PageTableFlags::NO_EXECUTE;
+    }
+    if elf_flags & 0b010 != 0 {
+        page_table_flags |= PageTableFlags::WRITABLE;
+    }
+    page_table_flags
+}
 
 pub fn spawn_task(
     elf_bytes: &[u8],
@@ -252,6 +264,7 @@ pub fn spawn_task(
                 const CHUNKS: usize = SYSCALL_STACK_SIZE as usize / size_of::<StackChunk>();
                 MaybeUninit::uninit_array::<CHUNKS>()
             }),
+            iobp: [Default::default(); IOPB_SIZE],
         }),
         state: TaskState::ReadyToStart(ReadyToStartState {
             instruction_pointer: start_addr,

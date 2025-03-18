@@ -7,6 +7,8 @@ use x86_64::{
     VirtAddr,
 };
 
+use crate::iopb_size::IOPB_SIZE;
+
 #[repr(C, align(16))]
 pub struct StackChunk([u8; 16]);
 
@@ -14,6 +16,8 @@ pub struct StackChunk([u8; 16]);
 pub struct UserTaskData {
     pub cr3: PhysFrame<Size4KiB>,
     pub kernel_stack: Box<[MaybeUninit<StackChunk>]>,
+    /// The IO Bitmap
+    pub iobp: [u8; IOPB_SIZE],
 }
 
 /// Kernel tasks will be added later

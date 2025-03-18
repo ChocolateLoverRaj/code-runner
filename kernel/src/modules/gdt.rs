@@ -18,7 +18,7 @@ pub struct Gdt {
 }
 
 impl Gdt {
-    pub fn new(tss: &'static TaskStateSegment) -> Self {
+    pub fn new<const N: usize>(tss: &'static TaskStateSegment<N>) -> Self {
         let mut gdt = GlobalDescriptorTable::new();
         let kernel_code_selector = gdt.append(Descriptor::kernel_code_segment());
         let kernel_data_selector = gdt.append(Descriptor::kernel_data_segment());

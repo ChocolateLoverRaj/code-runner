@@ -12,6 +12,8 @@
         "FMASK",
         "hpet",
         "ioapic",
+        "iopb",
+        "iomap",
         "ipxe",
         "iretq",
         "lapic",

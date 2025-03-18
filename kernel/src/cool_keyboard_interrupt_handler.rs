@@ -13,6 +13,7 @@ use spin::{Mutex, RwLock, RwLockReadGuard};
 use x2apic::ioapic::{IoApic, RedirectionTableEntry};
 use x86_64::{
     instructions::port::Port,
+    registers::rflags::RFlags,
     structures::idt::{self, HandlerFunc, InterruptStackFrame},
     VirtAddr,
 };
@@ -171,7 +172,13 @@ unsafe extern "sysv64" fn context_switching_keyboard_interrupt_handler_rust(
     log::info!("jmp_to: {:#?}", jmp_to);
     match jmp_to {
         JmpTo::UserMode(user_space_interrupt_handler, interrupt_handler_stack_end) => {
-            unsafe { enter_user_mode(user_space_interrupt_handler, interrupt_handler_stack_end) };
+            unsafe {
+                enter_user_mode(
+                    user_space_interrupt_handler,
+                    interrupt_handler_stack_end,
+                    RFlags::INTERRUPT_FLAG,
+                )
+            };
         }
         JmpTo::RestoreContext(context) => {
             unsafe { context.context().restore() };

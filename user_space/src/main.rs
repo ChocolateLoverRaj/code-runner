@@ -27,6 +27,7 @@ use syscall::{
     syscall_take_frame_buffer, syscall_uuid,
 };
 use uuid::Uuid;
+use x86_64::instructions::port::Port;
 
 /// Blocks until the given amount of femtoseconds have passed
 pub fn spin_fs(duration_fs: u128) {
@@ -48,6 +49,9 @@ extern "C" fn _start() -> ! {
     let can_exit = syscall_exists(SYSCALL_EXIT);
     let should_be_false = syscall_exists(Uuid::default());
     let mut count = 0;
+
+    let v = unsafe { Port::<u8>::new(0x3F8).read() };
+
     loop {
         let return_value = unsafe { syscall_uuid(SYSCALL_EXIT, [100, 101, 102, 103, 104]) };
         count += 1;
