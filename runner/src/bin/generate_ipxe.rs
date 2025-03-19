@@ -3,11 +3,11 @@ use std::{
     path::PathBuf,
 };
 
-use code_runner::{CERT_FILE, FOLDER, PORT, SERVER_KEY};
 use gethostname::gethostname;
 use rcgen::{
     BasicConstraints, CertificateParams, DistinguishedName, DnType, IsCa, KeyPair, PKCS_RSA_SHA256,
 };
+use runner::{CERT_FILE, FOLDER, PORT, SERVER_KEY};
 
 /// Generate an iPXE script
 fn main() {
@@ -50,6 +50,8 @@ chain --replace http://{}:{}/boot.ipxe
     )
     .unwrap();
 
-    println!("Generated an iPXE script and a HTTPS certificate. Embed the script by specifying EMBED=./{}/{} and embed the certificate by specifying TRUST=./{}/{} when building iPXE. Or use the ./build_ipxe.sh if you have Nix installed.",
-      FOLDER, ipxe_file, FOLDER, CERT_FILE);
+    println!(
+        "Generated an iPXE script and a HTTPS certificate. Embed the script by specifying EMBED=./{}/{} and embed the certificate by specifying TRUST=./{}/{} when building iPXE. Or use the ./build_ipxe.sh if you have Nix installed.",
+        FOLDER, ipxe_file, FOLDER, CERT_FILE
+    );
 }

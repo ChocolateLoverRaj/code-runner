@@ -2,7 +2,7 @@ use core::{mem::MaybeUninit, slice};
 
 use alloc::boxed::Box;
 use anyhow::{anyhow, Context};
-use common::mem::KERNEL_VIRT_MEM_START;
+use common::{mem::KERNEL_VIRT_MEM_START, ram_disk::RamDisk};
 use elf::{endian::NativeEndian, ElfBytes};
 use x86_64::{
     registers::control::Cr3,
@@ -28,11 +28,11 @@ pub fn elf_flags_to_page_table_flags(elf_flags: u32) -> PageTableFlags {
 }
 
 pub fn spawn_task(
-    elf_bytes: &[u8],
+    program: RamDisk<'static>,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
     mapper: &mut impl Mapper<Size4KiB>,
 ) -> anyhow::Result<()> {
-    let elf = ElfBytes::<NativeEndian>::minimal_parse(elf_bytes)?;
+    let elf = ElfBytes::<NativeEndian>::minimal_parse(&program.elf)?;
     let loadable_segments = elf
         .segments()
         .ok_or(anyhow!("No segments"))?
@@ -266,9 +266,9 @@ pub fn spawn_task(
             }),
             iopb: {
                 let mut iopb = [u8::MAX; IOPB_SIZE];
-                // Try changing this and it will GP fault
-                let addr = 0x3F8_u16;
-                iopb[addr.div_floor(8) as usize] &= !(1 << (addr % 8));
+                program.permissions.ports.iter().for_each(|allowed_port| {
+                    iopb[allowed_port.div_floor(8) as usize] &= !(1 << (allowed_port % 8));
+                });
                 iopb
             },
         }),

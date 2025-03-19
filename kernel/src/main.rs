@@ -66,7 +66,7 @@ pub mod write_with_cr;
 use alloc::{boxed::Box, sync::Arc};
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use bootloader_x86_64_common::serial::SerialPort;
-use common::mem::KERNEL_VIRT_MEM_START;
+use common::{mem::KERNEL_VIRT_MEM_START, ram_disk::RamDisk};
 use conquer_once::noblock::OnceCell;
 use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
 use core::{fmt::Write, ops::DerefMut, panic::PanicInfo, slice};
@@ -384,9 +384,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .configure_io_apic(Arc::new(Mutex::new(io_apic)), state.clone());
 
     if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
-        let elf_bytes = unsafe {
+        let ram_disk = unsafe {
             slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
         };
+        let ram_disk = postcard::from_bytes::<RamDisk>(ram_disk).unwrap();
+        log::info!("Parsed ramdisk");
         // let user_space_mem_info = Arc::new(spin::Mutex::new(None));
         // init_syscalls(get_syscall_handler(
         //     frame_buffer,
@@ -402,7 +404,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         )));
 
         spawn_task(
-            elf_bytes,
+            ram_disk,
             frame_allocator.lock().deref_mut(),
             mapper.lock().deref_mut(),
         )

@@ -1,7 +1,8 @@
 // build.rs
 
 use bootloader::DiskImageBuilder;
-use std::{env, path::PathBuf};
+use common::{permissions::Permissions, ram_disk::RamDisk};
+use std::{borrow::Cow, env, fs, path::PathBuf};
 
 fn main() {
     let package_name = env::var("CARGO_PKG_NAME").unwrap();
@@ -9,13 +10,30 @@ fn main() {
     // set by cargo for the kernel artifact dependency
     let kernel_path = env::var("CARGO_BIN_FILE_KERNEL").unwrap();
     let mut disk_builder = DiskImageBuilder::new(PathBuf::from(&kernel_path));
-    let userspace_path = env::var("CARGO_BIN_FILE_USER_SPACE").unwrap();
-    disk_builder.set_ramdisk((&userspace_path).into());
+    let user_space_elf_path = env::var("CARGO_BIN_FILE_USER_SPACE").unwrap();
 
     // specify output paths
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let uefi_path = out_dir.join(format!("{package_name}-uefi.img"));
     let bios_path = out_dir.join(format!("{package_name}-bios.img"));
+    let ram_disk_path = out_dir.join("ram_disk");
+
+    // Create the ram disk
+    let ram_disk = RamDisk {
+        permissions: Permissions {
+            ports: Cow::Owned(
+                {
+                    let com1 = 0x3F8;
+                    com1..com1 + 8
+                }
+                .into_iter()
+                .collect(),
+            ),
+        },
+        elf: Cow::Owned(fs::read(&user_space_elf_path).unwrap()),
+    };
+    fs::write(&ram_disk_path, postcard::to_allocvec(&ram_disk).unwrap()).unwrap();
+    disk_builder.set_ramdisk(ram_disk_path);
 
     // create the disk images
     disk_builder.create_uefi_image(&uefi_path).unwrap();
@@ -30,5 +48,5 @@ fn main() {
     println!("cargo:rustc-env=UEFI_IMAGE={}", uefi_path.display());
     println!("cargo:rustc-env=BIOS_IMAGE={}", bios_path.display());
     println!("cargo:rustc-env=CARGO_BIN_FILE_KERNEL={}", kernel_path);
-    println!("cargo:rustc-env=USER_SPACE={}", userspace_path);
+    println!("cargo:rustc-env=USER_SPACE={}", user_space_elf_path);
 }

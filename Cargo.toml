@@ -1,22 +1,6 @@
-[package]
-name = "code-runner"
-version = "0.1.0"
-edition = "2021"
-default-run = "qemu-uefi"
-
 [workspace]
-members = ["kernel", "util", "user_space", "common"]
-
-[dependencies]
-gethostname = "1.0.0"
-rcgen = { version = "0.13.2", features = ["aws_lc_rs"] }
-rocket = { version = "0.5.1", features = ["tls"] }
-serialport = { path = "./serialport-rs", features = ["usbportinfo-interface"] }
-
-[build-dependencies]
-kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
-user_space = { path = "user_space", artifact = "bin", target = "x86_64-unknown-none" }
-bootloader = "0.11.10"
+resolver = "2"
+members = ["kernel", "util", "user_space", "common", "runner"]
 
 [patch.crates-io]
 x86_rtc = { path = "./x86_rtc" }

@@ -1,4 +1,4 @@
-use code_runner::server::run_server;
+use runner::server::run_server;
 
 #[rocket::main]
 async fn main() {

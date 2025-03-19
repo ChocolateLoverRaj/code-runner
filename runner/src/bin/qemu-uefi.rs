@@ -1,4 +1,4 @@
-use code_runner::{run_qemu, BootType};
+use runner::{BootType, run_qemu};
 
 fn main() {
     run_qemu(BootType::Uefi);
