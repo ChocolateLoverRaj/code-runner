@@ -2687,6 +2687,7 @@ dependencies = [
  "pc-keyboard",
  "pin-utils",
  "tinytga",
+ "uart_16550 0.3.2",
  "uuid",
  "x86_64 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

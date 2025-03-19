@@ -15,6 +15,7 @@ pin-utils = "0.1.0"
 tinytga = "0.5.0"
 uuid = { version = "1.16.0", default-features = false }
 x86_64 = "0.15.2"
+uart_16550 = { path = "../uart_16550" }
 
 [[bin]]
 name = "user_space"

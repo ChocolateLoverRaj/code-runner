@@ -15,6 +15,8 @@ pub mod panic_handler;
 pub mod syscall;
 pub mod test_disable_interrupts;
 
+use core::fmt::Write;
+
 use async_keyboard::AsyncKeyboard;
 use common::{syscall_start_recording_keyboard::FullQueueBehavior, syscall_uuids::SYSCALL_EXIT};
 use demo_maze_roller_game::demo_maze_roller_game;
@@ -26,6 +28,7 @@ use syscall::{
     syscall_hpet_read_main_counter_value, syscall_internal, syscall_print,
     syscall_take_frame_buffer, syscall_uuid,
 };
+use uart_16550::uart_16550::Uart16550;
 use uuid::Uuid;
 use x86_64::instructions::port::Port;
 
@@ -50,7 +53,15 @@ extern "C" fn _start() -> ! {
     let should_be_false = syscall_exists(Uuid::default());
     let mut count = 0;
 
-    let v = unsafe { Port::<u8>::new(0x3F8).read() };
+    // let v = unsafe { Port::<u8>::new(0x3F8).read() };
+
+    let mut port = unsafe { uart_16550::port::new(0x3F8) };
+    port.init();
+    port.write_str("Hello from User space! User space has taken over the UART!\n");
+    loop {
+        let n = port.receive();
+        write!(port, "Received: {:?}\n", core::str::from_utf8(&[n]));
+    }
 
     loop {
         let return_value = unsafe { syscall_uuid(SYSCALL_EXIT, [100, 101, 102, 103, 104]) };
