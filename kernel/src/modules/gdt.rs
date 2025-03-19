@@ -1,7 +1,7 @@
 use x86_64::instructions::tables::load_tss;
 use x86_64::registers::model_specific::Star;
 use x86_64::registers::segmentation::{Segment, CS, DS, ES, SS};
-use x86_64::structures::tss::TaskStateSegment;
+use x86_64::structures::tss::ReadyTssPointer;
 
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
@@ -18,11 +18,11 @@ pub struct Gdt {
 }
 
 impl Gdt {
-    pub fn new<const N: usize>(tss: &'static TaskStateSegment<N>) -> Self {
+    pub fn new<const N: usize>(tss: ReadyTssPointer<N>) -> Self {
         let mut gdt = GlobalDescriptorTable::new();
         let kernel_code_selector = gdt.append(Descriptor::kernel_code_segment());
         let kernel_data_selector = gdt.append(Descriptor::kernel_data_segment());
-        let tss_selector = gdt.append(Descriptor::tss_segment(tss));
+        let tss_selector = gdt.append(Descriptor::tss_segment_from_pointer(tss));
         let user_data_selector = gdt.append(Descriptor::user_data_segment());
         let user_code_selector = gdt.append(Descriptor::user_code_segment());
 

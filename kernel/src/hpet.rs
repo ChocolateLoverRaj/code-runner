@@ -113,6 +113,7 @@ impl HpetBuilderStage0 {
     }
 }
 
+#[derive(Debug)]
 pub struct HpetBuilderStage1 {
     interrupt_index: u8,
 }

@@ -52,6 +52,7 @@ pub mod split_draw_target;
 pub mod syscall_enable_hpet;
 pub mod syscall_get_hpet_main_counter_period;
 // pub mod syscall_handler;
+pub mod store_but_borrow_mut;
 pub mod syscall_handler_closure;
 pub mod syscall_hpet_read_main_counter_value;
 pub mod syscall_print_handler;
@@ -114,7 +115,8 @@ use run_tasks::run_tasks;
 use spawn_task::spawn_task;
 use spcr::replace_serial_logger_if_redirected;
 use spin::{Mutex, RwLock};
-use spinning_top::Spinlock;
+use spinning_top::{guard::SpinlockGuard, Spinlock};
+use store_but_borrow_mut::StoreButBorrowMut;
 use syscall_handler_closure::syscall_handler_closure;
 use tasks::TASKS;
 use volatile::VolatileRef;
@@ -143,6 +145,7 @@ fn panic(info: &PanicInfo) -> ! {
 
 pub static BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
+    config.kernel_stack_size = 1_000_000;
     config.mappings.physical_memory = Some(Mapping::Dynamic);
     // Use higher half for kernel to have space in the lower parts for ELFs
     config.mappings.dynamic_range_start = Some(KERNEL_VIRT_MEM_START);
@@ -151,7 +154,8 @@ pub static BOOTLOADER_CONFIG: BootloaderConfig = {
 
 entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 
-struct StaticStuff {
+#[derive(Debug)]
+struct StaticStuff0 {
     tss: TaskStateSegment<IOPB_SIZE>,
     idt_builder: IdtBuilder,
     spurious_interrupt_handler_index: u8,
@@ -161,8 +165,14 @@ struct StaticStuff {
     hpet: HpetBuilderStage1,
 }
 
-static STATIC_STUFF: OnceCell<StaticStuff> = OnceCell::uninit();
-static GDT: OnceCell<Gdt> = OnceCell::uninit();
+static STATIC_STUFF_0: StoreButBorrowMut<StaticStuff0> = StoreButBorrowMut::uninit();
+
+struct StaticStuff1 {
+    gdt: Gdt,
+    iopb: Spinlock<&'static mut [u8; IOPB_SIZE]>,
+}
+
+static STATIC_STUFF_1: OnceCell<StaticStuff1> = OnceCell::uninit();
 
 static HPET: OnceCell<RwLock<VolatileRef<HpetMemory>>> = OnceCell::uninit();
 
@@ -178,17 +188,9 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         boot_info.ramdisk_len,
         boot_info.ramdisk_addr
     );
-    let static_stuff = STATIC_STUFF
-        .try_get_or_init(|| {
-            log::info!("hi");
+    let static_stuff = STATIC_STUFF_0
+        .store_but_borrow_mut({
             let mut tss = TssBuilder::default();
-            let addr = 0x3F8_u16;
-            // unsafe {
-            //     (tss.io_bitmap_mut() as *mut u8)
-            //         .offset((addr.div_floor(8)) as isize)
-            //         .write(!(1 << (addr % 8)))
-            // };
-            tss.tss.iomap[addr.div_floor(8) as usize] &= !(1 << (addr % 8));
 
             let mut idt_builder = IdtBuilder::default();
             idt_builder
@@ -290,7 +292,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 .set_interrupt(&mut idt_builder)
                 .unwrap();
 
-            StaticStuff {
+            StaticStuff0 {
                 tss: tss.get_tss(),
                 idt_builder,
                 spurious_interrupt_handler_index,
@@ -301,8 +303,16 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             }
         })
         .unwrap();
-    let gdt = GDT.try_get_or_init(|| Gdt::new(&static_stuff.tss)).unwrap();
-    gdt.init();
+    let static_stuff_1 = STATIC_STUFF_1
+        .try_get_or_init(|| {
+            let (tss_pointer, iopb) = static_stuff.tss.ready_to_activate();
+            StaticStuff1 {
+                gdt: Gdt::new(tss_pointer),
+                iopb: Spinlock::new(iopb),
+            }
+        })
+        .unwrap();
+    static_stuff_1.gdt.init();
     static_stuff.idt_builder.init();
 
     let phys_mem_offset = VirtAddr::new(

@@ -17,7 +17,7 @@ pub struct UserTaskData {
     pub cr3: PhysFrame<Size4KiB>,
     pub kernel_stack: Box<[MaybeUninit<StackChunk>]>,
     /// The IO Bitmap
-    pub iobp: [u8; IOPB_SIZE],
+    pub iopb: [u8; IOPB_SIZE],
 }
 
 /// Kernel tasks will be added later

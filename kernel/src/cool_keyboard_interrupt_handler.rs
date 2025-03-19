@@ -194,6 +194,7 @@ unsafe fn disable_interrupts(io_apic: &mut IoApic) {
     unsafe { io_apic.disable_irq(Pic8259Interrupts::Keyboard.into()) }
 }
 
+#[derive(Debug)]
 pub struct CoolKeyboardBuilder {
     interrupt_index: u8,
 }

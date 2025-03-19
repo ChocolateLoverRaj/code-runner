@@ -9,6 +9,7 @@ use x86_64::structures::idt::{
 const FLEXIBLE_ENTRIES_START: u8 = 32;
 const MAX_FLEXIBLE_ENTRIES: u8 = FLEXIBLE_ENTRIES_START.wrapping_neg();
 
+#[derive(Debug)]
 pub struct IdtBuilder {
     idt: InterruptDescriptorTable,
     set_double_fault_entry: bool,

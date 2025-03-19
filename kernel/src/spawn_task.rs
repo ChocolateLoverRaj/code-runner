@@ -264,7 +264,13 @@ pub fn spawn_task(
                 const CHUNKS: usize = SYSCALL_STACK_SIZE as usize / size_of::<StackChunk>();
                 MaybeUninit::uninit_array::<CHUNKS>()
             }),
-            iobp: [Default::default(); IOPB_SIZE],
+            iopb: {
+                let mut iopb = [u8::MAX; IOPB_SIZE];
+                // Try changing this and it will GP fault
+                let addr = 0x3F8_u16;
+                iopb[addr.div_floor(8) as usize] &= !(1 << (addr % 8));
+                iopb
+            },
         }),
         state: TaskState::ReadyToStart(ReadyToStartState {
             instruction_pointer: start_addr,

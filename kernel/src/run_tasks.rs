@@ -5,6 +5,7 @@ use crate::{
     hlt_loop::hlt_loop,
     syscall_handler_closure::set_syscall_stack_pointer,
     tasks::{TaskState, TaskType, TASKS},
+    STATIC_STUFF_1,
 };
 
 pub fn run_tasks() -> ! {
@@ -20,6 +21,7 @@ pub fn run_tasks() -> ! {
                                 set_syscall_stack_pointer(VirtAddr::from_ptr(
                                     data.kernel_stack.as_ptr_range().end,
                                 ));
+                                **STATIC_STUFF_1.try_get().unwrap().iopb.lock() = data.iopb;
                                 &move || unsafe {
                                     enter_user_mode(
                                         state.instruction_pointer,
