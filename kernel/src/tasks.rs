@@ -1,10 +1,10 @@
-use core::mem::MaybeUninit;
+use core::{mem::MaybeUninit, ops::Range};
 
 use alloc::{boxed::Box, vec::Vec};
 use spinning_top::Spinlock;
 use x86_64::{
     structures::paging::{PhysFrame, Size4KiB},
-    VirtAddr,
+    PhysAddr, VirtAddr,
 };
 
 use crate::iopb_size::IOPB_SIZE;
@@ -18,6 +18,7 @@ pub struct UserTaskData {
     pub kernel_stack: Box<[MaybeUninit<StackChunk>]>,
     /// The IO Bitmap
     pub iopb: [u8; IOPB_SIZE],
+    pub log_stream: Option<Range<PhysAddr>>,
 }
 
 /// Kernel tasks will be added later
@@ -46,3 +47,10 @@ pub struct Task {
 
 /// Tasks are arranged from highest priority first to lowest priority
 pub static TASKS: Spinlock<Vec<Task>> = Spinlock::new(Vec::new());
+
+pub fn get_running_task(tasks: &mut Vec<Task>) -> Option<&mut Task> {
+    tasks.iter_mut().find(|task| match task.state {
+        TaskState::Running => true,
+        _ => false,
+    })
+}

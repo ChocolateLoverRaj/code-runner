@@ -1,7 +1,10 @@
 // build.rs
 
 use bootloader::DiskImageBuilder;
-use common::{permissions::Permissions, ram_disk::RamDisk};
+use common::{
+    permissions::{MetaData, Permissions},
+    ram_disk::RamDisk,
+};
 use std::{borrow::Cow, env, fs, path::PathBuf};
 
 fn main() {
@@ -20,15 +23,18 @@ fn main() {
 
     // Create the ram disk
     let ram_disk = RamDisk {
-        permissions: Permissions {
-            ports: Cow::Owned(
-                {
-                    let com1 = 0x3F8;
-                    com1..com1 + 8
-                }
-                .into_iter()
-                .collect(),
-            ),
+        meta_data: MetaData {
+            stack_size: 0x4000,
+            permissions: Permissions {
+                ports: Cow::Owned(
+                    {
+                        let com1 = 0x3F8;
+                        com1..com1 + 8
+                    }
+                    .into_iter()
+                    .collect(),
+                ),
+            },
         },
         elf: Cow::Owned(fs::read(&user_space_elf_path).unwrap()),
     };

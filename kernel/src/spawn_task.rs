@@ -1,4 +1,4 @@
-use core::{mem::MaybeUninit, slice};
+use core::slice;
 
 use alloc::boxed::Box;
 use anyhow::{anyhow, Context};
@@ -258,19 +258,22 @@ pub fn spawn_task(
     let task = Task {
         task_type: TaskType::User(UserTaskData {
             cr3: Cr3::read().0,
-            kernel_stack: Box::new({
-                // This is what Linux uses so let's do it too: https://lwn.net/Articles/600649/
-                const SYSCALL_STACK_SIZE: u64 = Size4KiB::SIZE * 4;
-                const CHUNKS: usize = SYSCALL_STACK_SIZE as usize / size_of::<StackChunk>();
-                MaybeUninit::uninit_array::<CHUNKS>()
-            }),
+            kernel_stack: Box::new_uninit_slice(
+                (program.meta_data.stack_size as usize).div_ceil(size_of::<StackChunk>()),
+            ),
             iopb: {
                 let mut iopb = [u8::MAX; IOPB_SIZE];
-                program.permissions.ports.iter().for_each(|allowed_port| {
-                    iopb[allowed_port.div_floor(8) as usize] &= !(1 << (allowed_port % 8));
-                });
+                program
+                    .meta_data
+                    .permissions
+                    .ports
+                    .iter()
+                    .for_each(|allowed_port| {
+                        iopb[allowed_port.div_floor(8) as usize] &= !(1 << (allowed_port % 8));
+                    });
                 iopb
             },
+            log_stream: None,
         }),
         state: TaskState::ReadyToStart(ReadyToStartState {
             instruction_pointer: start_addr,

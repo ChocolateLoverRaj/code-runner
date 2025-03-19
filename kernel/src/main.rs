@@ -54,6 +54,7 @@ pub mod syscall_get_hpet_main_counter_period;
 // pub mod syscall_handler;
 pub mod store_but_borrow_mut;
 pub mod syscall_handler_closure;
+pub mod syscall_handler_make_me_logger;
 pub mod syscall_hpet_read_main_counter_value;
 pub mod syscall_print_handler;
 pub mod tasks;
