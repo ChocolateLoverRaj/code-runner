@@ -5,5 +5,10 @@ debug_userspace.lldb
 rustc-ice-*.txt
 http_boot.ipxe
 /iPXE
+
+# Nix
 /result
+/result-man
+
+# Where Nix Limine build output is saved
 /limine
