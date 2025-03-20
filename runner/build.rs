@@ -52,6 +52,28 @@ fn main() {
     let kernel_dest = boot_dir.join("kernel");
     ensure_symlink(&kernel_src, &kernel_dest).unwrap();
 
+    let ram_disk_path = boot_dir.join("ram_disk");
+
+    // Create the ram disk
+    let user_space_elf_path = env::var("CARGO_BIN_FILE_USER_SPACE").unwrap();
+    let ram_disk = RamDisk {
+        meta_data: MetaData {
+            stack_size: 0x4000,
+            permissions: Permissions {
+                ports: Cow::Owned(
+                    {
+                        let com1 = 0x3F8;
+                        com1..com1 + 8
+                    }
+                    .into_iter()
+                    .collect(),
+                ),
+            },
+        },
+        elf: Cow::Owned(fs::read(&user_space_elf_path).unwrap()),
+    };
+    fs::write(&ram_disk_path, postcard::to_allocvec(&ram_disk).unwrap()).unwrap();
+
     let status = std::process::Command::new("xorriso")
         .arg("-as")
         .arg("mkisofs")
@@ -94,32 +116,6 @@ fn main() {
         .status()
         .unwrap();
     assert!(status.success());
-
-    let package_name = env::var("CARGO_PKG_NAME").unwrap();
-
-    // set by cargo for the kernel artifact dependency
-    let user_space_elf_path = env::var("CARGO_BIN_FILE_USER_SPACE").unwrap();
-
-    let ram_disk_path = out_dir.join("ram_disk");
-
-    // Create the ram disk
-    let ram_disk = RamDisk {
-        meta_data: MetaData {
-            stack_size: 0x4000,
-            permissions: Permissions {
-                ports: Cow::Owned(
-                    {
-                        let com1 = 0x3F8;
-                        com1..com1 + 8
-                    }
-                    .into_iter()
-                    .collect(),
-                ),
-            },
-        },
-        elf: Cow::Owned(fs::read(&user_space_elf_path).unwrap()),
-    };
-    fs::write(&ram_disk_path, postcard::to_allocvec(&ram_disk).unwrap()).unwrap();
 
     // pass the disk image paths via environment variables
     println!("cargo:rustc-env=OUT_DIR={}", out_dir.display());

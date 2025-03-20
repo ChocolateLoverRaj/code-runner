@@ -1,7 +1,9 @@
+use limine::modules::InternalModule;
 use limine::mp::RequestFlags;
 use limine::request::{
-    DateAtBootRequest, ExecutableAddressRequest, ExecutableFileRequest, HhdmRequest,
-    MemoryMapRequest, MpRequest, RequestsEndMarker, RequestsStartMarker, RsdpRequest,
+    BootloaderInfoRequest, DateAtBootRequest, ExecutableAddressRequest, ExecutableFileRequest,
+    FramebufferRequest, HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest, RequestsEndMarker,
+    RequestsStartMarker, RsdpRequest,
 };
 use limine::BaseRevision;
 
@@ -43,4 +45,17 @@ pub static RSDP_REQUEST: RsdpRequest = RsdpRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]
-pub static mut MP_REQUEST: MpRequest = MpRequest::new().with_flags(RequestFlags::X2APIC);
+pub static MP_REQUEST: MpRequest = MpRequest::new().with_flags(RequestFlags::X2APIC);
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static MODULE_REQUEST: ModuleRequest =
+    ModuleRequest::new().with_internal_modules(&[&InternalModule::new().with_path(c"ram_disk")]);
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static LIMINE_BOOTLOADER_INFO_REQUEST: BootloaderInfoRequest = BootloaderInfoRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static FRAME_BUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();

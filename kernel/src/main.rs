@@ -66,13 +66,13 @@ pub mod virt_mem_tracker;
 pub mod write_logger;
 pub mod write_with_cr;
 
+use ::limine::{framebuffer::MemoryModel, memory_map::EntryType};
 use alloc::{boxed::Box, sync::Arc};
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
-use bootloader_x86_64_common::serial::SerialPort;
 use common::{mem::KERNEL_VIRT_MEM_START, ram_disk::RamDisk};
 use conquer_once::noblock::OnceCell;
 use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
-use core::{fmt::Write, ops::DerefMut, panic::PanicInfo, slice};
+use core::{mem::transmute, ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
 use demo_async::demo_async;
 #[allow(unused)]
@@ -87,7 +87,10 @@ use hlt_loop::hlt_loop;
 use hpet::{HpetBuilderStage0, HpetBuilderStage1};
 use hpet_memory::HpetMemory;
 use iopb_size::IOPB_SIZE;
-use limine::{BASE_REVISION, BOOT_TIME};
+use limine::{
+    BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, LIMINE_BOOTLOADER_INFO_REQUEST,
+    MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST, RSDP_REQUEST,
+};
 use log_boot_time::log_boot_time;
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
@@ -182,13 +185,83 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     init_logger_with_framebuffer(None);
 
+    log::error!("This is what an error message looks like");
+    log::warn!("This is what a warning message looks like");
+    log::info!("This is what an info message looks like");
+    log::debug!("This is what a debug message looks like");
+    log::trace!("This is what a trace message looks like");
+
+    let bootloader_info = LIMINE_BOOTLOADER_INFO_REQUEST
+        .get_response()
+        .expect("No Limine bootloader info");
+    log::info!(
+        "This kernel was loaded by bootloader {:?} version {:?}",
+        bootloader_info.name(),
+        bootloader_info.version()
+    );
+
+    let memory_map_response = MEMORY_MAP_REQUEST.get_response().unwrap();
+    memory_map_response.entries().iter().for_each(|entry| {
+        log::info!(
+            "Memory ({:?}) at 0x{:013X?}..0x{:013X}",
+            unsafe { transmute::<_, u64>(entry.entry_type) },
+            entry.base,
+            entry.base + entry.length
+        );
+    });
+    let total_usable_memory = memory_map_response
+        .entries()
+        .iter()
+        .filter(|entry| entry.entry_type == EntryType::USABLE)
+        .map(|entry| entry.length)
+        .sum::<u64>();
+    log::info!("Total usable memory: 0x{:X} bytes", total_usable_memory);
+
+    let rsdp = RSDP_REQUEST.get_response().unwrap().address();
+    log::info!("RSDP Address: 0x{:X}", rsdp);
+
+    let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response().unwrap();
+    frame_buffer_response
+        .framebuffers()
+        .for_each(|frame_buffer| {
+            log::info!(
+                "Frame buffer at {:?} with size {}x{}. Is RGB? {}",
+                frame_buffer.addr(),
+                frame_buffer.width(),
+                frame_buffer.height(),
+                frame_buffer.memory_model() == MemoryModel::RGB
+            )
+        });
+
+    let mp_response = MP_REQUEST.get_response().unwrap();
+    log::info!("{} CPUs", mp_response.cpus().len());
+    mp_response
+        .cpus()
+        .iter()
+        .for_each(|cpu| log::info!("CPU with id: {} and LAPIC id: {}", cpu.id, cpu.lapic_id));
+
     log_boot_time();
 
-    log::error!("Hello!");
-    log::warn!("Hello!");
-    log::info!("Hello!");
-    log::debug!("Hello!");
-    log::trace!("Hello!");
+    let ram_disk = MODULE_REQUEST
+        .get_response()
+        .and_then(|response| response.modules().first());
+    match ram_disk {
+        Some(ram_disk) => {
+            log::info!(
+                "Got ram disk at {:?} with len {:?}",
+                ram_disk.addr(),
+                ram_disk.size()
+            );
+        }
+        None => {}
+    }
+
+    let hhdm_offset = HHDM_REQUEST
+        .get_response()
+        .expect("No HHDM response")
+        .offset();
+    log::info!("HHDM offset: 0x{:X}", hhdm_offset);
+
     hlt_loop()
 }
 
