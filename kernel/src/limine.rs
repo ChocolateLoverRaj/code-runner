@@ -15,7 +15,7 @@ pub static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]
-pub static BASE_REVISION: BaseRevision = BaseRevision::with_revision(3);
+pub static BASE_REVISION: BaseRevision = BaseRevision::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]

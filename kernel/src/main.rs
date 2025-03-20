@@ -53,6 +53,7 @@ pub mod syscall_enable_hpet;
 pub mod syscall_get_hpet_main_counter_period;
 // pub mod syscall_handler;
 pub mod limine;
+pub mod log_boot_time;
 pub mod store_but_borrow_mut;
 pub mod syscall_handler_closure;
 pub mod syscall_handler_make_me_logger;
@@ -86,7 +87,8 @@ use hlt_loop::hlt_loop;
 use hpet::{HpetBuilderStage0, HpetBuilderStage1};
 use hpet_memory::HpetMemory;
 use iopb_size::IOPB_SIZE;
-use limine::BASE_REVISION;
+use limine::{BASE_REVISION, BOOT_TIME};
+use log_boot_time::log_boot_time;
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use modules::{
@@ -135,13 +137,8 @@ use x86_64::{
 /// This function is called on panic.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    // If we don't disable interrupts, code could run while we are in an invalid state. We are in an invalid state from now until reboot because of the panic.
     interrupts::disable();
-    unsafe {
-        SerialPort::init()
-            .write_fmt(format_args!("{}", info))
-            .unwrap()
-    }
-    // TODO: Blue screen with a frowny face and a QR Code
     log::error!("{}", info);
     hlt_loop()
 }
@@ -184,6 +181,8 @@ unsafe extern "C" fn kernel_main() -> ! {
     assert!(BASE_REVISION.is_supported());
 
     init_logger_with_framebuffer(None);
+
+    log_boot_time();
 
     log::error!("Hello!");
     log::warn!("Hello!");
