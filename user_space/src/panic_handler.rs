@@ -3,6 +3,7 @@ use core::{fmt::Write, panic::PanicInfo};
 use crate::syscall::{syscall_exit, syscall_print};
 
 #[panic_handler]
+#[cfg(not(test))]
 fn panic(panic_info: &PanicInfo) -> ! {
     // TODO: Nicer error display
     let mut message = heapless::String::<100>::new();

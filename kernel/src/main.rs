@@ -141,6 +141,7 @@ use x86_64::{
 
 /// This function is called on panic.
 #[panic_handler]
+#[cfg(not(test))]
 fn panic(info: &PanicInfo) -> ! {
     // If we don't disable interrupts, code could run while we are in an invalid state. We are in an invalid state from now until reboot because of the panic.
     interrupts::disable();
@@ -235,7 +236,10 @@ unsafe extern "C" fn kernel_main() -> ! {
             )
         });
 
-    let mp_response = unsafe { MP_REQUEST.get_response_mut().unwrap() };
+    let mp_response = unsafe {
+        #[allow(static_mut_refs)]
+        MP_REQUEST.get_response_mut().unwrap()
+    };
     log::info!("{} CPUs", mp_response.cpus().len());
 
     let ram_disk = MODULE_REQUEST
