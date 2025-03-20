@@ -1,6 +1,6 @@
 use chrono::DateTime;
 
-use crate::limine::BOOT_TIME;
+use crate::limine_requests::BOOT_TIME;
 
 pub fn log_boot_time() {
     match BOOT_TIME.get_response() {

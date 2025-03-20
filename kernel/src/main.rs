@@ -52,7 +52,7 @@ pub mod split_draw_target;
 pub mod syscall_enable_hpet;
 pub mod syscall_get_hpet_main_counter_period;
 // pub mod syscall_handler;
-pub mod limine;
+pub mod limine_requests;
 pub mod log_boot_time;
 pub mod store_but_borrow_mut;
 pub mod syscall_handler_closure;
@@ -66,7 +66,6 @@ pub mod virt_mem_tracker;
 pub mod write_logger;
 pub mod write_with_cr;
 
-use ::limine::{framebuffer::MemoryModel, memory_map::EntryType};
 use alloc::{boxed::Box, sync::Arc};
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use common::{mem::KERNEL_VIRT_MEM_START, ram_disk::RamDisk};
@@ -87,7 +86,8 @@ use hlt_loop::hlt_loop;
 use hpet::{HpetBuilderStage0, HpetBuilderStage1};
 use hpet_memory::HpetMemory;
 use iopb_size::IOPB_SIZE;
-use limine::{
+use limine::{self, framebuffer::MemoryModel, memory_map::EntryType};
+use limine_requests::{
     BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, LIMINE_BOOTLOADER_INFO_REQUEST,
     MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST, RSDP_REQUEST,
 };
@@ -130,11 +130,13 @@ use tasks::TASKS;
 use volatile::VolatileRef;
 use x86_64::{
     instructions::interrupts,
+    registers::control::{Cr3, Cr3Flags},
     structures::{
         idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
+        paging::PhysFrame,
         tss::TaskStateSegment,
     },
-    VirtAddr,
+    PhysAddr, VirtAddr,
 };
 
 /// This function is called on panic.
@@ -233,14 +235,8 @@ unsafe extern "C" fn kernel_main() -> ! {
             )
         });
 
-    let mp_response = MP_REQUEST.get_response().unwrap();
+    let mp_response = unsafe { MP_REQUEST.get_response_mut().unwrap() };
     log::info!("{} CPUs", mp_response.cpus().len());
-    mp_response
-        .cpus()
-        .iter()
-        .for_each(|cpu| log::info!("CPU with id: {} and LAPIC id: {}", cpu.id, cpu.lapic_id));
-
-    log_boot_time();
 
     let ram_disk = MODULE_REQUEST
         .get_response()
@@ -262,6 +258,36 @@ unsafe extern "C" fn kernel_main() -> ! {
         .offset();
     log::info!("HHDM offset: 0x{:X}", hhdm_offset);
 
+    log_boot_time();
+
+    let cr3_val = {
+        let (frame, flags) = Cr3::read();
+        frame.start_address().as_u64() | flags.bits()
+    };
+    mp_response.cpus_mut().iter_mut().for_each(|cpu| {
+        cpu.extra = cr3_val;
+        cpu.goto_address.write(cpu_init);
+    });
+
+    let current_cpu = mp_response
+        .cpus()
+        .iter()
+        .find(|cpu| cpu.lapic_id == mp_response.bsp_lapic_id())
+        .unwrap();
+    unsafe { cpu_init(current_cpu) }
+}
+
+unsafe extern "C" fn cpu_init(cpu: &limine::mp::Cpu) -> ! {
+    let previous_cr3 = Cr3::read();
+    let flags = Cr3Flags::from_bits_truncate(cpu.extra);
+    let cr3_frame = PhysFrame::containing_address(PhysAddr::new(cpu.extra));
+    unsafe { Cr3::write(cr3_frame, flags) };
+    log::info!(
+        "Hello from CPU: {:?}. Previous cr3: {:?}, current cr3: {:?}",
+        cpu.id,
+        previous_cr3.0,
+        cr3_frame
+    );
     hlt_loop()
 }
 
