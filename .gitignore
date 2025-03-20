@@ -6,3 +6,4 @@ rustc-ice-*.txt
 http_boot.ipxe
 /iPXE
 /result
+/limine

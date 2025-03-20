@@ -11,7 +11,7 @@ pub enum BootType {
 }
 
 pub fn run_qemu(boot_type: BootType) {
-    println!("{}", env!("UEFI_IMAGE"));
+    println!("{}", env!("ISO"));
     println!("{}", env!("CARGO_BIN_FILE_KERNEL"));
     println!("{}", env!("USER_SPACE"));
 
@@ -24,7 +24,9 @@ pub fn run_qemu(boot_type: BootType) {
             kernel_debug_file,
             [
                 format!("target create {kernel_binary}"),
-                format!("target modules load --file {kernel_binary} --slide 0xFFFF800000000000"),
+                // format!("target modules load --file {kernel_binary} --slide 0xffffffff80000000"),
+                "b kernel_main".into(),
+                "b rust_begin_unwind".into(),
                 "gdb-remote localhost:1234".into(),
             ]
             .join("\n"),
@@ -44,7 +46,10 @@ pub fn run_qemu(boot_type: BootType) {
         )
         .expect("unable to create debug file");
 
-        println!("debug file is ready, run `lldb -s {}` to start debugging the kernel, or `lldb -s {}` to start debugging the user space program.", kernel_debug_file, user_space_debug_file);
+        println!(
+            "debug file is ready, run `lldb -s {}` to start debugging the kernel, or `lldb -s {}` to start debugging the user space program.",
+            kernel_debug_file, user_space_debug_file
+        );
     }
 
     let mut qemu = Command::new("qemu-system-x86_64");
@@ -55,18 +60,8 @@ pub fn run_qemu(boot_type: BootType) {
     // qemu.arg("-serial").arg("stdio");
     // To enable debugging and pause
     // qemu.arg("-s").arg("-S");
-    qemu.arg("-drive");
-    qemu.arg(format!(
-        "format=raw,file={}",
-        match boot_type {
-            BootType::Bios => {
-                env!("BIOS_IMAGE")
-            }
-            BootType::Uefi => {
-                env!("UEFI_IMAGE")
-            }
-        }
-    ));
+    qemu.arg("-cdrom");
+    qemu.arg(env!("ISO"));
     if let BootType::Uefi = boot_type {
         qemu.arg("-bios").arg(env!("OVMF_PATH"));
     }

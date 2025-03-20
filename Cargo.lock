@@ -1168,9 +1168,11 @@ dependencies = [
  "futures-util",
  "heapless 0.8.0",
  "lazy_static",
+ "limine",
  "linked_list_allocator",
  "log",
  "num_enum",
+ "owo-colors",
  "pc-keyboard",
  "pic8259",
  "postcard",
@@ -1237,6 +1239,15 @@ checksum = "3c8469b4a23b962c1396b9b451dda50ef5b283e8dd309d69033475fa9b334324"
 dependencies = [
  "libc",
  "pkg-config",
+]
+
+[[package]]
+name = "limine"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e6cb7fd182815ec1ea9e26061418ac37c3eebea47a14e773c563533f277bcef"
+dependencies = [
+ "bitflags 2.8.0",
 ]
 
 [[package]]
@@ -1496,6 +1507,12 @@ name = "overload"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
+
+[[package]]
+name = "owo-colors"
+version = "4.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1036865bb9422d3300cf723f657c2851d0e9ab12567854b1f4eba3d77decf564"
 
 [[package]]
 name = "parking_lot"

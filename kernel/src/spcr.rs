@@ -81,6 +81,7 @@ pub fn replace_serial_logger_if_redirected(
 
                 replace_serial_logger(DynamicLogger::Heap(Box::new(LockedWriteLogger::new(
                     WriterWithCr::new(uart),
+                    true,
                 ))));
 
                 log::info!("Logging to memory-mapped 16550-compatible interface starting at physical address {:?} with a stride of {} bytes", base_addr, stride);

@@ -3,8 +3,6 @@ use conquer_once::spin::OnceCell;
 use embedded_graphics::{
     mono_font::iso_8859_16::FONT_10X20, pixelcolor::Rgb888, prelude::RgbColor,
 };
-use log::Log;
-use spinning_top::Spinlock;
 use uart_16550::{port::PortAccessedRegister, uart_16550::Uart16550Registers};
 
 use crate::{
@@ -20,8 +18,7 @@ use crate::{
 static SCREEN_LOGGER: OnceCell<ColorfulLogger<Rgb888, EmbeddedGraphicsWriter<Display>>> =
     OnceCell::uninit();
 static SERIAL_LOGGER: LockedWriteLogger<Uart16550Registers<PortAccessedRegister>> =
-    LockedWriteLogger::new(unsafe { uart_16550::port::new(0x3F8) });
-static LOGGERS: OnceCell<heapless::Vec<&'static dyn Log, 2>> = OnceCell::uninit();
+    LockedWriteLogger::new(unsafe { uart_16550::port::new(0x3F8) }, true);
 static LOGGER: LockedLoggerWithoutInterrupts<DynamicCombinedLogger<'static, 2>> =
     LockedLoggerWithoutInterrupts::new(DynamicCombinedLogger {
         loggers: spin::Mutex::new(heapless::Vec::new()),
@@ -52,7 +49,9 @@ pub fn init_logger_with_framebuffer(frame_buffer: Option<&'static mut FrameBuffe
             .unwrap();
     }
     log::set_logger(&LOGGER).expect("Logger already set");
-    log::set_max_level(log::LevelFilter::Info);
+    log::set_max_level(log::LevelFilter::Trace);
+    // Drop mutex guard, otherwise the debug! will dead-lock
+    drop(loggers);
     log::debug!("Logger initialized");
 }
 

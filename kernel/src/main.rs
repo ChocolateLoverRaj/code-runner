@@ -52,6 +52,7 @@ pub mod split_draw_target;
 pub mod syscall_enable_hpet;
 pub mod syscall_get_hpet_main_counter_period;
 // pub mod syscall_handler;
+pub mod limine;
 pub mod store_but_borrow_mut;
 pub mod syscall_handler_closure;
 pub mod syscall_handler_make_me_logger;
@@ -85,6 +86,7 @@ use hlt_loop::hlt_loop;
 use hpet::{HpetBuilderStage0, HpetBuilderStage1};
 use hpet_memory::HpetMemory;
 use iopb_size::IOPB_SIZE;
+use limine::BASE_REVISION;
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use modules::{
@@ -116,7 +118,7 @@ use run_tasks::run_tasks;
 use spawn_task::spawn_task;
 use spcr::replace_serial_logger_if_redirected;
 use spin::{Mutex, RwLock};
-use spinning_top::{guard::SpinlockGuard, Spinlock};
+use spinning_top::Spinlock;
 use store_but_borrow_mut::StoreButBorrowMut;
 use syscall_handler_closure::syscall_handler_closure;
 use tasks::TASKS;
@@ -153,7 +155,7 @@ pub static BOOTLOADER_CONFIG: BootloaderConfig = {
     config
 };
 
-entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
+entry_point!(kernel_main_old, config = &BOOTLOADER_CONFIG);
 
 #[derive(Debug)]
 struct StaticStuff0 {
@@ -177,7 +179,21 @@ static STATIC_STUFF_1: OnceCell<StaticStuff1> = OnceCell::uninit();
 
 static HPET: OnceCell<RwLock<VolatileRef<HpetMemory>>> = OnceCell::uninit();
 
-fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
+#[export_name = "kernel_main"]
+unsafe extern "C" fn kernel_main() -> ! {
+    assert!(BASE_REVISION.is_supported());
+
+    init_logger_with_framebuffer(None);
+
+    log::error!("Hello!");
+    log::warn!("Hello!");
+    log::info!("Hello!");
+    log::debug!("Hello!");
+    log::trace!("Hello!");
+    hlt_loop()
+}
+
+fn kernel_main_old(boot_info: &'static mut BootInfo) -> ! {
     let mut frame_buffer = boot_info.framebuffer.as_mut();
     if let Some(frame_buffer) = frame_buffer.as_mut() {
         frame_buffer.buffer_mut().fill(0);

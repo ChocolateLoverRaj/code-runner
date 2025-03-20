@@ -1,24 +1,105 @@
 // build.rs
 
-use bootloader::DiskImageBuilder;
 use common::{
     permissions::{MetaData, Permissions},
     ram_disk::RamDisk,
 };
-use std::{borrow::Cow, env, fs, path::PathBuf};
+use std::{
+    borrow::Cow,
+    env,
+    fs::{self, create_dir_all, remove_file},
+    io::{self, ErrorKind},
+    os::unix::fs::symlink,
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 fn main() {
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let output_iso = out_dir.join("code_runner.iso");
+    let iso_dir = out_dir.join("iso_root");
+    create_dir_all(&iso_dir).unwrap();
+    let boot_dir = iso_dir.join("boot");
+    create_dir_all(&boot_dir).unwrap();
+    let limine_dir = boot_dir.join("limine");
+    create_dir_all(&limine_dir).unwrap();
+    let efi_boot_dir = iso_dir.join("EFI/BOOT");
+    create_dir_all(&efi_boot_dir).unwrap();
+
+    let limine_conf = limine_dir.join("limine.conf");
+    let runner_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    ensure_symlink(runner_dir.join("limine.conf"), limine_conf).unwrap();
+
+    let limine_build = runner_dir.parent().unwrap().join("limine");
+
+    for path in [
+        "limine-bios.sys",
+        "limine-bios-cd.bin",
+        "limine-uefi-cd.bin",
+    ] {
+        let from = limine_build.join("share/limine").join(path);
+        let to = limine_dir.join(path);
+        ensure_symlink(from, to).unwrap();
+    }
+
+    for path in ["BOOTX64.EFI", "BOOTIA32.EFI"] {
+        let from = limine_build.join("share/limine").join(path);
+        let to = efi_boot_dir.join(path);
+        ensure_symlink(from, to).unwrap();
+    }
+
+    let kernel_src = env::var("CARGO_BIN_FILE_KERNEL").unwrap();
+    let kernel_dest = boot_dir.join("kernel");
+    ensure_symlink(&kernel_src, &kernel_dest).unwrap();
+
+    let status = std::process::Command::new("xorriso")
+        .arg("-as")
+        .arg("mkisofs")
+        .arg("--follow-links")
+        .arg("-b")
+        .arg(
+            limine_dir
+                .join("limine-bios-cd.bin")
+                .strip_prefix(&iso_dir)
+                .unwrap(),
+        )
+        .arg("-no-emul-boot")
+        .arg("-boot-load-size")
+        .arg("4")
+        .arg("-boot-info-table")
+        .arg("--efi-boot")
+        .arg(
+            limine_dir
+                .join("limine-uefi-cd.bin")
+                .strip_prefix(&iso_dir)
+                .unwrap(),
+        )
+        .arg("-efi-boot-part")
+        .arg("--efi-boot-image")
+        .arg("--protective-msdos-label")
+        .arg(iso_dir)
+        .arg("-o")
+        .arg(&output_iso)
+        .stderr(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let status = std::process::Command::new(limine_build.join("bin/limine"))
+        .arg("bios-install")
+        .arg(&output_iso)
+        .stderr(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .status()
+        .unwrap();
+    assert!(status.success());
+
     let package_name = env::var("CARGO_PKG_NAME").unwrap();
 
     // set by cargo for the kernel artifact dependency
-    let kernel_path = env::var("CARGO_BIN_FILE_KERNEL").unwrap();
-    let mut disk_builder = DiskImageBuilder::new(PathBuf::from(&kernel_path));
     let user_space_elf_path = env::var("CARGO_BIN_FILE_USER_SPACE").unwrap();
 
-    // specify output paths
-    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let uefi_path = out_dir.join(format!("{package_name}-uefi.img"));
-    let bios_path = out_dir.join(format!("{package_name}-bios.img"));
     let ram_disk_path = out_dir.join("ram_disk");
 
     // Create the ram disk
@@ -39,20 +120,22 @@ fn main() {
         elf: Cow::Owned(fs::read(&user_space_elf_path).unwrap()),
     };
     fs::write(&ram_disk_path, postcard::to_allocvec(&ram_disk).unwrap()).unwrap();
-    disk_builder.set_ramdisk(ram_disk_path);
-
-    // create the disk images
-    disk_builder.create_uefi_image(&uefi_path).unwrap();
-    disk_builder.create_bios_image(&bios_path).unwrap();
-
-    disk_builder
-        .create_uefi_tftp_folder(&out_dir.join("folder"))
-        .unwrap();
 
     // pass the disk image paths via environment variables
     println!("cargo:rustc-env=OUT_DIR={}", out_dir.display());
-    println!("cargo:rustc-env=UEFI_IMAGE={}", uefi_path.display());
-    println!("cargo:rustc-env=BIOS_IMAGE={}", bios_path.display());
-    println!("cargo:rustc-env=CARGO_BIN_FILE_KERNEL={}", kernel_path);
+    println!("cargo:rustc-env=ISO={}", output_iso.display());
+    println!("cargo:rustc-env=CARGO_BIN_FILE_KERNEL={}", kernel_src);
     println!("cargo:rustc-env=USER_SPACE={}", user_space_elf_path);
+}
+
+pub fn ensure_symlink<P: AsRef<Path>, Q: AsRef<Path>>(original: P, link: Q) -> io::Result<()> {
+    match remove_file(&link) {
+        Ok(()) => Ok(()),
+        Err(error) => match error.kind() {
+            ErrorKind::NotFound => Ok(()),
+            _ => Err(error),
+        },
+    }?;
+    symlink(original, link)?;
+    Ok(())
 }

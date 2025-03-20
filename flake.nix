@@ -43,6 +43,7 @@
               lldb
               libudev-zero
               pkg-config
+              xorriso
             ];
           };
       }
