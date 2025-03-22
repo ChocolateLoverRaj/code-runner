@@ -63,6 +63,7 @@ pub mod syscall_handler_make_me_logger;
 pub mod syscall_hpet_read_main_counter_value;
 pub mod syscall_print_handler;
 pub mod tasks;
+pub mod test_allocator;
 pub mod traverse_cr3;
 pub mod user_space_state;
 pub mod virt_addr_from_indexes;
@@ -132,6 +133,7 @@ use spinning_top::Spinlock;
 use store_but_borrow_mut::StoreButBorrowMut;
 use syscall_handler_closure::syscall_handler_closure;
 use tasks::TASKS;
+use test_allocator::test_allocator;
 use volatile::VolatileRef;
 use x86_64::{
     instructions::interrupts,
@@ -286,13 +288,8 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     pt_allocator::init(memory_map_response, hhdm_offset);
 
-    // 100MiB with alignment of 8
-    let v = vec![3_u64; 0xC80000];
-    log::info!("Created a Vec<u64> of len: {:?}", v.len());
-
-    let size = 1024 * 1024 * 1024; // 1 GiB
-    let buffer: Vec<u8> = vec![3; size]; // Initialize with zeros
-    log::info!("Allocated a Vec<u8> of size: {} bytes", buffer.len());
+    // Test assuming 100MiB is available for dynamic allocation
+    test_allocator(0x6400000);
 
     let cr3_val = {
         let (frame, flags) = Cr3::read();
