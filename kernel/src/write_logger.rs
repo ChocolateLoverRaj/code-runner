@@ -1,6 +1,6 @@
 use core::fmt::{Display, Write};
 use log::{Level, Log};
-use owo_colors::{AnsiColors, Color, OwoColorize};
+use owo_colors::{AnsiColors, OwoColorize};
 use spinning_top::Spinlock;
 
 pub struct LockedWriteLogger<T> {

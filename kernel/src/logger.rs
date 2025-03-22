@@ -49,7 +49,7 @@ pub fn init_logger_with_framebuffer(frame_buffer: Option<&'static mut FrameBuffe
             .unwrap();
     }
     log::set_logger(&LOGGER).expect("Logger already set");
-    log::set_max_level(log::LevelFilter::Trace);
+    log::set_max_level(log::LevelFilter::Info);
     // Drop mutex guard, otherwise the debug! will dead-lock
     drop(loggers);
     log::debug!("Logger initialized");

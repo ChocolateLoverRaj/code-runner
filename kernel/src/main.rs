@@ -15,7 +15,7 @@
 extern crate alloc;
 
 pub mod acpi;
-pub mod allocator;
+// pub mod allocator;
 pub mod apic;
 pub mod colorful_logger;
 pub mod combined_logger;
@@ -52,21 +52,25 @@ pub mod split_draw_target;
 pub mod syscall_enable_hpet;
 pub mod syscall_get_hpet_main_counter_period;
 // pub mod syscall_handler;
+pub mod ensure_mem_is_higher_half;
 pub mod limine_requests;
 pub mod log_boot_time;
+pub mod not_const_allocator;
+pub mod pt_allocator;
 pub mod store_but_borrow_mut;
 pub mod syscall_handler_closure;
 pub mod syscall_handler_make_me_logger;
 pub mod syscall_hpet_read_main_counter_value;
 pub mod syscall_print_handler;
 pub mod tasks;
+pub mod traverse_cr3;
 pub mod user_space_state;
 pub mod virt_addr_from_indexes;
 pub mod virt_mem_tracker;
 pub mod write_logger;
 pub mod write_with_cr;
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
 use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
 use common::{mem::KERNEL_VIRT_MEM_START, ram_disk::RamDisk};
 use conquer_once::noblock::OnceCell;
@@ -82,14 +86,15 @@ use demo_async_rtc_drop::demo_async_rtc_drop;
 use demo_maze_roller_game::demo_maze_roller_game;
 #[allow(unused)]
 use draw_rust::draw_rust;
+use ensure_mem_is_higher_half::ensure_mem_is_higher_half;
 use hlt_loop::hlt_loop;
 use hpet::{HpetBuilderStage0, HpetBuilderStage1};
 use hpet_memory::HpetMemory;
 use iopb_size::IOPB_SIZE;
 use limine::{self, framebuffer::MemoryModel, memory_map::EntryType};
 use limine_requests::{
-    BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, LIMINE_BOOTLOADER_INFO_REQUEST,
-    MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST, RSDP_REQUEST,
+    BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, KERNEL_ADDRESS_REQUEST,
+    LIMINE_BOOTLOADER_INFO_REQUEST, MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST, RSDP_REQUEST,
 };
 use log_boot_time::log_boot_time;
 #[allow(unused)]
@@ -148,17 +153,6 @@ fn panic(info: &PanicInfo) -> ! {
     log::error!("{}", info);
     hlt_loop()
 }
-
-pub static BOOTLOADER_CONFIG: BootloaderConfig = {
-    let mut config = BootloaderConfig::new_default();
-    config.kernel_stack_size = 1_000_000;
-    config.mappings.physical_memory = Some(Mapping::Dynamic);
-    // Use higher half for kernel to have space in the lower parts for ELFs
-    config.mappings.dynamic_range_start = Some(KERNEL_VIRT_MEM_START);
-    config
-};
-
-entry_point!(kernel_main_old, config = &BOOTLOADER_CONFIG);
 
 #[derive(Debug)]
 struct StaticStuff0 {
@@ -220,6 +214,17 @@ unsafe extern "C" fn kernel_main() -> ! {
         .sum::<u64>();
     log::info!("Total usable memory: 0x{:X} bytes", total_usable_memory);
 
+    let total_bootloader_reclaimable_memory = memory_map_response
+        .entries()
+        .iter()
+        .filter(|entry| entry.entry_type == EntryType::BOOTLOADER_RECLAIMABLE)
+        .map(|entry| entry.length)
+        .sum::<u64>();
+    log::info!(
+        "Total bootloader reclaimable memory: 0x{:X} bytes",
+        total_bootloader_reclaimable_memory
+    );
+
     let rsdp = RSDP_REQUEST.get_response().unwrap().address();
     log::info!("RSDP Address: 0x{:X}", rsdp);
 
@@ -262,7 +267,32 @@ unsafe extern "C" fn kernel_main() -> ! {
         .offset();
     log::info!("HHDM offset: 0x{:X}", hhdm_offset);
 
+    let kernel_address_response = KERNEL_ADDRESS_REQUEST.get_response().unwrap();
+    log::info!(
+        "Kernel at physical address: 0x{:X}, virtual address: 0x{:X}",
+        kernel_address_response.physical_base(),
+        kernel_address_response.virtual_base()
+    );
+    // let kernel_file_response = KERNEL_FILE_REQUEST.get_response().unwrap();
+    // log::info!(
+    //     "Kernel file at address: {:?} with len 0x{:X}",
+    //     kernel_file_response.file().addr(),
+    //     kernel_file_response.file().size()
+    // );
+
+    ensure_mem_is_higher_half(hhdm_offset);
+
     log_boot_time();
+
+    pt_allocator::init(memory_map_response, hhdm_offset);
+
+    // 100MiB with alignment of 8
+    let v = vec![3_u64; 0xC80000];
+    log::info!("Created a Vec<u64> of len: {:?}", v.len());
+
+    let size = 1024 * 1024 * 1024; // 1 GiB
+    let buffer: Vec<u8> = vec![3; size]; // Initialize with zeros
+    log::info!("Allocated a Vec<u8> of size: {} bytes", buffer.len());
 
     let cr3_val = {
         let (frame, flags) = Cr3::read();
@@ -293,248 +323,4 @@ unsafe extern "C" fn cpu_init(cpu: &limine::mp::Cpu) -> ! {
         cr3_frame
     );
     hlt_loop()
-}
-
-fn kernel_main_old(boot_info: &'static mut BootInfo) -> ! {
-    let mut frame_buffer = boot_info.framebuffer.as_mut();
-    if let Some(frame_buffer) = frame_buffer.as_mut() {
-        frame_buffer.buffer_mut().fill(0);
-    }
-    init_logger_with_framebuffer(None);
-
-    log::info!(
-        "Ramdisk len: {:?}. Ramdisk addr: {:?}",
-        boot_info.ramdisk_len,
-        boot_info.ramdisk_addr
-    );
-    let static_stuff = STATIC_STUFF_0
-        .store_but_borrow_mut({
-            let mut tss = TssBuilder::default();
-
-            let mut idt_builder = IdtBuilder::default();
-            idt_builder
-                .set_double_fault_entry(get_double_fault_entry(
-                    &mut tss,
-                    panicking_double_fault_handler,
-                ))
-                .unwrap();
-            idt_builder
-                .set_breakpoint_entry({
-                    let mut entry = idt::Entry::<HandlerFunc>::missing();
-                    entry.set_handler_fn(logging_breakpoint_handler);
-                    entry
-                })
-                .unwrap();
-            idt_builder
-                .set_general_protection_fault_entry({
-                    let mut entry = idt::Entry::<HandlerFuncWithErrCode>::missing();
-                    entry.set_handler_fn(panicking_general_protection_fault_handler);
-                    entry
-                })
-                .unwrap();
-            idt_builder
-                .set_page_fault_entry({
-                    let mut entry = idt::Entry::<PageFaultHandlerFunc>::missing();
-                    entry.set_handler_fn(panicking_page_fault_handler);
-                    entry
-                })
-                .unwrap();
-            idt_builder
-                .set_invalid_tss_fault_entry({
-                    let mut entry = idt::Entry::<HandlerFuncWithErrCode>::missing();
-                    entry.set_handler_fn(panicking_invalid_tss_fault_handler);
-                    entry
-                })
-                .unwrap();
-            idt_builder
-                .set_security_exception_fault_entry({
-                    let mut entry = idt::Entry::<HandlerFuncWithErrCode>::missing();
-                    entry.set_handler_fn(panicking_general_protection_fault_handler);
-                    entry
-                })
-                .unwrap();
-            idt_builder
-                .set_segment_not_present_entry({
-                    let mut entry = idt::Entry::<HandlerFuncWithErrCode>::missing();
-                    entry.set_handler_fn(panicking_segment_not_present_handler);
-                    entry
-                })
-                .unwrap();
-            idt_builder
-                .set_invalid_opcode_entry({
-                    let mut entry = idt::Entry::<HandlerFunc>::missing();
-                    entry.set_handler_fn(panicking_invalid_opcode_handler);
-                    entry
-                })
-                .unwrap();
-            idt_builder
-                .set_stack_segment_fault_entry({
-                    let mut entry = idt::Entry::<HandlerFuncWithErrCode>::missing();
-                    entry.set_handler_fn(panicking_stack_segment_fault_handler);
-                    entry
-                })
-                .unwrap();
-            let spurious_interrupt_handler_index = set_spurious_interrupt_handler(
-                &mut idt_builder,
-                panicking_spurious_interrupt_handler,
-            )
-            .unwrap();
-            let timer_interrupt_index = idt_builder
-                .set_flexible_entry({
-                    let mut entry = idt::Entry::missing();
-                    entry.set_handler_fn(get_logging_timer_interrupt_handler(&LOCAL_APIC));
-                    entry
-                })
-                .unwrap();
-            let local_apic_error_interrupt_index = idt_builder
-                .set_flexible_entry({
-                    let mut entry = idt::Entry::<HandlerFunc>::missing();
-                    entry.set_handler_fn(panicking_local_apic_error_interrupt_handler);
-                    entry
-                })
-                .unwrap();
-
-            tss.add_privilege_stack_table_entry({
-                const STACK_SIZE: usize = 0x2000;
-                static mut PRIV_TSS_STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
-
-                let stack_start = VirtAddr::from_ptr(unsafe {
-                    #[allow(static_mut_refs)]
-                    PRIV_TSS_STACK.as_mut_ptr()
-                });
-                stack_start + STACK_SIZE as u64
-            })
-            .unwrap();
-            let keyboard =
-                CoolKeyboardBuilder::set_interrupt(&mut idt_builder, &LOCAL_APIC).unwrap();
-            let hpet = HpetBuilderStage0::default()
-                .set_interrupt(&mut idt_builder)
-                .unwrap();
-
-            StaticStuff0 {
-                tss: tss.get_tss(),
-                idt_builder,
-                spurious_interrupt_handler_index,
-                timer_interrupt_index,
-                local_apic_error_interrupt_index,
-                keyboard,
-                hpet,
-            }
-        })
-        .unwrap();
-    let static_stuff_1 = STATIC_STUFF_1
-        .try_get_or_init(|| {
-            let (tss_pointer, iopb) = static_stuff.tss.ready_to_activate();
-            StaticStuff1 {
-                gdt: Gdt::new(tss_pointer),
-                iopb: Spinlock::new(iopb),
-            }
-        })
-        .unwrap();
-    static_stuff_1.gdt.init();
-    static_stuff.idt_builder.init();
-
-    let phys_mem_offset = VirtAddr::new(
-        *boot_info
-            .physical_memory_offset
-            .as_ref()
-            .expect("No physical memory mapped"),
-    );
-    let mut mapper = unsafe { memory::init(phys_mem_offset) };
-
-    let mut frame_allocator =
-        unsafe { memory::BootInfoFrameAllocator::init(boot_info.memory_regions.deref_mut()) };
-
-    let used_virt_mem_ranges = allocator::init_heap(&mut mapper, &mut frame_allocator)
-        .expect("heap initialization failed");
-
-    let mapper = Arc::new(spin::Mutex::new(mapper));
-    let virt_mem_tracker = Arc::new(spin::Mutex::new(used_virt_mem_ranges));
-    let frame_allocator = Arc::new(spin::Mutex::new(frame_allocator));
-    let phys_mapper = PhysMapper::new(
-        phys_mem_offset.as_u64(),
-        mapper.clone(),
-        virt_mem_tracker.clone(),
-        frame_allocator.clone(),
-    );
-
-    let acpi_tables = unsafe {
-        acpi::init(
-            boot_info.rsdp_addr.take().expect("No rsdp address!") as usize,
-            phys_mapper.clone(),
-        )
-    }
-    .expect("Error getting ACPI tables");
-
-    replace_serial_logger_if_redirected(
-        &acpi_tables,
-        virt_mem_tracker.lock().deref_mut(),
-        mapper.lock().deref_mut(),
-        frame_allocator.lock().deref_mut(),
-    )
-    .unwrap();
-
-    let apic = get_apic(&acpi_tables).unwrap();
-    let local_apic = get_local_apic(
-        &apic,
-        &mut phys_mapper.clone(),
-        static_stuff.spurious_interrupt_handler_index,
-        static_stuff.timer_interrupt_index,
-        static_stuff.local_apic_error_interrupt_index,
-    )
-    .unwrap();
-    log::info!("Local APIC: {:#?}", local_apic);
-    static_local_apic::store(UnsafeLocalApic(local_apic));
-
-    #[allow(unused)]
-    let mut io_apic = unsafe { get_io_apic(&apic, &mut phys_mapper.clone()) };
-
-    let mut hpet_ref = hpet::init(&acpi_tables, phys_mapper.clone()).unwrap();
-    static_stuff.hpet.configure_io_apic(
-        hpet_ref.as_mut_ptr(),
-        &mut io_apic,
-        LOCAL_APIC.try_get().unwrap(),
-    );
-    HPET.try_init_once(|| RwLock::new(hpet_ref)).unwrap();
-
-    let state = Arc::new(Mutex::new(None));
-    let keyboard = static_stuff
-        .keyboard
-        .configure_io_apic(Arc::new(Mutex::new(io_apic)), state.clone());
-
-    if let Some(ramdisk_addr) = boot_info.ramdisk_addr.as_ref() {
-        let ram_disk = unsafe {
-            slice::from_raw_parts(*ramdisk_addr as *const u8, boot_info.ramdisk_len as usize)
-        };
-        let ram_disk = postcard::from_bytes::<RamDisk>(ram_disk).unwrap();
-        log::info!("Parsed ramdisk");
-        // let user_space_mem_info = Arc::new(spin::Mutex::new(None));
-        // init_syscalls(get_syscall_handler(
-        //     frame_buffer,
-        //     mapper.clone(),
-        //     frame_allocator.clone(),
-        //     keyboard,
-        //     user_space_mem_info.clone(),
-        //     state.clone(),
-        // ));
-
-        init_syscalls(set_syscall_handler_closure(Box::new(
-            syscall_handler_closure(),
-        )));
-
-        spawn_task(
-            ram_disk,
-            frame_allocator.lock().deref_mut(),
-            mapper.lock().deref_mut(),
-        )
-        .unwrap();
-
-        log::info!("Tasks: {:#?}", TASKS.lock());
-
-        run_tasks();
-    }
-
-    log::info!("There is no ramdisk so this kernel has nothing to do. Nothing. Interrupts aren't even enabled. This is the last message you will see. After that the CPU will be halted, and the computer will do nothing. You should probably turn off the computer now to save energy.");
-
-    hlt_loop();
 }

@@ -20,6 +20,21 @@ pub fn virt_addr_from_indexes_4_kib(
     })
 }
 
+pub fn virt_addr_from_indexes(indexes: &[usize], page_offset: usize) -> VirtAddr {
+    assert!(
+        indexes.len() >= 2,
+        "There must at least be an index for the L4 and L3 tables"
+    );
+    let mut page_start_addr = 0;
+    let mut shift_by = 12 + 9 + 9 + 9;
+    for index in indexes {
+        page_start_addr += index << shift_by;
+        shift_by -= 9;
+    }
+    page_start_addr += page_offset;
+    VirtAddr::new_truncate(page_start_addr as u64)
+}
+
 pub fn test_virt_addr_from_indexes_4_kib() {
     let info = {
         let virt_addr = virt_addr_from_indexes_4_kib(

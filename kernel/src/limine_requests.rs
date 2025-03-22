@@ -23,9 +23,9 @@ pub static BASE_REVISION: BaseRevision = BaseRevision::new();
 #[unsafe(link_section = ".requests")]
 pub static BOOT_TIME: DateAtBootRequest = DateAtBootRequest::new();
 
-#[used]
-#[unsafe(link_section = ".requests")]
-pub static KERNEL_FILE_REQUEST: ExecutableFileRequest = ExecutableFileRequest::new();
+// #[used]
+// #[unsafe(link_section = ".requests")]
+// pub static KERNEL_FILE_REQUEST: ExecutableFileRequest = ExecutableFileRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]
