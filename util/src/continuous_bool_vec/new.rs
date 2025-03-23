@@ -14,3 +14,16 @@ impl<T: Default + Insert<usize>> ContinuousBoolVec<T> {
         }
     }
 }
+
+impl<T: Insert<usize>> ContinuousBoolVec<T> {
+    /// `len_vec` must be empty
+    pub fn new_2(start_value: bool, len: usize, mut len_vec: T) -> Self {
+        Self {
+            start_value,
+            len_vec: {
+                len_vec.insert(0, len);
+                len_vec
+            },
+        }
+    }
+}

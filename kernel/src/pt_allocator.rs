@@ -145,7 +145,6 @@ unsafe impl GlobalAlloc for PtAllocator {
                         &mut MyFrameAllocator { state: &mut state },
                     )
                     .unwrap()
-                    // TODO: Use PCID / at least avoid unnecessary flushing
                     .flush();
             }
         }

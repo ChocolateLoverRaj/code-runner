@@ -10,6 +10,7 @@
 #![feature(never_type)]
 #![feature(fn_traits)]
 #![feature(maybe_uninit_uninit_array)]
+#![feature(non_null_from_ref)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
@@ -56,7 +57,8 @@ pub mod ensure_mem_is_higher_half;
 pub mod limine_requests;
 pub mod log_boot_time;
 pub mod not_const_allocator;
-pub mod pt_allocator;
+// pub mod pt_allocator;
+pub mod pt_allocator_2;
 pub mod store_but_borrow_mut;
 pub mod syscall_handler_closure;
 pub mod syscall_handler_make_me_logger;
@@ -67,6 +69,7 @@ pub mod test_allocator;
 pub mod traverse_cr3;
 pub mod user_space_state;
 pub mod virt_addr_from_indexes;
+pub mod virt_addr_to_number;
 pub mod virt_mem_tracker;
 pub mod write_logger;
 pub mod write_with_cr;
@@ -286,10 +289,19 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     log_boot_time();
 
-    pt_allocator::init(memory_map_response, hhdm_offset);
+    pt_allocator_2::init(memory_map_response, hhdm_offset);
 
     // Test assuming 100MiB is available for dynamic allocation
-    test_allocator(0x6400000);
+    // test_allocator(0x6400000);
+
+    // let phys_mapper = PhysMapper::new(hhdm_offset, mapper, virt_mem_tracker, frame_allocator)
+
+    // let acpi_tables = unsafe {
+    //     acpi::init(
+    //         rsdp ,
+    //         phys_mapper.clone(),
+    //     )
+    // }
 
     let cr3_val = {
         let (frame, flags) = Cr3::read();

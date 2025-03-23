@@ -1176,6 +1176,7 @@ dependencies = [
  "pc-keyboard",
  "pic8259",
  "postcard",
+ "round_mult",
  "spin",
  "spinning_top 0.3.0",
  "tinytga",
@@ -1984,6 +1985,15 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "uncased",
+]
+
+[[package]]
+name = "round_mult"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74bc7d5286c4d36f09aa6ae93f76acf6aa068cd62bc02970a9deb24763655dee"
+dependencies = [
+ "rustc_version",
 ]
 
 [[package]]
