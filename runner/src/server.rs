@@ -1,6 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr};
 
-use rocket::{fs::FileServer, get, http::uri::Host, routes, Config};
+use rocket::{Config, fs::FileServer, get, http::uri::Host, routes};
 
 use crate::PORT;
 
@@ -8,9 +8,7 @@ use crate::PORT;
 fn index(host: &Host) -> String {
     format!(
         r#"#!ipxe
-module http://{host}/kernel-x86_64
-module http://{host}/ramdisk
-chain http://{host}/bootloader
+chain http://{host}/code_runner.iso
 "#
     )
 }
@@ -30,7 +28,7 @@ pub async fn run_server() {
         ..Default::default()
     })
     .mount("/", routes![index])
-    .mount("/", FileServer::from(format!("{}/folder", out_dir)))
+    .mount("/", FileServer::from(out_dir))
     .launch()
     .await
     .unwrap();

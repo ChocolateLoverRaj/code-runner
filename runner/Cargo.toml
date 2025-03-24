@@ -8,7 +8,7 @@ default-run = "qemu-uefi"
 gethostname = "1.0.0"
 rcgen = { version = "0.13.2", features = ["aws_lc_rs"] }
 rocket = { version = "0.5.1", features = ["tls"] }
-serialport = { path = "../serialport-rs", features = ["usbportinfo-interface"] }
+serialport = { version = "=4.6.1", features = ["usbportinfo-interface"] }
 
 [build-dependencies]
 kernel = { path = "../kernel", artifact = "bin", target = "x86_64-unknown-none" }

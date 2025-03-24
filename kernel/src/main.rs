@@ -60,6 +60,7 @@ pub mod limine_requests;
 pub mod log_boot_time;
 pub mod not_const_allocator;
 // pub mod pt_allocator;
+pub mod get_total_memory;
 pub mod pt_allocator_2;
 pub mod store_but_borrow_mut;
 pub mod syscall_handler_closure;
@@ -93,6 +94,10 @@ use demo_maze_roller_game::demo_maze_roller_game;
 #[allow(unused)]
 use draw_rust::draw_rust;
 use ensure_mem_is_higher_half::ensure_mem_is_higher_half;
+use get_total_memory::{
+    get_acpi_reclaimable_memory, get_bootloader_reclaimable_memory, get_kernel_memory,
+    get_total_memory,
+};
 use hlt_loop::hlt_loop;
 use hpet::{HpetBuilderStage0, HpetBuilderStage1};
 use hpet_memory::HpetMemory;
@@ -207,34 +212,15 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     let memory_map_response = MEMORY_MAP_REQUEST.get_response().unwrap();
     memory_map_response.entries().iter().for_each(|entry| {
-        log::info!(
+        log::debug!(
             "Memory ({:?}) at 0x{:013X?}..0x{:013X}",
             unsafe { transmute::<_, u64>(entry.entry_type) },
             entry.base,
             entry.base + entry.length
         );
     });
-    let total_usable_memory = memory_map_response
-        .entries()
-        .iter()
-        .filter(|entry| entry.entry_type == EntryType::USABLE)
-        .map(|entry| entry.length)
-        .sum::<u64>();
-    log::info!("Total usable memory: 0x{:X} bytes", total_usable_memory);
-
-    let total_bootloader_reclaimable_memory = memory_map_response
-        .entries()
-        .iter()
-        .filter(|entry| entry.entry_type == EntryType::BOOTLOADER_RECLAIMABLE)
-        .map(|entry| entry.length)
-        .sum::<u64>();
-    log::info!(
-        "Total bootloader reclaimable memory: 0x{:X} bytes",
-        total_bootloader_reclaimable_memory
-    );
-
     let rsdp = RSDP_REQUEST.get_response().unwrap().address();
-    log::info!("RSDP Address: 0x{:X}", rsdp);
+    log::debug!("RSDP Address: 0x{:X}", rsdp);
 
     let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response().unwrap();
     frame_buffer_response
@@ -293,6 +279,20 @@ unsafe extern "C" fn kernel_main() -> ! {
     log_boot_time();
 
     pt_allocator_2::init(memory_map_response, hhdm_offset);
+
+    log::info!(
+        "Total memory: 0x{:X}",
+        get_total_memory(memory_map_response)
+    );
+    log::info!(
+        "Bootloader reclaimable memory: 0x{:X}",
+        get_bootloader_reclaimable_memory(memory_map_response)
+    );
+    log::info!(
+        "ACPI reclaimable memory: 0x{:X}",
+        get_acpi_reclaimable_memory(memory_map_response)
+    );
+    log::info!("Used memory: 0x{:X}", get_kernel_memory());
 
     // Test assuming 100MiB is available for dynamic allocation
     // test_allocator(0x6400000);

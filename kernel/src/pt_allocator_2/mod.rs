@@ -16,6 +16,7 @@ use crate::{
 
 pub static PHYS_MEM_TRACKER: InitLater<Spinlock<ContinuousBoolVec<Vec<usize>>>> =
     InitLater::uninit();
+pub static PHYS_MEM_USED_BY_KERNEL: InitLater<Spinlock<usize>> = InitLater::uninit();
 pub static KERNEL_ADDRESS_SPACE_TRACKER: InitLater<Spinlock<ContinuousBoolVec<Vec<usize>>>> =
     InitLater::uninit();
 
@@ -141,7 +142,7 @@ pub fn init(memory_map_response: &'static MemoryMapResponse, hhdm_offset: u64) {
         let range = start..start + page_mapping.len as usize;
         kernel_address_space_tracker.set(range, true);
     });
-    log::info!(
+    log::debug!(
         "Phys mem tracker: {:#?}; Kernel virt tracker: {:#?}",
         phys_mem_tracker,
         kernel_address_space_tracker,
@@ -158,6 +159,10 @@ pub fn init(memory_map_response: &'static MemoryMapResponse, hhdm_offset: u64) {
                 },
             })
         })
+        .unwrap();
+
+    PHYS_MEM_USED_BY_KERNEL
+        .try_init(Spinlock::new(used_phys_bytes.take()))
         .unwrap();
 
     KERNEL_ADDRESS_SPACE_TRACKER

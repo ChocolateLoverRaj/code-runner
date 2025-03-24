@@ -33,7 +33,7 @@ unsafe impl Allocator for InitialMetaAllocator<'_> {
         &self,
         layout: core::alloc::Layout,
     ) -> Result<core::ptr::NonNull<[u8]>, alloc::alloc::AllocError> {
-        log::info!("Allocating with layout: {:?}", layout);
+        log::debug!("Allocating with layout: {:?}", layout);
         let get_valid_range = |range: Range<usize>| -> Option<Range<usize>> {
             log::debug!("Checking if range is valid: {:X?}", range);
             let aligned_start =
