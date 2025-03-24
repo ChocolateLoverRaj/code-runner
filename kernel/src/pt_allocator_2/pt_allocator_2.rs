@@ -1,7 +1,6 @@
 use core::{alloc::GlobalAlloc, ops::DerefMut};
 
 use limine::{memory_map::EntryType, response::MemoryMapResponse};
-use round_mult::NonZeroPow2;
 use x86_64::{
     registers::control::Cr3,
     structures::paging::{
@@ -35,18 +34,17 @@ unsafe impl GlobalAlloc for PtAllocator2 {
             .iter()
             .filter(|segment| !segment.value)
             .find_map(|segment| {
-                let start =
-                    round_mult::up(segment.position, NonZeroPow2::new(layout.align()).unwrap())
-                        .unwrap();
+                let start = segment.position.next_multiple_of(layout.align());
+                let end = (start + 1)
+                    .next_multiple_of(0x1000)
+                    .min(start + layout.size());
                 log::info!(
-                    "Pos: {}, Start: {}. Align: {}",
+                    "Pos: {}, Start: {}. Align: {}. End: {}",
                     segment.position,
                     start,
-                    layout.align()
+                    layout.align(),
+                    end,
                 );
-                let end = round_mult::up(start, NonZeroPow2::new(0x1000).unwrap())
-                    .unwrap()
-                    .min(start + layout.size());
                 if end <= segment.position + segment.len {
                     Some(start..end)
                 } else {
@@ -75,9 +73,7 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 .filter(|segment| !segment.value)
                 .find_map(|segment| {
                     let phys_offset_in_4kib = first_frame_portion.start % 0x1000;
-                    let virt_start =
-                        round_mult::up(segment.position, NonZeroPow2::new(0x1000).unwrap())
-                            .unwrap();
+                    let virt_start = segment.position.next_multiple_of(0x1000);
                     let virt_end = virt_start + phys_offset_in_4kib + layout.size();
                     if virt_end <= segment.position + segment.len {
                         Some(virt_start + phys_offset_in_4kib..virt_end)

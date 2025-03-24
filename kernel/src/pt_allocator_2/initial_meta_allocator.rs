@@ -1,6 +1,5 @@
 use core::{
     cell::RefCell,
-    num::NonZeroUsize,
     ops::{DerefMut, Range},
     ptr::NonNull,
 };
@@ -36,8 +35,7 @@ unsafe impl Allocator for InitialMetaAllocator<'_> {
         log::debug!("Allocating with layout: {:?}", layout);
         let get_valid_range = |range: Range<usize>| -> Option<Range<usize>> {
             log::debug!("Checking if range is valid: {:X?}", range);
-            let aligned_start =
-                round_mult::up(range.start, NonZeroUsize::try_from(layout.align()).unwrap())?;
+            let aligned_start = range.start.next_multiple_of(layout.align());
             if aligned_start + layout.size() <= range.end {
                 Some(aligned_start..aligned_start + layout.size())
             } else {
