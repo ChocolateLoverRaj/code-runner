@@ -10,6 +10,7 @@
         "EFER",
         "eflags",
         "FMASK",
+        "heapless",
         "HHDM",
         "hpet",
         "ioapic",

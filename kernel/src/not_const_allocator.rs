@@ -1,23 +1,21 @@
 use core::alloc::GlobalAlloc;
 
-use conquer_once::noblock::OnceCell;
+use util::init_later::InitLater;
 
 #[derive(Debug)]
 pub struct NotConstAllocator<A> {
-    actual_allocator: OnceCell<A>,
+    actual_allocator: InitLater<A>,
 }
 
 impl<A> NotConstAllocator<A> {
     pub const fn uninit() -> Self {
         Self {
-            actual_allocator: OnceCell::uninit(),
+            actual_allocator: InitLater::uninit(),
         }
     }
-    pub fn try_init_once(
-        &self,
-        func: impl FnOnce() -> A,
-    ) -> Result<(), conquer_once::TryInitError> {
-        self.actual_allocator.try_init_once(func)
+    pub fn try_init(&self, val: A) -> Result<(), ()> {
+        self.actual_allocator.try_init(val)?;
+        Ok(())
     }
 }
 

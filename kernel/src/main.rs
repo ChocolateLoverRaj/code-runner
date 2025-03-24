@@ -139,6 +139,7 @@ use store_but_borrow_mut::StoreButBorrowMut;
 use syscall_handler_closure::syscall_handler_closure;
 use tasks::TASKS;
 use test_allocator::test_allocator;
+use util::init_later::InitLater;
 use volatile::VolatileRef;
 use x86_64::{
     instructions::interrupts,

@@ -4,7 +4,7 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-use crate::virt_addr_from_indexes::{virt_addr_from_indexes, virt_addr_from_indexes_4_kib};
+use crate::virt_addr_from_indexes::virt_addr_from_indexes;
 
 pub struct PageMapping {
     pub virt_start: VirtAddr,
