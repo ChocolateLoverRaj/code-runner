@@ -16,7 +16,7 @@ use x86_64::{
 };
 
 use crate::{
-    pt_allocator_2::temp_frame_allocator::TempFrameAllocator, traverse_cr3::PageTableDeepIterator,
+    pt_allocator_2::meta_frame_allocator::MetaFrameAllocator, traverse_cr3::PageTableDeepIterator,
     virt_addr_to_number::VirtAddrToNumber,
 };
 
@@ -73,7 +73,7 @@ unsafe impl Allocator for InitialMetaAllocator<'_> {
             valid_range.start as u64,
         )) + 1;
         let mut used_phys_bytes = self.used_phys_bytes.borrow_mut();
-        let mut frame_allocator = TempFrameAllocator {
+        let mut frame_allocator = MetaFrameAllocator {
             memory_map_response: self.memory_map_response,
             used_phys_bytes: used_phys_bytes.deref_mut(),
         };

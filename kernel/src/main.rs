@@ -294,8 +294,12 @@ unsafe extern "C" fn kernel_main() -> ! {
     );
     log::info!("Used memory: 0x{:X}", get_kernel_memory());
 
+    let mut b = Box::new(1);
+    *b += 40;
+    log::info!("Allocated box: {:p} {:?}", b, b);
     // Test assuming 100MiB is available for dynamic allocation
     // test_allocator(0x6400000);
+    test_allocator(0x1800);
 
     // let phys_mapper = PhysMapper::new(hhdm_offset, mapper, virt_mem_tracker, frame_allocator)
 

@@ -1,11 +1,15 @@
+pub mod get_offset_page_table;
 pub mod initial_meta_allocator;
-pub mod temp_frame_allocator;
+pub mod meta_frame_allocator;
+pub mod pt_allocator_2;
+pub mod pt_frame_allocator;
 
-use core::{alloc::GlobalAlloc, ops::Range};
+use core::ops::Range;
 
 use alloc::vec::Vec;
 use initial_meta_allocator::InitialMetaAllocator;
 use limine::{memory_map::EntryType, response::MemoryMapResponse};
+use pt_allocator_2::PtAllocator2;
 use spinning_top::Spinlock;
 use util::{continuous_bool_vec::ContinuousBoolVec, init_later::InitLater};
 
@@ -20,39 +24,12 @@ pub static PHYS_MEM_USED_BY_KERNEL: InitLater<Spinlock<usize>> = InitLater::unin
 pub static KERNEL_ADDRESS_SPACE_TRACKER: InitLater<Spinlock<ContinuousBoolVec<Vec<usize>>>> =
     InitLater::uninit();
 
-pub struct PtAllocator {
-    memory_map_response: &'static MemoryMapResponse,
-    hhdm_offset: u64,
-}
-
-unsafe impl GlobalAlloc for PtAllocator {
-    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
-        todo!()
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
-        todo!()
-    }
-
-    // We don't implement alloc_zeroed cuz we don't have a faster way of doing this that's faster than what the default impl would do
-    // We might be able to increase performance in the future by zeroing some phys frame in advance and implementing alloc_zeroed ourselves
-
-    unsafe fn realloc(
-        &self,
-        ptr: *mut u8,
-        layout: core::alloc::Layout,
-        new_size: usize,
-    ) -> *mut u8 {
-        todo!()
-    }
-}
-
 fn align_range(range: Range<usize>, alignment: usize) -> Range<usize> {
     range.start.div_floor(alignment) * alignment..range.end.div_ceil(alignment) * alignment
 }
 
 #[global_allocator]
-static ALLOCATOR: NotConstAllocator<PtAllocator> = NotConstAllocator::uninit();
+static ALLOCATOR: NotConstAllocator<PtAllocator2> = NotConstAllocator::uninit();
 
 pub fn init(memory_map_response: &'static MemoryMapResponse, hhdm_offset: u64) {
     let used_phys_bytes = Default::default();
@@ -108,6 +85,16 @@ pub fn init(memory_map_response: &'static MemoryMapResponse, hhdm_offset: u64) {
     );
     kernel_address_space_tracker.set(0x800000000000..0x1000000000000, false);
 
+    // Mark usable phys mem entries as available
+    memory_map_response
+        .entries()
+        .iter()
+        .filter(|entry| entry.entry_type == EntryType::USABLE)
+        .for_each(|entry| {
+            let start = entry.base as usize;
+            let range = start..start + entry.length as usize;
+            phys_mem_tracker.set(range, false);
+        });
     // Mark the phys mem that the temp allocator used as unavailable
     let mut used_available_phy_mem = *used_phys_bytes.borrow();
     let mut iter = memory_map_response
@@ -121,22 +108,16 @@ pub fn init(memory_map_response: &'static MemoryMapResponse, hhdm_offset: u64) {
         if let Some(entry) = iter.next() {
             let subtract_amount = (entry.length as usize).min(used_available_phy_mem);
             let start = entry.base as usize;
-            phys_mem_tracker.set(start..start + subtract_amount, true);
+            let range = start..start + subtract_amount;
+            log::debug!("Phys range used by allocator metadata: {:X?}", range);
+            phys_mem_tracker.set(range, true);
             used_available_phy_mem -= subtract_amount;
         } else {
             break;
         }
     }
 
-    memory_map_response
-        .entries()
-        .iter()
-        .filter(|entry| entry.entry_type == EntryType::USABLE)
-        .for_each(|entry| {
-            let start = entry.base as usize;
-            let range = start..start + entry.length as usize;
-            phys_mem_tracker.set(range, false);
-        });
+    // Mark already mapped pages as unavailable virt areas
     unsafe { PageTableDeepIterator::new(hhdm_offset) }.for_each(|page_mapping| {
         let start = page_mapping.virt_start.into_number();
         let range = start..start + page_mapping.len as usize;
@@ -178,7 +159,7 @@ pub fn init(memory_map_response: &'static MemoryMapResponse, hhdm_offset: u64) {
         .unwrap();
 
     ALLOCATOR
-        .try_init(PtAllocator {
+        .try_init(PtAllocator2 {
             memory_map_response,
             hhdm_offset,
         })

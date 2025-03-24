@@ -4,11 +4,11 @@ use x86_64::{
     PhysAddr,
 };
 
-pub struct TempFrameAllocator<'a> {
+pub struct MetaFrameAllocator<'a> {
     pub used_phys_bytes: &'a mut usize,
     pub memory_map_response: &'a MemoryMapResponse,
 }
-unsafe impl FrameAllocator<Size4KiB> for TempFrameAllocator<'_> {
+unsafe impl FrameAllocator<Size4KiB> for MetaFrameAllocator<'_> {
     fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
         let start = {
             let mut bytes_to_subtract = *self.used_phys_bytes;

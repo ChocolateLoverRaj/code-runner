@@ -1,6 +1,7 @@
 pub mod get_continuous_range;
 pub mod get_sums;
 pub mod is_range_available;
+pub mod iter;
 pub mod new;
 pub mod set;
 
