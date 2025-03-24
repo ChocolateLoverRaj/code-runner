@@ -10,8 +10,7 @@ use limine::response::MemoryMapResponse;
 use x86_64::{
     registers::control::Cr3,
     structures::paging::{
-        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame,
-        Size4KiB,
+        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, Size4KiB,
     },
     VirtAddr,
 };
@@ -23,17 +22,13 @@ use crate::{
 
 /// An allocator for initializing our allocator
 #[derive(Clone)]
-pub struct InitialMetaAllocator<'a, const N: usize> {
+pub struct InitialMetaAllocator<'a> {
     pub hhdm_offset: u64,
     pub memory_map_response: &'static MemoryMapResponse,
     pub used_phys_bytes: &'a RefCell<usize>,
-    /// Gets updated when allocating. Could add 4 ranges for every 0x1000 bytes (rounded up) allocated for every allocation.
-    pub just_used_phys_frames: &'a RefCell<heapless::Vec<PhysFrame<Size4KiB>, N>>,
-    /// Gets updated when allocating. Could add 4 ranges for every 0x1000 bytes (rounded up) allocated for every allocation.
-    pub just_used_pages: &'a RefCell<heapless::Vec<Page<Size4KiB>, N>>,
 }
 
-unsafe impl<const N: usize> Allocator for InitialMetaAllocator<'_, N> {
+unsafe impl Allocator for InitialMetaAllocator<'_> {
     fn allocate(
         &self,
         layout: core::alloc::Layout,
@@ -67,13 +62,21 @@ unsafe impl<const N: usize> Allocator for InitialMetaAllocator<'_, N> {
         .or_else(|| get_valid_range(free_start..0xFFFFFFFFFFFF));
         let valid_range = valid_range.ok_or(AllocError)?;
 
-        log::info!("Using valid range: {:X?}", valid_range);
+        log::debug!("Using valid range: {:X?}", valid_range);
 
         // Actually map the memory
         // This is just to make sure we didn't mess up
         assert_eq!(valid_range.start % 0x1000, 0);
-        let pages_to_map = valid_range.len() / 0x1000;
+        let pages_to_map = Page::<Size4KiB>::containing_address(VirtAddr::new_truncate(
+            (valid_range.end - 1) as u64,
+        )) - Page::containing_address(VirtAddr::new_truncate(
+            valid_range.start as u64,
+        )) + 1;
         let mut used_phys_bytes = self.used_phys_bytes.borrow_mut();
+        let mut frame_allocator = TempFrameAllocator {
+            memory_map_response: self.memory_map_response,
+            used_phys_bytes: used_phys_bytes.deref_mut(),
+        };
         for i in 0..pages_to_map {
             let mut offset_page_table = unsafe {
                 OffsetPageTable::new(
@@ -86,49 +89,21 @@ unsafe impl<const N: usize> Allocator for InitialMetaAllocator<'_, N> {
                     VirtAddr::new(self.hhdm_offset),
                 )
             };
-            let frame = {
-                let mut just_added_phys_frames = heapless::Vec::default();
-                let mut frame_allocator = TempFrameAllocator {
-                    memory_map_response: self.memory_map_response,
-                    used_phys_bytes: used_phys_bytes.deref_mut(),
-                    just_allocated_frames: &mut just_added_phys_frames,
-                };
-                let frame = frame_allocator.allocate_frame().unwrap();
-                self.just_used_phys_frames
-                    .borrow_mut()
-                    .extend_from_slice(&just_added_phys_frames)
-                    .unwrap();
-                frame
-            };
-            {
-                let mut just_added_phys_frames = heapless::Vec::default();
-                let mut frame_allocator = TempFrameAllocator {
-                    memory_map_response: self.memory_map_response,
-                    used_phys_bytes: used_phys_bytes.deref_mut(),
-                    just_allocated_frames: &mut just_added_phys_frames,
-                };
-                let page =
-                    Page::from_start_address(VirtAddr::new_truncate(valid_range.start as u64))
-                        .unwrap()
-                        + i as u64;
-                unsafe {
-                    offset_page_table.map_to(
-                        page,
-                        frame,
-                        PageTableFlags::PRESENT
-                            | PageTableFlags::WRITABLE
-                            | PageTableFlags::NO_EXECUTE,
-                        &mut frame_allocator,
-                    )
-                }
+            let page = Page::from_start_address(VirtAddr::new_truncate(valid_range.start as u64))
                 .unwrap()
-                .flush();
-                self.just_used_phys_frames
-                    .borrow_mut()
-                    .extend_from_slice(&just_added_phys_frames)
-                    .unwrap();
-                self.just_used_pages.borrow_mut().push(page).unwrap();
+                + i as u64;
+            let frame = frame_allocator.allocate_frame().unwrap();
+            unsafe {
+                offset_page_table.map_to(
+                    page,
+                    frame,
+                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE,
+                    &mut frame_allocator,
+                )
             }
+            .unwrap()
+            .flush();
+            log::debug!("Mapped {:?} to {:?}", page, frame);
         }
 
         Ok(NonNull::from_ref(unsafe {

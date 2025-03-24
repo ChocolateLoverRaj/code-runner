@@ -26,7 +26,8 @@ impl<T: Debug + DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> Cont
                 let mut increased_by = if current_segment_value == value {
                     // Merge with previous
                     range.start = current_segment_start_pos;
-                    let extend_by = range.end as isize - current_segment_end_pos as isize;
+                    // Use saturating sub and don't convert to isize cuz that messes things up with big numbers
+                    let extend_by = range.end.saturating_sub(current_segment_end_pos);
                     if extend_by <= 0 {
                         // No change
                         break;
@@ -257,6 +258,51 @@ pub mod test {
                     4096,
                     137988709281791,
                 ],
+            }
+        )
+    }
+
+    #[test]
+    fn big_numbers() {
+        let mut c = ContinuousBoolVec::<Vec<_>>::new(usize::MAX, true);
+        c.set(0x800000000000..0x1000000000000, false);
+        assert_eq!(
+            c,
+            ContinuousBoolVec {
+                start_value: true,
+                len_vec: vec![0x800000000000, 0x800000000000, 0xFFFEFFFFFFFFFFFF]
+            }
+        )
+    }
+
+    #[test]
+    fn big_merge() {
+        let mut c = ContinuousBoolVec {
+            start_value: true,
+            len_vec: vec![133115904, 4096, 18446744073576431615],
+        };
+        c.set(0x7EF3000..0x7EF4000, true);
+        assert_eq!(
+            c,
+            ContinuousBoolVec {
+                start_value: true,
+                len_vec: vec![0xFFFFFFFFFFFFFFFF]
+            }
+        )
+    }
+
+    #[test]
+    fn big_no_change() {
+        let mut c = ContinuousBoolVec {
+            start_value: true,
+            len_vec: vec![0xFFFFFFFFFFFFFFFF],
+        };
+        c.set(0x3BB9000..0x3BBA000, true);
+        assert_eq!(
+            c,
+            ContinuousBoolVec {
+                start_value: true,
+                len_vec: vec![0xFFFFFFFFFFFFFFFF]
             }
         )
     }

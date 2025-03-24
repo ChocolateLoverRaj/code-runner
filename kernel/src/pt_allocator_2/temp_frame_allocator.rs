@@ -7,7 +7,6 @@ use x86_64::{
 pub struct TempFrameAllocator<'a> {
     pub used_phys_bytes: &'a mut usize,
     pub memory_map_response: &'a MemoryMapResponse,
-    pub just_allocated_frames: &'a mut heapless::Vec<PhysFrame<Size4KiB>, 3>,
 }
 unsafe impl FrameAllocator<Size4KiB> for TempFrameAllocator<'_> {
     fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
@@ -26,7 +25,7 @@ unsafe impl FrameAllocator<Size4KiB> for TempFrameAllocator<'_> {
         }?;
         *self.used_phys_bytes += 0x1000;
         let phys_frame = PhysFrame::from_start_address(PhysAddr::new(start as u64)).unwrap();
-        self.just_allocated_frames.push(phys_frame).unwrap();
+        log::debug!("Allocating phys frame: {:?}", phys_frame);
         Some(phys_frame)
     }
 }

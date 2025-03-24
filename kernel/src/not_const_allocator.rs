@@ -13,8 +13,11 @@ impl<A> NotConstAllocator<A> {
             actual_allocator: OnceCell::uninit(),
         }
     }
-    pub fn init(&self, allocator: A) -> Result<(), conquer_once::TryInitError> {
-        self.actual_allocator.try_init_once(|| allocator)
+    pub fn try_init_once(
+        &self,
+        func: impl FnOnce() -> A,
+    ) -> Result<(), conquer_once::TryInitError> {
+        self.actual_allocator.try_init_once(func)
     }
 }
 

@@ -5,6 +5,6 @@ pub mod set;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct ContinuousBoolVec<T> {
-    start_value: bool,
-    len_vec: T,
+    pub start_value: bool,
+    pub len_vec: T,
 }

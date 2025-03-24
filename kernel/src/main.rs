@@ -11,6 +11,8 @@
 #![feature(fn_traits)]
 #![feature(maybe_uninit_uninit_array)]
 #![feature(non_null_from_ref)]
+#![feature(vec_into_raw_parts)]
+#![feature(box_vec_non_null)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
