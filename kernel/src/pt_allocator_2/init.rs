@@ -66,8 +66,8 @@ pub fn init(memory_map_response: &'static MemoryMapResponse, hhdm_offset: u64) {
         "Up to entries: phys: {}. virt: {}. Reserving phys entries: {}. Reserving virt entries: {}",
         up_to_n_phys_entries,
         up_to_n_virt_entries,
-        max_phys_vec_size,
-        max_virt_vec_size
+        phys_entries_to_reserve,
+        virt_entries_to_reserve
     );
 
     // Reserve a multiple of a page so that actually used memory matches with the reserved memory
