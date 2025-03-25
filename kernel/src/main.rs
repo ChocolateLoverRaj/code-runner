@@ -19,7 +19,6 @@
 extern crate alloc;
 
 pub mod acpi;
-// pub mod allocator;
 pub mod apic;
 pub mod colorful_logger;
 pub mod combined_logger;
@@ -57,11 +56,10 @@ pub mod syscall_enable_hpet;
 pub mod syscall_get_hpet_main_counter_period;
 // pub mod syscall_handler;
 pub mod ensure_mem_is_higher_half;
+pub mod get_total_memory;
 pub mod limine_requests;
 pub mod log_boot_time;
 pub mod not_const_allocator;
-// pub mod pt_allocator;
-pub mod get_total_memory;
 pub mod pt_allocator_2;
 pub mod store_but_borrow_mut;
 pub mod syscall_handler_closure;
@@ -78,9 +76,6 @@ pub mod virt_mem_tracker;
 pub mod write_logger;
 pub mod write_with_cr;
 
-use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
-use bootloader_api::{config::Mapping, entry_point, BootInfo, BootloaderConfig};
-use common::{mem::KERNEL_VIRT_MEM_START, ram_disk::RamDisk};
 use conquer_once::noblock::OnceCell;
 use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
 use core::{mem::transmute, ops::DerefMut, panic::PanicInfo, slice};
@@ -279,7 +274,7 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     log_boot_time();
 
-    pt_allocator_2::init(memory_map_response, hhdm_offset);
+    pt_allocator_2::init::init(memory_map_response, hhdm_offset);
 
     log::info!(
         "Total memory: 0x{:X}",
@@ -294,10 +289,6 @@ unsafe extern "C" fn kernel_main() -> ! {
         get_acpi_reclaimable_memory(memory_map_response)
     );
     log::info!("Used memory: 0x{:X}", get_kernel_memory());
-
-    let mut b = Box::new(1);
-    *b += 40;
-    log::info!("Allocated box: {:p} {:?}", b, b);
 
     // Test assuming 100MiB is available for dynamic allocation
     // test_allocator(0x6400000);

@@ -2,7 +2,6 @@ use core::{alloc::GlobalAlloc, ops::DerefMut};
 
 use limine::response::MemoryMapResponse;
 use x86_64::{
-    instructions::tlb::flush_all,
     structures::paging::{
         FrameAllocator, Mapper, Page, PageTableFlags, PhysFrame, Size4KiB, Translate,
     },
