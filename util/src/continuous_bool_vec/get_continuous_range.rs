@@ -38,8 +38,9 @@ impl<T: Deref<Target = [usize]>> ContinuousBoolVec<T> {
                 Some(len) => {
                     let len = *len;
                     let current_segment_end_pos = current_segment_start_pos + len;
-                    let aligned_start = current_segment_start_pos.div_ceil(alignment) * alignment;
+                    let aligned_start = current_segment_start_pos.next_multiple_of(alignment);
                     if current_segment_value == value
+                        && current_segment_end_pos > aligned_start
                         && current_segment_end_pos - aligned_start > requested_len
                     {
                         break Some(aligned_start);

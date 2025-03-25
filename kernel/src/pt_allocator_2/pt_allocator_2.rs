@@ -2,6 +2,7 @@ use core::{alloc::GlobalAlloc, ops::DerefMut};
 
 use limine::response::MemoryMapResponse;
 use x86_64::{
+    instructions::tlb::flush_all,
     structures::paging::{
         FrameAllocator, Mapper, Page, PageTableFlags, PhysFrame, Size4KiB, Translate,
     },
@@ -29,7 +30,7 @@ unsafe impl GlobalAlloc for PtAllocator2 {
         let mut virt_mem = KERNEL_ADDRESS_SPACE_TRACKER.try_get().unwrap().lock();
         let mut phys_mem_used_by_kernel = PHYS_MEM_USED_BY_KERNEL.try_get().unwrap().lock();
 
-        let phys_mem_used_by_kernel_before = phys_mem.get_sums().1;
+        let unavailable_phys_mem_before = phys_mem.get_sums().1;
 
         // First we find the first phys frame
         let first_frame_portion = phys_mem
@@ -70,7 +71,7 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 .get_continuous_range_with_alignment(false, 0x1000 * page_count, 0x1000)
                 .unwrap();
             let data_virt_range = {
-                let start = virt_pages_start + first_frame_portion.start % 1000;
+                let start = virt_pages_start + first_frame_portion.start % 0x1000;
                 start..start + layout.size()
             };
             log::debug!("Using virt range: {:X?}", data_virt_range);
@@ -118,7 +119,7 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 unsafe {
                     offset_page_table.map_to(
                         start_page + page_offset,
-                        PhysFrame::containing_address(PhysAddr::new(frame_start as u64)),
+                        PhysFrame::from_start_address(PhysAddr::new(frame_start as u64)).unwrap(),
                         PageTableFlags::PRESENT
                             | PageTableFlags::WRITABLE
                             | PageTableFlags::NO_EXECUTE,
@@ -134,16 +135,16 @@ unsafe impl GlobalAlloc for PtAllocator2 {
             VirtAddr::new_truncate(data_virt_range.start as u64).as_mut_ptr()
         };
 
-        let phys_mem_used_by_kernel_after = phys_mem.get_sums().1;
+        let unavailable_phys_mem_after = phys_mem.get_sums().1;
         // Because the frame allocator directly updates the phys mem, this is the easiest way to calculate change in phys mem used
-        *phys_mem_used_by_kernel += phys_mem_used_by_kernel_after - phys_mem_used_by_kernel_before;
+        *phys_mem_used_by_kernel += unavailable_phys_mem_after - unavailable_phys_mem_before;
 
         log::debug!("alloc: {:?}", ptr);
         ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
-        log::debug!("dealloc: {:?}", ptr);
+        log::debug!("dealloc: {:?}. layout: {:?}", ptr, layout);
 
         let mut phys_tracker = PHYS_MEM_TRACKER.try_get().unwrap().lock();
         let mut virt_tracker = KERNEL_ADDRESS_SPACE_TRACKER.try_get().unwrap().lock();
@@ -183,15 +184,16 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 let bytes_deallocated_in_current_frame =
                     (0x1000 - actual_virt_start_offset_in_page).min(bytes_left_to_deallocate);
                 // No need to flush because we won't be using the pointer
-                let (phys_frame, _flush) = offset_page_table
-                    .unmap(Page::<Size4KiB>::containing_address(virt))
-                    .unwrap();
+                let page_to_unmap = Page::<Size4KiB>::containing_address(virt);
+                let r = offset_page_table.translate_page(page_to_unmap);
+                log::debug!("Unmapping page: {:?}. Translateion: {:?}", page_to_unmap, r,);
+                let (phys_frame, _flush) = offset_page_table.unmap(page_to_unmap).unwrap();
                 {
                     let phys_start = (phys_frame.start_address()
                         + actual_virt_start_offset_in_page as u64)
                         .as_u64() as usize;
                     let range = phys_start..phys_start + bytes_deallocated_in_current_frame;
-                    log::info!("Marking phys as usable: {:X?}", range);
+                    log::debug!("Marking phys as usable: {:X?}", range);
                     phys_tracker.set(range, false);
                 }
                 bytes_left_to_deallocate -= bytes_deallocated_in_current_frame;
@@ -218,13 +220,6 @@ unsafe impl GlobalAlloc for PtAllocator2 {
         layout: core::alloc::Layout,
         new_size: usize,
     ) -> *mut u8 {
-        log::debug!(
-            "realloc: {:?}. layout: {:?}. new size: {:?}",
-            ptr,
-            layout,
-            new_size
-        );
-
         let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
         let mut virt_mem = KERNEL_ADDRESS_SPACE_TRACKER.try_get().unwrap().lock();
         let mut phys_mem_used_by_kernel = PHYS_MEM_USED_BY_KERNEL.try_get().unwrap().lock();
@@ -232,9 +227,15 @@ unsafe impl GlobalAlloc for PtAllocator2 {
         // We can try growing the existing virt address range (to the left or to the right)
         // But I don't feel like it so I'm not going to 😎. Also the way this allocator is designed, checking if we can grow left or right might make performance worse
 
-        let phys_mem_used_by_kernel_before = phys_mem.get_sums().1;
+        let mut offset_page_table = get_offset_page_table(self.hhdm_offset);
+        let is_offset_mapped = is_offset_mapped(
+            self.memory_map_response,
+            self.hhdm_offset,
+            VirtAddr::from_ptr(ptr),
+        );
+        let new_ptr = if new_size > layout.size() {
+            let unavailable_phys_mem_before = phys_mem.get_sums().1;
 
-        if new_size > layout.size() {
             let current_start_number = VirtAddr::from_ptr(ptr).into_number();
             log::debug!(
                 "Current start number: 0x{:X}. Layout size: 0x{:X}",
@@ -242,8 +243,9 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 layout.size()
             );
             let current_page_count = {
-                (current_start_number + (layout.size() - 1)).div_ceil(0x1000)
+                (current_start_number + (layout.size() - 1)).div_floor(0x1000)
                     - current_start_number.div_floor(0x1000)
+                    + 1
             };
             let new_page_count = {
                 let first_page = Page::<Size4KiB>::containing_address(VirtAddr::from_ptr(ptr));
@@ -260,7 +262,6 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 new_virt_start_page_addr as u64,
             ));
             let new_virt_start = new_virt_start_page_addr + (ptr as usize % 0x1000);
-            let mut offset_page_table = get_offset_page_table(self.hhdm_offset);
             let mut frame_allocator = PtFrameAllocator {
                 phys: &mut phys_mem,
             };
@@ -271,11 +272,6 @@ unsafe impl GlobalAlloc for PtAllocator2 {
             } else {
                 current_page_count - 1
             };
-            let is_offset_mapped = is_offset_mapped(
-                self.memory_map_response,
-                self.hhdm_offset,
-                VirtAddr::from_ptr(ptr),
-            );
 
             // Switch existing mappings
             for page_offset in 0..current_full_page_count {
@@ -356,7 +352,7 @@ unsafe impl GlobalAlloc for PtAllocator2 {
 
                 // Unmap old
                 if !is_offset_mapped {
-                    offset_page_table.unmap(current_page).unwrap();
+                    let _ = offset_page_table.unmap(current_page).unwrap();
                 }
             }
 
@@ -382,14 +378,80 @@ unsafe impl GlobalAlloc for PtAllocator2 {
 
             virt_mem.set(new_virt_start..new_virt_start + new_size, true);
 
-            let phys_mem_used_by_kernel_after = phys_mem.get_sums().1;
+            let unavailable_phys_mem_after = phys_mem.get_sums().1;
             // Because the frame allocator directly updates the phys mem, this is the easiest way to calculate change in phys mem used
-            *phys_mem_used_by_kernel +=
-                phys_mem_used_by_kernel_after - phys_mem_used_by_kernel_before;
+            *phys_mem_used_by_kernel += unavailable_phys_mem_after - unavailable_phys_mem_before;
 
             VirtAddr::new_truncate(new_virt_start as u64).as_mut_ptr()
         } else {
-            todo!("shrink")
-        }
+            // Either unmap or shrink pages and frames, starting from the end
+            let mut end_pos = layout.size();
+            loop {
+                let virt_start_number = VirtAddr::from_ptr(ptr).into_number();
+                let virt_end_number = virt_start_number + end_pos;
+                let page = Page::<Size4KiB>::containing_address(VirtAddr::new_truncate(
+                    (virt_end_number - 1) as u64,
+                ));
+                // We are unmapping all mapped bytes in this page / frame if the range from the start of the page to the end_pos is going to be completely shrinked
+                let unmap_all_mapped_bytes_in_page = virt_start_number + new_size
+                    <= virt_end_number.next_multiple_of(0x1000) - 0x1000;
+                if unmap_all_mapped_bytes_in_page {
+                    let phys_frame_start_addr = if !is_offset_mapped {
+                        log::debug!("Unmapping page: {:?}", page);
+                        offset_page_table.unmap(page).unwrap().0.start_address()
+                    } else {
+                        offset_page_table
+                            .translate_addr(page.start_address())
+                            .unwrap()
+                    };
+                    // Mark phys frame as unuseud
+                    let phys_range = {
+                        let start = phys_frame_start_addr.as_u64() as usize;
+                        start..start + 0x1000
+                    };
+                    phys_mem.set(phys_range, false);
+                    end_pos = end_pos.saturating_sub(0x1000);
+                    if end_pos == 0 {
+                        break;
+                    }
+                } else {
+                    // This is the last frame to shrink / unmap
+                    let frame_start = offset_page_table
+                        .translate_addr(page.start_address())
+                        .unwrap();
+                    // Mark phys range as unused
+                    let phys_range = {
+                        let start = frame_start.as_u64() as usize;
+                        start..start + 0x1000
+                    };
+                    phys_mem.set(phys_range, false);
+                    break;
+                }
+            }
+            if !is_offset_mapped {
+                // Mark virt addr as unused
+                let range = {
+                    let start = VirtAddr::from_ptr(ptr).into_number() + new_size;
+                    let end = VirtAddr::from_ptr(ptr).into_number() + layout.size();
+                    start..end
+                };
+                virt_mem.set(range, false);
+            }
+
+            // The phys mem used decreased by exactly the bytes shrinked
+            *phys_mem_used_by_kernel -= layout.size() - new_size;
+
+            // We did not change the location of the pointer
+            ptr
+        };
+
+        log::debug!(
+            "realloc: {:?}. layout: {:?}. new size: {:?}. new ptr: {:?}",
+            ptr,
+            layout,
+            new_size,
+            new_ptr
+        );
+        new_ptr
     }
 }
