@@ -31,37 +31,43 @@ pub mod demo_maze_roller_game;
 pub mod draw_rust;
 pub mod dynamic_combined_logger;
 pub mod embedded_graphics_writer;
+pub mod ensure_mem_is_higher_half;
 pub mod enter_user_mode;
 pub mod execute_future;
 pub mod find_used_virt_addrs;
 pub mod frame_buffer;
 pub mod get_rgb_color;
+pub mod get_total_memory;
 pub mod hlt_loop;
 pub mod hpet;
 pub mod hpet_memory;
 pub mod insert;
 pub mod iopb_size;
+pub mod limine_requests;
+pub mod log_boot_time;
+pub mod log_bootloader_info;
+pub mod log_cpu_info;
+pub mod log_frame_buffer_info;
+pub mod log_phys_mem_regions;
+pub mod log_rsdp_addr;
+pub mod log_sample_messages;
 pub mod logger;
 pub mod logger_without_interrupts;
 pub mod memory;
 pub mod modules;
+pub mod not_const_allocator;
+pub mod panic_handler;
 pub mod phys_mapper;
 pub mod pic8259_interrupts;
+pub mod pt_allocator_2;
 pub mod run_tasks;
 pub mod set_color;
 pub mod spawn_task;
 pub mod spcr;
 pub mod split_draw_target;
+pub mod store_but_borrow_mut;
 pub mod syscall_enable_hpet;
 pub mod syscall_get_hpet_main_counter_period;
-// pub mod syscall_handler;
-pub mod ensure_mem_is_higher_half;
-pub mod get_total_memory;
-pub mod limine_requests;
-pub mod log_boot_time;
-pub mod not_const_allocator;
-pub mod pt_allocator_2;
-pub mod store_but_borrow_mut;
 pub mod syscall_handler_closure;
 pub mod syscall_handler_make_me_logger;
 pub mod syscall_hpet_read_main_counter_value;
@@ -78,7 +84,6 @@ pub mod write_with_cr;
 
 use conquer_once::noblock::OnceCell;
 use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
-use core::{mem::transmute, ops::DerefMut, panic::PanicInfo, slice};
 #[allow(unused)]
 use demo_async::demo_async;
 #[allow(unused)]
@@ -153,16 +158,6 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-/// This function is called on panic.
-#[panic_handler]
-#[cfg(not(test))]
-fn panic(info: &PanicInfo) -> ! {
-    // If we don't disable interrupts, code could run while we are in an invalid state. We are in an invalid state from now until reboot because of the panic.
-    interrupts::disable();
-    log::error!("{}", info);
-    hlt_loop()
-}
-
 #[derive(Debug)]
 struct StaticStuff0 {
     tss: TaskStateSegment<IOPB_SIZE>,
@@ -190,52 +185,18 @@ unsafe extern "C" fn kernel_main() -> ! {
     assert!(BASE_REVISION.is_supported());
 
     init_logger_with_framebuffer(None);
-
-    log::error!("This is what an error message looks like");
-    log::warn!("This is what a warning message looks like");
-    log::info!("This is what an info message looks like");
-    log::debug!("This is what a debug message looks like");
-    log::trace!("This is what a trace message looks like");
-
-    let bootloader_info = LIMINE_BOOTLOADER_INFO_REQUEST
-        .get_response()
-        .expect("No Limine bootloader info");
-    log::info!(
-        "This kernel was loaded by bootloader {:?} version {:?}",
-        bootloader_info.name(),
-        bootloader_info.version()
-    );
-
-    let memory_map_response = MEMORY_MAP_REQUEST.get_response().unwrap();
-    memory_map_response.entries().iter().for_each(|entry| {
-        log::debug!(
-            "Memory ({:?}) at 0x{:013X?}..0x{:013X}",
-            unsafe { transmute::<_, u64>(entry.entry_type) },
-            entry.base,
-            entry.base + entry.length
-        );
-    });
-    let rsdp = RSDP_REQUEST.get_response().unwrap().address();
-    log::debug!("RSDP Address: 0x{:X}", rsdp);
-
-    let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response().unwrap();
-    frame_buffer_response
-        .framebuffers()
-        .for_each(|frame_buffer| {
-            log::info!(
-                "Frame buffer at {:?} with size {}x{}. Is RGB? {}",
-                frame_buffer.addr(),
-                frame_buffer.width(),
-                frame_buffer.height(),
-                frame_buffer.memory_model() == MemoryModel::RGB
-            )
-        });
+    // log_sample_messages::log_sample_messages();
+    log_bootloader_info::log_bootloader_info();
+    log_phys_mem_regions::log_phys_mem_regions();
+    log_rsdp_addr::log_rsdp_addr();
+    log_frame_buffer_info::log_frame_buffer_info();
 
     let mp_response = unsafe {
         #[allow(static_mut_refs)]
         MP_REQUEST.get_response_mut().unwrap()
     };
-    log::info!("{} CPUs", mp_response.cpus().len());
+
+    log_cpu_info::log_cpu_info(mp_response);
 
     let ram_disk = MODULE_REQUEST
         .get_response()
@@ -274,6 +235,7 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     log_boot_time();
 
+    let memory_map_response = MEMORY_MAP_REQUEST.get_response().unwrap();
     pt_allocator_2::init::init(memory_map_response, hhdm_offset);
 
     log::info!(
