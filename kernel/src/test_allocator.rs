@@ -1,4 +1,10 @@
-use alloc::{boxed::Box, vec::Vec};
+use core::{alloc::Layout, ptr::NonNull};
+
+use alloc::{
+    alloc::{alloc, realloc},
+    boxed::Box,
+    vec::Vec,
+};
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 pub fn test_allocator(max_size: usize) {
@@ -15,14 +21,14 @@ pub fn test_allocator(max_size: usize) {
     let mut v = Vec::<u8>::with_capacity(max_size);
     log::info!("Making sure same values are read back after writing");
     let rng = SmallRng::seed_from_u64(3);
-    // rng.clone()
-    //     .random_iter::<u8>()
-    //     .take(max_size)
-    //     .collect_into(&mut v);
-    // assert!(v
-    //     .iter()
-    //     .copied()
-    //     .eq(rng.clone().random_iter::<u8>().take(max_size)));
+    rng.clone()
+        .random_iter::<u8>()
+        .take(max_size)
+        .collect_into(&mut v);
+    assert!(v
+        .iter()
+        .copied()
+        .eq(rng.clone().random_iter::<u8>().take(max_size)));
     drop(v);
 
     log::info!("Allocating maximum amount of memory possible again");
@@ -47,4 +53,14 @@ pub fn test_allocator(max_size: usize) {
     assert_eq!(v[original_capacity], 2);
     log::info!("Vec: {:?}", v);
     drop(v);
+
+    {
+        log::info!("Testing shrink");
+        let layout = Layout::from_size_align(2, 1).unwrap();
+        let ptr = unsafe { alloc(layout) };
+        NonNull::new(ptr).unwrap();
+        unsafe { (ptr as *mut [u8; 2]).write([1, 2]) };
+        unsafe { realloc(ptr, layout, 1) };
+        assert_eq!(unsafe { ptr.read() }, 1);
+    }
 }
