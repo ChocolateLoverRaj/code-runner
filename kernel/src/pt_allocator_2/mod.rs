@@ -1,5 +1,6 @@
 pub mod get_offset_page_table;
 pub mod initial_meta_allocator;
+pub mod is_offset_mapped;
 pub mod meta_frame_allocator;
 pub mod pt_allocator_2;
 pub mod pt_frame_allocator;
