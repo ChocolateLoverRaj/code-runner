@@ -5,6 +5,7 @@ use core::{
 };
 
 /// This gives you a safe way to get a `&'static mut T` which is stored in `static` memory.
+#[derive(Debug)]
 pub struct StoreButBorrowMut<T> {
     did_store: AtomicBool,
     data: UnsafeCell<MaybeUninit<T>>,
@@ -25,12 +26,14 @@ impl<T> StoreButBorrowMut<T> {
     pub fn store_but_borrow_mut(&self, data: T) -> Result<&mut T, T> {
         if let Ok(_) =
             self.did_store
-                .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Acquire)
         {
             // SAFETY: We have exclusive access to the data, and we do initialize it
             Ok(unsafe {
                 let maybe_uninit = &mut *self.data.get();
-                maybe_uninit.write(data);
+                log::info!("Storing");
+                *maybe_uninit = MaybeUninit::new(data);
+                log::info!("Stored");
                 maybe_uninit.assume_init_mut()
             })
         } else {

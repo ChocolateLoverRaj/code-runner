@@ -138,7 +138,7 @@ unsafe impl GlobalAlloc for PtAllocator2 {
         // Because the frame allocator directly updates the phys mem, this is the easiest way to calculate change in phys mem used
         *phys_mem_used_by_kernel += unavailable_phys_mem_after - unavailable_phys_mem_before;
 
-        log::debug!("alloc: {:?}", ptr);
+        log::info!("alloc: {:?}. layout: {:?}", ptr, layout);
         ptr
     }
 
@@ -185,7 +185,7 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 // No need to flush because we won't be using the pointer
                 let page_to_unmap = Page::<Size4KiB>::containing_address(virt);
                 let r = offset_page_table.translate_page(page_to_unmap);
-                log::debug!("Unmapping page: {:?}. Translateion: {:?}", page_to_unmap, r,);
+                log::info!("Unmapping page: {:?}. Translation: {:?}", page_to_unmap, r,);
                 let (phys_frame, _flush) = offset_page_table.unmap(page_to_unmap).unwrap();
                 {
                     let phys_start = (phys_frame.start_address()
@@ -285,10 +285,9 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                     )
                     .unwrap()
                 } else {
-                    offset_page_table
-                        .unmap(current_start_page + page_offset as u64)
-                        .unwrap()
-                        .0
+                    let page = current_start_page + page_offset as u64;
+                    log::info!("Unmapping page: {:?}", page);
+                    offset_page_table.unmap(page).unwrap().0
                 };
                 unsafe {
                     offset_page_table.map_to(
@@ -351,6 +350,7 @@ unsafe impl GlobalAlloc for PtAllocator2 {
 
                 // Unmap old
                 if !is_offset_mapped {
+                    log::info!("Unmapping page: {:?}", current_page);
                     let _ = offset_page_table.unmap(current_page).unwrap();
                 }
             }
@@ -396,7 +396,7 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                     <= virt_end_number.next_multiple_of(0x1000) - 0x1000;
                 if unmap_all_mapped_bytes_in_page {
                     let phys_frame_start_addr = if !is_offset_mapped {
-                        log::debug!("Unmapping page: {:?}", page);
+                        log::info!("Unmapping page: {:?}", page);
                         offset_page_table.unmap(page).unwrap().0.start_address()
                     } else {
                         offset_page_table

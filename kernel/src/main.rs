@@ -229,8 +229,3 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     init_cpus(mp_response)
 }
-
-unsafe extern "C" fn cpu_init(cpu: &limine::mp::Cpu) -> ! {
-    log::info!("Hello from CPU: {:?}. LAPIC ID: {:?}", cpu.id, cpu.lapic_id);
-    hlt_loop()
-}

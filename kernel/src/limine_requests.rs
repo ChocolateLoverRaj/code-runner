@@ -3,7 +3,7 @@ use limine::mp::RequestFlags;
 use limine::request::{
     BootloaderInfoRequest, DateAtBootRequest, ExecutableAddressRequest, FramebufferRequest,
     HhdmRequest, MemoryMapRequest, ModuleRequest, MpRequest, RequestsEndMarker,
-    RequestsStartMarker, RsdpRequest,
+    RequestsStartMarker, RsdpRequest, StackSizeRequest,
 };
 use limine::BaseRevision;
 
@@ -55,3 +55,7 @@ pub static LIMINE_BOOTLOADER_INFO_REQUEST: BootloaderInfoRequest = BootloaderInf
 #[used]
 #[unsafe(link_section = ".requests")]
 pub static FRAME_BUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+pub static STACK_SIZE_REQUEST: StackSizeRequest = StackSizeRequest::new().with_size(0x64_000);
