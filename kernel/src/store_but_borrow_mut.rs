@@ -31,9 +31,7 @@ impl<T> StoreButBorrowMut<T> {
             // SAFETY: We have exclusive access to the data, and we do initialize it
             Ok(unsafe {
                 let maybe_uninit = &mut *self.data.get();
-                log::info!("Storing");
-                *maybe_uninit = MaybeUninit::new(data);
-                log::info!("Stored");
+                maybe_uninit.write(data);
                 maybe_uninit.assume_init_mut()
             })
         } else {
