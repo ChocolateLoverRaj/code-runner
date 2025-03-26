@@ -48,7 +48,10 @@ pub mod log_boot_time;
 pub mod log_bootloader_info;
 pub mod log_cpu_info;
 pub mod log_frame_buffer_info;
+pub mod log_kernel_address;
+pub mod log_memory_usage;
 pub mod log_phys_mem_regions;
+pub mod log_ram_disk;
 pub mod log_rsdp_addr;
 pub mod log_sample_messages;
 pub mod logger;
@@ -109,6 +112,7 @@ use limine_requests::{
     LIMINE_BOOTLOADER_INFO_REQUEST, MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST, RSDP_REQUEST,
 };
 use log_boot_time::log_boot_time;
+use log_memory_usage::log_memory_usage;
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use modules::{
@@ -198,19 +202,8 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     log_cpu_info::log_cpu_info(mp_response);
 
-    let ram_disk = MODULE_REQUEST
-        .get_response()
-        .and_then(|response| response.modules().first());
-    match ram_disk {
-        Some(ram_disk) => {
-            log::info!(
-                "Got ram disk at {:?} with len {:?}",
-                ram_disk.addr(),
-                ram_disk.size()
-            );
-        }
-        None => {}
-    }
+    let module_response = MODULE_REQUEST.get_response();
+    log_ram_disk::log_ram_disk(module_response);
 
     let hhdm_offset = HHDM_REQUEST
         .get_response()
@@ -219,17 +212,7 @@ unsafe extern "C" fn kernel_main() -> ! {
     log::info!("HHDM offset: 0x{:X}", hhdm_offset);
 
     let kernel_address_response = KERNEL_ADDRESS_REQUEST.get_response().unwrap();
-    log::info!(
-        "Kernel at physical address: 0x{:X}, virtual address: 0x{:X}",
-        kernel_address_response.physical_base(),
-        kernel_address_response.virtual_base()
-    );
-    // let kernel_file_response = KERNEL_FILE_REQUEST.get_response().unwrap();
-    // log::info!(
-    //     "Kernel file at address: {:?} with len 0x{:X}",
-    //     kernel_file_response.file().addr(),
-    //     kernel_file_response.file().size()
-    // );
+    log_kernel_address::log_kernel_address(kernel_address_response);
 
     ensure_mem_is_higher_half(hhdm_offset);
 
@@ -237,39 +220,12 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     let memory_map_response = MEMORY_MAP_REQUEST.get_response().unwrap();
     pt_allocator_2::init::init(memory_map_response, hhdm_offset);
-
-    log::info!(
-        "Total memory: 0x{:X}",
-        get_total_memory(memory_map_response)
-    );
-    log::info!(
-        "Bootloader reclaimable memory: 0x{:X}",
-        get_bootloader_reclaimable_memory(memory_map_response)
-    );
-    log::info!(
-        "ACPI reclaimable memory: 0x{:X}",
-        get_acpi_reclaimable_memory(memory_map_response)
-    );
-    log::info!("Used memory: 0x{:X}", get_kernel_memory());
+    log_memory_usage(memory_map_response);
 
     // Test assuming 100MiB is available for dynamic allocation
     // test_allocator(0x6400000);
 
-    // let phys_mapper = PhysMapper::new(hhdm_offset, mapper, virt_mem_tracker, frame_allocator)
-
-    // let acpi_tables = unsafe {
-    //     acpi::init(
-    //         rsdp ,
-    //         phys_mapper.clone(),
-    //     )
-    // }
-
-    let cr3_val = {
-        let (frame, flags) = Cr3::read();
-        frame.start_address().as_u64() | flags.bits()
-    };
     mp_response.cpus_mut().iter_mut().for_each(|cpu| {
-        cpu.extra = cr3_val;
         cpu.goto_address.write(cpu_init);
     });
 
@@ -282,15 +238,6 @@ unsafe extern "C" fn kernel_main() -> ! {
 }
 
 unsafe extern "C" fn cpu_init(cpu: &limine::mp::Cpu) -> ! {
-    let previous_cr3 = Cr3::read();
-    let flags = Cr3Flags::from_bits_truncate(cpu.extra);
-    let cr3_frame = PhysFrame::containing_address(PhysAddr::new(cpu.extra));
-    unsafe { Cr3::write(cr3_frame, flags) };
-    log::info!(
-        "Hello from CPU: {:?}. Previous cr3: {:?}, current cr3: {:?}",
-        cpu.id,
-        previous_cr3.0,
-        cr3_frame
-    );
+    log::info!("Hello from CPU: {:?}. LAPIC ID: {:?}", cpu.id, cpu.lapic_id);
     hlt_loop()
 }
