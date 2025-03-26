@@ -41,6 +41,7 @@ pub mod get_total_memory;
 pub mod hlt_loop;
 pub mod hpet;
 pub mod hpet_memory;
+pub mod init_cpus;
 pub mod insert;
 pub mod iopb_size;
 pub mod limine_requests;
@@ -105,6 +106,7 @@ use get_total_memory::{
 use hlt_loop::hlt_loop;
 use hpet::{HpetBuilderStage0, HpetBuilderStage1};
 use hpet_memory::HpetMemory;
+use init_cpus::init_cpus;
 use iopb_size::IOPB_SIZE;
 use limine::{self, framebuffer::MemoryModel, memory_map::EntryType};
 use limine_requests::{
@@ -225,16 +227,7 @@ unsafe extern "C" fn kernel_main() -> ! {
     // Test assuming 100MiB is available for dynamic allocation
     // test_allocator(0x6400000);
 
-    mp_response.cpus_mut().iter_mut().for_each(|cpu| {
-        cpu.goto_address.write(cpu_init);
-    });
-
-    let current_cpu = mp_response
-        .cpus()
-        .iter()
-        .find(|cpu| cpu.lapic_id == mp_response.bsp_lapic_id())
-        .unwrap();
-    unsafe { cpu_init(current_cpu) }
+    init_cpus(mp_response)
 }
 
 unsafe extern "C" fn cpu_init(cpu: &limine::mp::Cpu) -> ! {
