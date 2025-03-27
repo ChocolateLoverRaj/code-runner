@@ -23,11 +23,11 @@ pub mod apic;
 pub mod colorful_logger;
 pub mod combined_logger;
 pub mod context;
-pub mod cool_keyboard_interrupt_handler;
-pub mod demo_async;
-pub mod demo_async_keyboard_drop;
-pub mod demo_async_rtc_drop;
-pub mod demo_maze_roller_game;
+// pub mod cool_keyboard_interrupt_handler;
+// pub mod demo_async;
+// pub mod demo_async_keyboard_drop;
+// pub mod demo_async_rtc_drop;
+// pub mod demo_maze_roller_game;
 pub mod draw_rust;
 pub mod dynamic_combined_logger;
 pub mod embedded_graphics_writer;
@@ -39,7 +39,7 @@ pub mod frame_buffer;
 pub mod get_rgb_color;
 pub mod get_total_memory;
 pub mod hlt_loop;
-pub mod hpet;
+// pub mod hpet;
 pub mod hpet_memory;
 pub mod init_cpus;
 pub mod insert;
@@ -87,24 +87,12 @@ pub mod write_logger;
 pub mod write_with_cr;
 
 use conquer_once::noblock::OnceCell;
-use cool_keyboard_interrupt_handler::CoolKeyboardBuilder;
-#[allow(unused)]
-use demo_async::demo_async;
-#[allow(unused)]
-use demo_async_keyboard_drop::demo_async_keyboard_drop;
-#[allow(unused)]
-use demo_async_rtc_drop::demo_async_rtc_drop;
-#[allow(unused)]
-use demo_maze_roller_game::demo_maze_roller_game;
-#[allow(unused)]
-use draw_rust::draw_rust;
 use ensure_mem_is_higher_half::ensure_mem_is_higher_half;
 use get_total_memory::{
     get_acpi_reclaimable_memory, get_bootloader_reclaimable_memory, get_kernel_memory,
     get_total_memory,
 };
 use hlt_loop::hlt_loop;
-use hpet::{HpetBuilderStage0, HpetBuilderStage1};
 use hpet_memory::HpetMemory;
 use init_cpus::init_cpus;
 use iopb_size::IOPB_SIZE;
@@ -123,7 +111,7 @@ use modules::{
     get_apic::get_apic,
     get_io_apic::get_io_apic,
     get_local_apic::get_local_apic,
-    idt::IdtBuilder,
+    idt::{disable_pic8259::disable_pic8259, IdtBuilder},
     logging_breakpoint_handler::logging_breakpoint_handler,
     logging_timer_interrupt_handler::get_logging_timer_interrupt_handler,
     panicking_double_fault_handler::panicking_double_fault_handler,
@@ -171,8 +159,6 @@ struct StaticStuff0 {
     spurious_interrupt_handler_index: u8,
     timer_interrupt_index: u8,
     local_apic_error_interrupt_index: u8,
-    keyboard: CoolKeyboardBuilder,
-    hpet: HpetBuilderStage1,
 }
 
 static STATIC_STUFF_0: StoreButBorrowMut<StaticStuff0> = StoreButBorrowMut::uninit();
@@ -192,6 +178,9 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     init_logger_with_framebuffer(None);
     // log_sample_messages::log_sample_messages();
+
+    disable_pic8259();
+
     log_bootloader_info::log_bootloader_info();
     log_phys_mem_regions::log_phys_mem_regions();
     log_rsdp_addr::log_rsdp_addr();

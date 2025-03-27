@@ -1,5 +1,5 @@
-pub mod async_keyboard;
-pub mod async_rtc;
+// pub mod async_keyboard;
+// pub mod async_rtc;
 pub mod double_fault_handler_entry;
 pub mod gdt;
 pub mod get_apic;

@@ -9,11 +9,11 @@ const SPURIOUS_INTERRUPT_INDEX: u8 = 0xFF;
 pub fn set_spurious_interrupt_handler(
     idt_builder: &mut IdtBuilder,
     spurious_interrupt_handler: HandlerFunc,
+    entry_options: idt::EntryOptions,
 ) -> Result<u8, ()> {
-    idt_builder.set_fixed_entry(SPURIOUS_INTERRUPT_INDEX, {
-        let mut entry = idt::Entry::missing();
-        entry.set_handler_fn(spurious_interrupt_handler);
-        entry
-    })?;
+    idt_builder.set_fixed_entry(
+        SPURIOUS_INTERRUPT_INDEX,
+        idt::Entry::from_handler_fn(spurious_interrupt_handler, entry_options),
+    )?;
     Ok(SPURIOUS_INTERRUPT_INDEX)
 }

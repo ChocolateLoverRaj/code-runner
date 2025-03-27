@@ -31,7 +31,7 @@ use x86_64::{structures::tss::TaskStateSegment, VirtAddr};
 
 #[derive(Debug)]
 pub struct TssBuilder<const N: usize> {
-    used_interrupt_stack_table_entries: usize,
+    used_interrupt_stack_table_entries: u16,
     used_privilege_stack_table_entries: usize,
     pub tss: TaskStateSegment<N>,
 }
@@ -48,11 +48,11 @@ impl<const N: usize> Default for TssBuilder<N> {
 
 impl<const N: usize> TssBuilder<N> {
     /// Returns `None` if all entries are used
-    pub fn add_interrupt_stack_table_entry(&mut self, address: VirtAddr) -> Option<usize> {
+    pub fn add_interrupt_stack_table_entry(&mut self, address: VirtAddr) -> Option<u16> {
         // The interrupt stack table has 7 slots
         if self.used_interrupt_stack_table_entries < 7 {
             let index = self.used_interrupt_stack_table_entries;
-            self.tss.interrupt_stack_table[index] = address;
+            self.tss.interrupt_stack_table[index as usize] = address;
             self.used_interrupt_stack_table_entries += 1;
             Some(index)
         } else {

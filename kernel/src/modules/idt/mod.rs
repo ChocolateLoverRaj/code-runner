@@ -1,6 +1,5 @@
-mod disable_pic8259;
+pub mod disable_pic8259;
 
-use disable_pic8259::disable_pic8259;
 use x86_64::structures::idt::{
     self, DivergingHandlerFuncWithErrCode, HandlerFunc, HandlerFuncWithErrCode,
     InterruptDescriptorTable, PageFaultHandlerFunc,
@@ -193,6 +192,5 @@ impl IdtBuilder {
 
     pub fn init(&'static self) {
         self.idt.load();
-        disable_pic8259();
     }
 }

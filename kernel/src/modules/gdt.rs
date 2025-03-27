@@ -1,11 +1,8 @@
 use x86_64::instructions::tables::load_tss;
 use x86_64::registers::model_specific::Star;
 use x86_64::registers::segmentation::{Segment, CS, DS, ES, SS};
-use x86_64::structures::tss::ReadyTssPointer;
-
-pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
-
 use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
+use x86_64::structures::tss::ReadyTssPointer;
 
 #[derive(Debug)]
 pub struct Gdt {
@@ -18,6 +15,13 @@ pub struct Gdt {
 }
 
 impl Gdt {
+    /// Returns the value of the CS selector that will be set once the GDT is loaded
+    pub const fn cs() -> SegmentSelector {
+        let mut gdt = GlobalDescriptorTable::new();
+        let kernel_code_selector = gdt.append(Descriptor::kernel_code_segment());
+        kernel_code_selector
+    }
+
     pub fn new<const N: usize>(tss: ReadyTssPointer<N>) -> Self {
         let mut gdt = GlobalDescriptorTable::new();
         let kernel_code_selector = gdt.append(Descriptor::kernel_code_segment());
@@ -26,19 +30,19 @@ impl Gdt {
         let user_data_selector = gdt.append(Descriptor::user_data_segment());
         let user_code_selector = gdt.append(Descriptor::user_code_segment());
 
-        log::info!(
-            "kernel code: {:?} {:?}\nkernel data: {:?} {:?}\nuser code: {:?} {:?}\nuser data: {:?} {:?}\nTSS: {:?} {:?}",
-            kernel_code_selector,
-            kernel_code_selector.0,
-            kernel_data_selector,
-            kernel_data_selector.0,
-            user_code_selector,
-            user_code_selector.0,
-            user_data_selector,
-            user_data_selector.0,
-            tss_selector,
-            tss_selector.0
-        );
+        // log::info!(
+        //     "kernel code: {:?} {:?}\nkernel data: {:?} {:?}\nuser code: {:?} {:?}\nuser data: {:?} {:?}\nTSS: {:?} {:?}",
+        //     kernel_code_selector,
+        //     kernel_code_selector.0,
+        //     kernel_data_selector,
+        //     kernel_data_selector.0,
+        //     user_code_selector,
+        //     user_code_selector.0,
+        //     user_data_selector,
+        //     user_data_selector.0,
+        //     tss_selector,
+        //     tss_selector.0
+        // );
 
         Self {
             gdt,
