@@ -26,7 +26,7 @@ impl<T> StoreButBorrowMut<T> {
     pub fn store_but_borrow_mut(&self, data: T) -> Result<&mut T, T> {
         if let Ok(_) =
             self.did_store
-                .compare_exchange(false, true, Ordering::Acquire, Ordering::Acquire)
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
         {
             // SAFETY: We have exclusive access to the data, and we do initialize it
             Ok(unsafe {
