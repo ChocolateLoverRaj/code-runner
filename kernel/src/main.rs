@@ -40,6 +40,7 @@ pub mod get_rgb_color;
 pub mod get_total_memory;
 pub mod hlt_loop;
 // pub mod hpet;
+pub mod acpi_handler_impl;
 pub mod hpet_memory;
 pub mod init_cpus;
 pub mod insert;

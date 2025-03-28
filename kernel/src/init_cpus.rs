@@ -1,9 +1,11 @@
-use core::{arch::asm, mem::MaybeUninit};
+use core::{arch::asm, mem::MaybeUninit, ptr::NonNull};
 
+use acpi::AcpiHandler;
 use alloc::boxed::Box;
 use limine::response::MpResponse;
 use spinning_top::Spinlock;
 use util::init_later::InitLater;
+use x2apic::lapic::LocalApicBuilder;
 use x86_64::{
     structures::{
         idt::{self},
@@ -14,6 +16,7 @@ use x86_64::{
 
 use crate::{
     hlt_loop::hlt_loop,
+    limine_requests::{HHDM_REQUEST, RSDP_REQUEST},
     modules::{
         double_fault_handler_entry::get_double_fault_entry, gdt::Gdt, idt::IdtBuilder,
         logging_breakpoint_handler::logging_breakpoint_handler,
@@ -226,14 +229,71 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     static_stuff_2.gdt.init();
     static_stuff_1.idt_builder.init();
 
+    #[derive(Debug, Clone)]
+    struct StaticHandler {
+        hhdm_offset: u64,
+    }
+
+    impl AcpiHandler for StaticHandler {
+        unsafe fn map_physical_region<T>(
+            &self,
+            physical_address: usize,
+            size: usize,
+        ) -> acpi::PhysicalMapping<Self, T> {
+            log::info!(
+                "Requested to map: 0x{:X} with size: 0x{:X}",
+                physical_address,
+                size
+            );
+            unsafe {
+                acpi::PhysicalMapping::new(
+                    physical_address,
+                    NonNull::new(
+                        VirtAddr::new_truncate(physical_address as u64 + self.hhdm_offset)
+                            .as_mut_ptr(),
+                    )
+                    .unwrap(),
+                    size,
+                    size,
+                    self.clone(),
+                )
+            }
+        }
+
+        fn unmap_physical_region<T>(region: &acpi::PhysicalMapping<Self, T>) {}
+    }
+
+    let acpi_tables = unsafe {
+        acpi::AcpiTables::from_rsdp(
+            StaticHandler {
+                hhdm_offset: HHDM_REQUEST.get_response().unwrap().offset(),
+            },
+            RSDP_REQUEST.get_response().unwrap().address(),
+        )
+    };
+    log::info!("Tables: {:#?}", acpi_tables);
+
+    let hhdm_offset = HHDM_REQUEST.get_response().unwrap().offset();
+
+    // let mut lapic = LocalApicBuilder::new()
+    //     .timer_vector(static_stuff_1.timer_interrupt_index as usize)
+    //     .spurious_vector(static_stuff_1.spurious_interrupt_handler_index as usize)
+    //     .error_vector(static_stuff_1.local_apic_error_interrupt_index as usize)
+    //     .set_xapic_base(0xFEE00000 + hhdm_offset)
+    //     .build()
+    //     .unwrap();
+    // unsafe { lapic.enable() };
+    // unsafe { lapic.disable_timer() };
+
     log::info!("Initialized GDT and IDT on CPU {}", cpu.id);
 
     x86_64::instructions::interrupts::int3();
 
     if cpu.id == 0 {
-        unsafe {
-            asm!("ud2");
-        }
+        // unsafe { lapic.send_nmi(1) };
+        // unsafe {
+        //     asm!("ud2");
+        // }
     }
 
     loop {
