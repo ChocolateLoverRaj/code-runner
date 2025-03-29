@@ -15,6 +15,7 @@ use x86_64::{
 };
 
 use crate::{
+    acpi::ACPI_TABLES,
     hlt_loop::hlt_loop,
     limine_requests::{HHDM_REQUEST, RSDP_REQUEST},
     modules::{
@@ -229,57 +230,25 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     static_stuff_2.gdt.init();
     static_stuff_1.idt_builder.init();
 
-    #[derive(Debug, Clone)]
-    struct StaticHandler {
-        hhdm_offset: u64,
-    }
-
-    impl AcpiHandler for StaticHandler {
-        unsafe fn map_physical_region<T>(
-            &self,
-            physical_address: usize,
-            size: usize,
-        ) -> acpi::PhysicalMapping<Self, T> {
-            log::info!(
-                "Requested to map: 0x{:X} with size: 0x{:X}",
-                physical_address,
-                size
-            );
-            unsafe {
-                acpi::PhysicalMapping::new(
-                    physical_address,
-                    NonNull::new(
-                        VirtAddr::new_truncate(physical_address as u64 + self.hhdm_offset)
-                            .as_mut_ptr(),
-                    )
-                    .unwrap(),
-                    size,
-                    size,
-                    self.clone(),
-                )
-            }
+    let xapic_base = {
+        match ACPI_TABLES
+            .try_get()
+            .unwrap()
+            .lock()
+            .platform_info()
+            .unwrap()
+            .interrupt_model
+        {
+            acpi::InterruptModel::Apic(apic) => apic.local_apic_address,
+            _ => unimplemented!(),
         }
-
-        fn unmap_physical_region<T>(region: &acpi::PhysicalMapping<Self, T>) {}
-    }
-
-    let acpi_tables = unsafe {
-        acpi::AcpiTables::from_rsdp(
-            StaticHandler {
-                hhdm_offset: HHDM_REQUEST.get_response().unwrap().offset(),
-            },
-            RSDP_REQUEST.get_response().unwrap().address(),
-        )
     };
-    log::info!("Tables: {:#?}", acpi_tables);
-
-    let hhdm_offset = HHDM_REQUEST.get_response().unwrap().offset();
-
+    log::info!("xapic base: 0x{:X}", xapic_base);
     // let mut lapic = LocalApicBuilder::new()
     //     .timer_vector(static_stuff_1.timer_interrupt_index as usize)
     //     .spurious_vector(static_stuff_1.spurious_interrupt_handler_index as usize)
     //     .error_vector(static_stuff_1.local_apic_error_interrupt_index as usize)
-    //     .set_xapic_base(0xFEE00000 + hhdm_offset)
+    //     .set_xapic_base(xapic_base)
     //     .build()
     //     .unwrap();
     // unsafe { lapic.enable() };
@@ -287,7 +256,7 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
 
     log::info!("Initialized GDT and IDT on CPU {}", cpu.id);
 
-    x86_64::instructions::interrupts::int3();
+    // x86_64::instructions::interrupts::int3();
 
     if cpu.id == 0 {
         // unsafe { lapic.send_nmi(1) };
@@ -296,9 +265,9 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
         // }
     }
 
-    loop {
-        log::info!("Log from CPU {:?}", cpu.id);
-    }
+    // loop {
+    //     log::info!("Log from CPU {:?}", cpu.id);
+    // }
 
     hlt_loop()
 }

@@ -5,6 +5,7 @@ pub mod is_offset_mapped;
 pub mod meta_frame_allocator;
 pub mod pt_allocator_2;
 pub mod pt_frame_allocator;
+pub mod pt_frame_allocator_2;
 
 use core::ops::Range;
 

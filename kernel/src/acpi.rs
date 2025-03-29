@@ -1,17 +1,22 @@
-use acpi::AcpiTables;
-use anyhow::{anyhow, Context};
+use acpi::{AcpiResult, AcpiTables};
+use spinning_top::Spinlock;
+use util::init_later::InitLater;
 
-use crate::phys_mapper::PhysMapper;
+use crate::{acpi_handler_impl::AcpiHandlerImpl, hhdm_offset::HhdmOffset, rsdp_addr::RsdpAddr};
 
-#[allow(clippy::result_unit_err)]
+pub static ACPI_TABLES: InitLater<Spinlock<AcpiTables<AcpiHandlerImpl>>> = InitLater::uninit();
+
 /// # Safety
-/// RSDP address must be valid
+/// RSDP address must be valid, HHDM offset must be valid
 pub unsafe fn init(
-    rsdp_addr: usize,
-    phys_mapper: PhysMapper,
-) -> anyhow::Result<AcpiTables<PhysMapper>> {
-    let acpi_tables = unsafe { AcpiTables::from_rsdp(phys_mapper, rsdp_addr) }
-        .map_err(|e| anyhow!("{e:?}"))
-        .context("Error reading ACPI tables")?;
-    Ok(acpi_tables)
+    rsdp_addr: RsdpAddr,
+    hhdm_offset: HhdmOffset,
+) -> AcpiResult<&'static Spinlock<AcpiTables<AcpiHandlerImpl>>> {
+    unsafe {
+        acpi::AcpiTables::from_rsdp(
+            AcpiHandlerImpl { hhdm_offset },
+            u64::from(rsdp_addr) as usize,
+        )
+    }
+    .map(|acpi_tables| ACPI_TABLES.try_init(Spinlock::new(acpi_tables)).unwrap())
 }

@@ -41,6 +41,7 @@ pub mod get_total_memory;
 pub mod hlt_loop;
 // pub mod hpet;
 pub mod acpi_handler_impl;
+pub mod hhdm_offset;
 pub mod hpet_memory;
 pub mod init_cpus;
 pub mod insert;
@@ -65,6 +66,7 @@ pub mod panic_handler;
 pub mod phys_mapper;
 pub mod pic8259_interrupts;
 pub mod pt_allocator_2;
+pub mod rsdp_addr;
 pub mod run_tasks;
 pub mod set_color;
 pub mod spawn_task;
@@ -93,6 +95,7 @@ use get_total_memory::{
     get_acpi_reclaimable_memory, get_bootloader_reclaimable_memory, get_kernel_memory,
     get_total_memory,
 };
+use hhdm_offset::HhdmOffset;
 use hlt_loop::hlt_loop;
 use hpet_memory::HpetMemory;
 use init_cpus::init_cpus;
@@ -131,6 +134,7 @@ use modules::{
     unsafe_local_apic::UnsafeLocalApic,
 };
 use phys_mapper::PhysMapper;
+use rsdp_addr::RsdpAddr;
 use run_tasks::run_tasks;
 use spawn_task::spawn_task;
 use spcr::replace_serial_logger_if_redirected;
@@ -184,7 +188,8 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     log_bootloader_info::log_bootloader_info();
     log_phys_mem_regions::log_phys_mem_regions();
-    log_rsdp_addr::log_rsdp_addr();
+    let rsdp_addr = RsdpAddr::try_from(&RSDP_REQUEST).unwrap();
+    log_rsdp_addr::log_rsdp_addr(rsdp_addr);
     log_frame_buffer_info::log_frame_buffer_info();
 
     let mp_response = unsafe {
@@ -197,25 +202,25 @@ unsafe extern "C" fn kernel_main() -> ! {
     let module_response = MODULE_REQUEST.get_response();
     log_ram_disk::log_ram_disk(module_response);
 
-    let hhdm_offset = HHDM_REQUEST
-        .get_response()
-        .expect("No HHDM response")
-        .offset();
-    log::info!("HHDM offset: 0x{:X}", hhdm_offset);
+    let hhdm_offset = HhdmOffset::try_from(&HHDM_REQUEST).unwrap();
+    log::info!("HHDM offset: {:?}", hhdm_offset);
 
     let kernel_address_response = KERNEL_ADDRESS_REQUEST.get_response().unwrap();
     log_kernel_address::log_kernel_address(kernel_address_response);
 
-    ensure_mem_is_higher_half(hhdm_offset);
+    ensure_mem_is_higher_half(hhdm_offset.into());
 
     log_boot_time();
 
     let memory_map_response = MEMORY_MAP_REQUEST.get_response().unwrap();
-    pt_allocator_2::init::init(memory_map_response, hhdm_offset);
+    pt_allocator_2::init::init(memory_map_response, hhdm_offset.into());
     log_memory_usage(memory_map_response);
 
     // Test assuming 100MiB is available for dynamic allocation
     // test_allocator(0x6400000);
+
+    let result = unsafe { acpi::init(rsdp_addr, hhdm_offset) };
+    log::info!("ACPI Tables: {:#?}", result);
 
     init_cpus(mp_response)
 }
