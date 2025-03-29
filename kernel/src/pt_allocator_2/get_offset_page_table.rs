@@ -4,17 +4,19 @@ use x86_64::{
     VirtAddr,
 };
 
+use crate::hhdm_offset::HhdmOffset;
+
 /// Get the offset page table from current Cr3 value and HHDM offset
-pub fn get_offset_page_table<'a>(hhdm_offset: u64) -> OffsetPageTable<'a> {
+pub fn get_offset_page_table<'a>(hhdm_offset: HhdmOffset) -> OffsetPageTable<'a> {
     unsafe {
         OffsetPageTable::new(
             {
                 let (active_l4, _cr3_flags) = Cr3::read();
                 let active_l4_pt =
-                    (active_l4.start_address().as_u64() + hhdm_offset) as *mut PageTable;
+                    (active_l4.start_address().as_u64() + u64::from(hhdm_offset)) as *mut PageTable;
                 &mut *active_l4_pt
             },
-            VirtAddr::new(hhdm_offset),
+            VirtAddr::new(hhdm_offset.into()),
         )
     }
 }

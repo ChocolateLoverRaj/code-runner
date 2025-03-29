@@ -1,11 +1,14 @@
 use x86_64::{registers::control::Cr3, structures::paging::PageTable};
 
-pub fn ensure_mem_is_higher_half(hhdm_offset: u64) {
+use crate::hhdm_offset::HhdmOffset;
+
+pub fn ensure_mem_is_higher_half(hhdm_offset: HhdmOffset) {
     // Since we will split between user space in lower half and kernel in higher half, we need to make sure lower half is completely clear
     let max_entries = 512;
     let active_l4_pt = {
         let (active_l4, _cr3_flags) = Cr3::read();
-        let active_l4_pt = (active_l4.start_address().as_u64() + hhdm_offset) as *const PageTable;
+        let active_l4_pt =
+            (active_l4.start_address().as_u64() + u64::from(hhdm_offset)) as *const PageTable;
         unsafe { &*active_l4_pt }
     };
     for i in 0..max_entries / 2 {

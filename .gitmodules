@@ -17,3 +17,6 @@
 [submodule "x86_64"]
 	path = x86_64
 	url = https://github.com/ChocolateLoverRaj/x86_64
+[submodule "x2apic-rs"]
+	path = x2apic-rs
+	url = https://github.com/ChocolateLoverRaj/x2apic-rs

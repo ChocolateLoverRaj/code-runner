@@ -3,6 +3,7 @@ use conquer_once::spin::OnceCell;
 use embedded_graphics::{
     mono_font::iso_8859_16::FONT_10X20, pixelcolor::Rgb888, prelude::RgbColor,
 };
+use spinning_top::Spinlock;
 use uart_16550::{port::PortAccessedRegister, uart_16550::Uart16550Registers};
 
 use crate::{
@@ -21,7 +22,7 @@ static SERIAL_LOGGER: LockedWriteLogger<Uart16550Registers<PortAccessedRegister>
     LockedWriteLogger::new(unsafe { uart_16550::port::new(0x3F8) }, true);
 static LOGGER: LockedLoggerWithoutInterrupts<DynamicCombinedLogger<'static, 2>> =
     LockedLoggerWithoutInterrupts::new(DynamicCombinedLogger {
-        loggers: spin::Mutex::new(heapless::Vec::new()),
+        loggers: Spinlock::new(heapless::Vec::new()),
     });
 
 /// This function should only be called once.

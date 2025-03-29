@@ -15,14 +15,14 @@ use x86_64::{
 };
 
 use crate::{
-    pt_allocator_2::meta_frame_allocator::MetaFrameAllocator, traverse_cr3::PageTableDeepIterator,
-    virt_addr_to_number::VirtAddrToNumber,
+    hhdm_offset::HhdmOffset, pt_allocator_2::meta_frame_allocator::MetaFrameAllocator,
+    traverse_cr3::PageTableDeepIterator, virt_addr_to_number::VirtAddrToNumber,
 };
 
 /// An allocator for initializing our allocator
 #[derive(Clone)]
 pub struct InitialMetaAllocator<'a> {
-    pub hhdm_offset: u64,
+    pub hhdm_offset: HhdmOffset,
     pub memory_map_response: &'static MemoryMapResponse,
     pub used_phys_bytes: &'a RefCell<usize>,
 }
@@ -80,11 +80,12 @@ unsafe impl Allocator for InitialMetaAllocator<'_> {
                 OffsetPageTable::new(
                     {
                         let (active_l4, _cr3_flags) = Cr3::read();
-                        let active_l4_pt = (active_l4.start_address().as_u64() + self.hhdm_offset)
+                        let active_l4_pt = (active_l4.start_address().as_u64()
+                            + u64::from(self.hhdm_offset))
                             as *mut PageTable;
                         &mut *active_l4_pt
                     },
-                    VirtAddr::new(self.hhdm_offset),
+                    VirtAddr::new(self.hhdm_offset.into()),
                 )
             };
             let page = Page::from_start_address(VirtAddr::new_truncate(valid_range.start as u64))

@@ -4,6 +4,7 @@ use spinning_top::Spinlock;
 use util::continuous_bool_vec::ContinuousBoolVec;
 
 use crate::{
+    hhdm_offset::HhdmOffset,
     pt_allocator_2::{
         initial_meta_allocator::InitialMetaAllocator, pt_allocator_2::PtAllocator2, ALLOCATOR,
         KERNEL_ADDRESS_SPACE_TRACKER, PHYS_MEM_TRACKER, PHYS_MEM_USED_BY_KERNEL,
@@ -12,7 +13,7 @@ use crate::{
     virt_addr_to_number::VirtAddrToNumber,
 };
 
-pub fn init(memory_map_response: &'static MemoryMapResponse, hhdm_offset: u64) {
+pub fn init(memory_map_response: &'static MemoryMapResponse, hhdm_offset: HhdmOffset) {
     let used_phys_bytes = Default::default();
     // We need N to be 8 because making the phys_mem_tracker could use 4 items and making the kernel_address_space_tracker could use 4 items
     let initial_meta_allocator = InitialMetaAllocator {

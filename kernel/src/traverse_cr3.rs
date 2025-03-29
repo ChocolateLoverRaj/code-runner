@@ -4,7 +4,7 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-use crate::virt_addr_from_indexes::virt_addr_from_indexes;
+use crate::{hhdm_offset::HhdmOffset, virt_addr_from_indexes::virt_addr_from_indexes};
 
 pub struct PageMapping {
     pub virt_start: VirtAddr,
@@ -14,7 +14,7 @@ pub struct PageMapping {
 
 /// Recursively traverses page table, returning every mapping
 pub struct PageTableDeepIterator {
-    hhdm_offset: u64,
+    hhdm_offset: HhdmOffset,
     sub_pt_stack: heapless::Vec<usize, 3>,
     entry_index: usize,
 }
@@ -22,7 +22,7 @@ pub struct PageTableDeepIterator {
 impl PageTableDeepIterator {
     /// # Safety
     /// Memory must actually mapped according to the Limine protocol's HHDM
-    pub unsafe fn new(hhdm_offset: u64) -> Self {
+    pub unsafe fn new(hhdm_offset: HhdmOffset) -> Self {
         Self {
             hhdm_offset,
             sub_pt_stack: Default::default(),
@@ -37,8 +37,8 @@ impl Iterator for PageTableDeepIterator {
     fn next(&mut self) -> Option<Self::Item> {
         let active_l4_pt = {
             let (active_l4, _cr3_flags) = Cr3::read();
-            let active_l4_pt =
-                (active_l4.start_address().as_u64() + self.hhdm_offset) as *const PageTable;
+            let active_l4_pt = (active_l4.start_address().as_u64() + u64::from(self.hhdm_offset))
+                as *const PageTable;
             unsafe { &*active_l4_pt }
         };
 
@@ -60,8 +60,8 @@ impl Iterator for PageTableDeepIterator {
                 let mut pt = active_l4_pt;
                 // Traverse the page tables until we get to the lowest level we want to process
                 for index in &self.sub_pt_stack {
-                    let pt_ptr =
-                        (pt[*index].addr().as_u64() + self.hhdm_offset) as *const PageTable;
+                    let pt_ptr = (pt[*index].addr().as_u64() + u64::from(self.hhdm_offset))
+                        as *const PageTable;
                     pt = unsafe { &*pt_ptr };
                 }
                 pt

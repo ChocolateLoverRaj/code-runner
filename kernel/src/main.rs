@@ -59,8 +59,10 @@ pub mod log_rsdp_addr;
 pub mod log_sample_messages;
 pub mod logger;
 pub mod logger_without_interrupts;
+pub mod map_local_xapic;
 pub mod memory;
 pub mod modules;
+pub mod nmi_handler;
 pub mod not_const_allocator;
 pub mod panic_handler;
 pub mod phys_mapper;
@@ -208,19 +210,16 @@ unsafe extern "C" fn kernel_main() -> ! {
     let kernel_address_response = KERNEL_ADDRESS_REQUEST.get_response().unwrap();
     log_kernel_address::log_kernel_address(kernel_address_response);
 
-    ensure_mem_is_higher_half(hhdm_offset.into());
+    ensure_mem_is_higher_half(hhdm_offset);
 
     log_boot_time();
 
     let memory_map_response = MEMORY_MAP_REQUEST.get_response().unwrap();
-    pt_allocator_2::init::init(memory_map_response, hhdm_offset.into());
+    pt_allocator_2::init::init(memory_map_response, hhdm_offset);
     log_memory_usage(memory_map_response);
 
     // Test assuming 100MiB is available for dynamic allocation
     // test_allocator(0x6400000);
 
-    let result = unsafe { acpi::init(rsdp_addr, hhdm_offset) };
-    log::info!("ACPI Tables: {:#?}", result);
-
-    init_cpus(mp_response)
+    init_cpus(mp_response, rsdp_addr, hhdm_offset)
 }

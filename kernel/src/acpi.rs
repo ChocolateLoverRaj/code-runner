@@ -6,9 +6,7 @@ use crate::{acpi_handler_impl::AcpiHandlerImpl, hhdm_offset::HhdmOffset, rsdp_ad
 
 pub static ACPI_TABLES: InitLater<Spinlock<AcpiTables<AcpiHandlerImpl>>> = InitLater::uninit();
 
-/// # Safety
-/// RSDP address must be valid, HHDM offset must be valid
-pub unsafe fn init(
+pub fn init(
     rsdp_addr: RsdpAddr,
     hhdm_offset: HhdmOffset,
 ) -> AcpiResult<&'static Spinlock<AcpiTables<AcpiHandlerImpl>>> {

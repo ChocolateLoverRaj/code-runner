@@ -9,6 +9,7 @@ use x86_64::{
 };
 
 use crate::{
+    hhdm_offset::HhdmOffset,
     pt_allocator_2::{
         get_offset_page_table::get_offset_page_table, pt_frame_allocator::PtFrameAllocator,
         PHYS_MEM_TRACKER, PHYS_MEM_USED_BY_KERNEL,
@@ -20,7 +21,7 @@ use super::{is_offset_mapped::is_offset_mapped, KERNEL_ADDRESS_SPACE_TRACKER};
 
 pub struct PtAllocator2 {
     pub(crate) memory_map_response: &'static MemoryMapResponse,
-    pub(crate) hhdm_offset: u64,
+    pub(crate) hhdm_offset: HhdmOffset,
 }
 
 unsafe impl GlobalAlloc for PtAllocator2 {
@@ -57,7 +58,8 @@ unsafe impl GlobalAlloc for PtAllocator2 {
 
         // If the entire layout is in a single phys frame, we can just use a pointer to an offset-mapped page
         let ptr = if first_frame_portion.len() == layout.size() {
-            VirtAddr::new_truncate(first_frame_portion.start as u64 + self.hhdm_offset).as_mut_ptr()
+            VirtAddr::new_truncate(first_frame_portion.start as u64 + u64::from(self.hhdm_offset))
+                .as_mut_ptr()
         } else {
             // Find continuous virt range (virt must be continuous, phys only has to be made of continuous 4KiB chunks)
             let page_count = {
@@ -158,7 +160,8 @@ unsafe impl GlobalAlloc for PtAllocator2 {
         if is_offset_mapped {
             // Just mark phys as unused. No need to change page mappings.
             let phys_range = {
-                let phys_start = (VirtAddr::from_ptr(ptr) - self.hhdm_offset).into_number();
+                let phys_start =
+                    (VirtAddr::from_ptr(ptr) - u64::from(self.hhdm_offset)).into_number();
                 phys_start..phys_start + layout.size()
             };
             log::debug!(
@@ -332,12 +335,13 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                         .translate_addr(current_page.start_address())
                         .unwrap()
                         .as_u64()
-                        + self.hhdm_offset,
+                        + u64::from(self.hhdm_offset),
                 )
                 .as_mut_ptr::<u8>();
-                let new_frame_ptr =
-                    VirtAddr::new_truncate(frame.start_address().as_u64() + self.hhdm_offset)
-                        .as_mut_ptr();
+                let new_frame_ptr = VirtAddr::new_truncate(
+                    frame.start_address().as_u64() + u64::from(self.hhdm_offset),
+                )
+                .as_mut_ptr();
                 log::debug!(
                     "Copying from {:?} to {:?}. Current page count: {}. Current full page count: {}, is offset mapped: {}",
                     current_frame_ptr,

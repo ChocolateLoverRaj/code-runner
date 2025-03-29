@@ -5,10 +5,11 @@ use alloc::boxed::Box;
 use limine::response::MpResponse;
 use spinning_top::Spinlock;
 use util::init_later::InitLater;
-use x2apic::lapic::LocalApicBuilder;
+use x2apic::lapic::{LocalApic, LocalApicBuilder};
 use x86_64::{
+    instructions::interrupts,
     structures::{
-        idt::{self},
+        idt::{self, InterruptStackFrame},
         tss::TaskStateSegment,
     },
     VirtAddr,
@@ -16,8 +17,9 @@ use x86_64::{
 
 use crate::{
     acpi::ACPI_TABLES,
+    hhdm_offset::HhdmOffset,
     hlt_loop::hlt_loop,
-    limine_requests::{HHDM_REQUEST, RSDP_REQUEST},
+    map_local_xapic::{map_local_xapic, LocalXapicVirtAddr},
     modules::{
         double_fault_handler_entry::get_double_fault_entry, gdt::Gdt, idt::IdtBuilder,
         logging_breakpoint_handler::logging_breakpoint_handler,
@@ -32,10 +34,14 @@ use crate::{
         panicking_stack_segment_fault_handler::panicking_stack_segment_fault_handler,
         spurious_interrupt_handler::set_spurious_interrupt_handler, tss::TssBuilder,
     },
+    nmi_handler::{self, nmi_handler},
+    rsdp_addr::RsdpAddr,
     store_but_borrow_mut::StoreButBorrowMut,
     tasks::StackChunk,
     IOPB_SIZE,
 };
+
+static LOCAL_XAPIC: InitLater<Option<LocalXapicVirtAddr>> = InitLater::uninit();
 
 #[derive(Debug)]
 struct StaticStuff0 {
@@ -68,7 +74,13 @@ struct StaticStuff2 {
 static CPU_LOCAL_STATIC_STUFF_2: InitLater<Box<[StoreButBorrowMut<StaticStuff2>]>> =
     InitLater::uninit();
 
-pub fn init_cpus(mp_response: &mut MpResponse) -> ! {
+pub static CPU_LOCAL_APICS: InitLater<Box<[InitLater<Spinlock<LocalApic>>]>> = InitLater::uninit();
+
+pub fn init_cpus(mp_response: &mut MpResponse, rsdp_addr: RsdpAddr, hhdm_offset: HhdmOffset) -> ! {
+    let acpi_tables = crate::acpi::init(rsdp_addr, hhdm_offset).unwrap();
+    let local_xapic = map_local_xapic(&acpi_tables.lock(), hhdm_offset).unwrap();
+    LOCAL_XAPIC.try_init(local_xapic);
+
     let cpu_count = mp_response.cpus().len();
 
     CPU_LOCAL_STATIC_STUFF_0
@@ -91,6 +103,9 @@ pub fn init_cpus(mp_response: &mut MpResponse) -> ! {
                 .map(|_| StoreButBorrowMut::uninit())
                 .collect(),
         )
+        .unwrap();
+    CPU_LOCAL_APICS
+        .try_init((0..cpu_count).map(|_| InitLater::uninit()).collect())
         .unwrap();
     mp_response.cpus_mut().iter_mut().for_each(|cpu| {
         cpu.goto_address.write(init_cpu);
@@ -199,6 +214,15 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
                     idt::EntryOptions::present_with_cs(Gdt::cs()),
                 ))
                 .unwrap();
+
+            idt_builder
+                .set_non_maskable_interrupt_entry(idt::Entry::from_handler_fn(
+                    nmi_handler,
+                    idt::EntryOptions::present_with_cs(Gdt::cs()),
+                ))
+                .unwrap();
+
+            /// This is the stack that gets switched to when an interrupt handler is called while the CPU is in user mode
             const PRIV_TSS_STACK_SIZE: usize = 0x2000;
             let mut priv_tss_stack = Box::<[u8]>::new_uninit_slice(PRIV_TSS_STACK_SIZE);
             tss.add_privilege_stack_table_entry({
@@ -230,44 +254,34 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     static_stuff_2.gdt.init();
     static_stuff_1.idt_builder.init();
 
-    let xapic_base = {
-        match ACPI_TABLES
-            .try_get()
-            .unwrap()
-            .lock()
-            .platform_info()
-            .unwrap()
-            .interrupt_model
-        {
-            acpi::InterruptModel::Apic(apic) => apic.local_apic_address,
-            _ => unimplemented!(),
-        }
-    };
-    log::info!("xapic base: 0x{:X}", xapic_base);
-    // let mut lapic = LocalApicBuilder::new()
-    //     .timer_vector(static_stuff_1.timer_interrupt_index as usize)
-    //     .spurious_vector(static_stuff_1.spurious_interrupt_handler_index as usize)
-    //     .error_vector(static_stuff_1.local_apic_error_interrupt_index as usize)
-    //     .set_xapic_base(xapic_base)
-    //     .build()
-    //     .unwrap();
-    // unsafe { lapic.enable() };
-    // unsafe { lapic.disable_timer() };
-
     log::info!("Initialized GDT and IDT on CPU {}", cpu.id);
 
-    // x86_64::instructions::interrupts::int3();
+    let mut lapic = CPU_LOCAL_APICS.try_get().unwrap()[cpu.id as usize]
+        .try_init({
+            let mut builder = LocalApicBuilder::new();
+            builder
+                .timer_vector(static_stuff_1.timer_interrupt_index as usize)
+                .spurious_vector(static_stuff_1.spurious_interrupt_handler_index as usize)
+                .error_vector(static_stuff_1.local_apic_error_interrupt_index as usize);
+            if let Some(local_xapic) = LOCAL_XAPIC.try_get().unwrap() {
+                builder.set_xapic_base(VirtAddr::from(*local_xapic).as_u64());
+            }
+            let mut local_apic = builder.build().unwrap();
+            unsafe { local_apic.enable() };
+            unsafe { local_apic.disable_timer() };
+            Spinlock::new(local_apic)
+        })
+        .unwrap();
+
+    log::info!("Initialized Local APIC on CPU {}", cpu.id);
 
     if cpu.id == 0 {
-        // unsafe { lapic.send_nmi(1) };
-        // unsafe {
-        //     asm!("ud2");
-        // }
+        panic!("Test panic");
     }
 
-    // loop {
-    //     log::info!("Log from CPU {:?}", cpu.id);
-    // }
+    loop {
+        log::info!("Log from CPU {:?}", cpu.id);
+    }
 
     hlt_loop()
 }

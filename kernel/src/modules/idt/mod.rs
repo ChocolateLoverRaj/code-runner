@@ -20,6 +20,7 @@ pub struct IdtBuilder {
     set_segment_not_present_entry: bool,
     set_invalid_opcode_entry: bool,
     set_stack_segment_fault_entry: bool,
+    set_non_maskable_interrupt_entry: bool,
     used_flexible_entries: [bool; MAX_FLEXIBLE_ENTRIES as usize],
 }
 
@@ -36,6 +37,7 @@ impl Default for IdtBuilder {
             set_segment_not_present_entry: false,
             set_invalid_opcode_entry: false,
             set_stack_segment_fault_entry: false,
+            set_non_maskable_interrupt_entry: false,
             used_flexible_entries: [false; MAX_FLEXIBLE_ENTRIES as usize],
         }
     }
@@ -156,6 +158,20 @@ impl IdtBuilder {
         if !self.set_stack_segment_fault_entry {
             self.idt.stack_segment_fault = entry;
             self.set_stack_segment_fault_entry = true;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    #[allow(clippy::result_unit_err)]
+    pub fn set_non_maskable_interrupt_entry(
+        &mut self,
+        entry: idt::Entry<HandlerFunc>,
+    ) -> Result<(), ()> {
+        if !self.set_non_maskable_interrupt_entry {
+            self.idt.non_maskable_interrupt = entry;
+            self.set_non_maskable_interrupt_entry = true;
             Ok(())
         } else {
             Err(())

@@ -1,12 +1,14 @@
 use limine::{memory_map::EntryType, response::MemoryMapResponse};
 use x86_64::VirtAddr;
 
+use crate::hhdm_offset::HhdmOffset;
+
 pub fn is_offset_mapped(
     memory_map_response: &MemoryMapResponse,
-    hhdm_offset: u64,
+    hhdm_offset: HhdmOffset,
     virt_addr: VirtAddr,
 ) -> bool {
-    if let Some(phys_addr_if_hddm) = virt_addr.as_u64().checked_sub(hhdm_offset) {
+    if let Some(phys_addr_if_hddm) = virt_addr.as_u64().checked_sub(hhdm_offset.into()) {
         memory_map_response
             .entries()
             .iter()
