@@ -1,4 +1,4 @@
-use crate::{hlt_loop::hlt_loop, init_cpus::CPU_LOCAL_APICS};
+use crate::{hlt_loop::hlt_loop, init_idt_and_gdt::CPU_LOCAL_APICS};
 use core::{fmt::Write, panic::PanicInfo};
 use x2apic::lapic::IpiAllShorthand;
 use x86_64::instructions::interrupts;

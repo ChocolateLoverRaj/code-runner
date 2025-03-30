@@ -40,6 +40,7 @@ pub mod hhdm_offset;
 pub mod hlt_loop;
 pub mod hpet_memory;
 pub mod init_cpus;
+pub mod init_idt_and_gdt;
 pub mod insert;
 pub mod iopb_size;
 pub mod limine_requests;
