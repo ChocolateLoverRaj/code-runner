@@ -1,7 +1,7 @@
 use limine::response::MemoryMapResponse;
 
 use crate::get_total_memory::{
-    get_acpi_reclaimable_memory, get_bootloader_reclaimable_memory, get_kernel_memory,
+    get_acpi_reclaimable_memory, get_bootloader_reclaimable_memory, get_memory_usage_stats,
     get_total_memory,
 };
 
@@ -18,5 +18,5 @@ pub fn log_memory_usage(memory_map_response: &MemoryMapResponse) {
         "ACPI reclaimable memory: 0x{:X}",
         get_acpi_reclaimable_memory(memory_map_response)
     );
-    log::info!("Used memory: 0x{:X}", get_kernel_memory());
+    log::info!("Used memory: {:#?}", get_memory_usage_stats());
 }

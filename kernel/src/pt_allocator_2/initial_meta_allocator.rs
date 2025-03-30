@@ -19,12 +19,15 @@ use crate::{
     traverse_cr3::PageTableDeepIterator, virt_addr_to_number::VirtAddrToNumber,
 };
 
+use super::memory_usage_stats::MemoryUsageStats;
+
 /// An allocator for initializing our allocator
 #[derive(Clone)]
 pub struct InitialMetaAllocator<'a> {
     pub hhdm_offset: HhdmOffset,
     pub memory_map_response: &'static MemoryMapResponse,
     pub used_phys_bytes: &'a RefCell<usize>,
+    pub memory_usage_stats: &'a RefCell<MemoryUsageStats>,
 }
 
 unsafe impl Allocator for InitialMetaAllocator<'_> {
@@ -75,6 +78,7 @@ unsafe impl Allocator for InitialMetaAllocator<'_> {
             memory_map_response: self.memory_map_response,
             used_phys_bytes: used_phys_bytes.deref_mut(),
         };
+        let mut memory_usage_stats = self.memory_usage_stats.borrow_mut();
         for i in 0..pages_to_map {
             let mut offset_page_table = unsafe {
                 OffsetPageTable::new(
@@ -92,6 +96,8 @@ unsafe impl Allocator for InitialMetaAllocator<'_> {
                 .unwrap()
                 + i as u64;
             let frame = frame_allocator.allocate_frame().unwrap();
+            memory_usage_stats.global_allocator_metadata += 0x1000;
+            let used_phys_bytes_before = *frame_allocator.used_phys_bytes;
             unsafe {
                 offset_page_table.map_to(
                     page,
@@ -102,6 +108,8 @@ unsafe impl Allocator for InitialMetaAllocator<'_> {
             }
             .unwrap()
             .flush();
+            memory_usage_stats.page_tables +=
+                *frame_allocator.used_phys_bytes - used_phys_bytes_before;
             log::debug!("Mapped {:?} to {:?}", page, frame);
         }
 

@@ -19,15 +19,11 @@
 extern crate alloc;
 
 pub mod acpi;
+pub mod acpi_handler_impl;
 pub mod apic;
 pub mod colorful_logger;
 pub mod combined_logger;
 pub mod context;
-// pub mod cool_keyboard_interrupt_handler;
-// pub mod demo_async;
-// pub mod demo_async_keyboard_drop;
-// pub mod demo_async_rtc_drop;
-// pub mod demo_maze_roller_game;
 pub mod draw_rust;
 pub mod dynamic_combined_logger;
 pub mod embedded_graphics_writer;
@@ -38,10 +34,8 @@ pub mod find_used_virt_addrs;
 pub mod frame_buffer;
 pub mod get_rgb_color;
 pub mod get_total_memory;
-pub mod hlt_loop;
-// pub mod hpet;
-pub mod acpi_handler_impl;
 pub mod hhdm_offset;
+pub mod hlt_loop;
 pub mod hpet_memory;
 pub mod init_cpus;
 pub mod insert;
@@ -65,7 +59,6 @@ pub mod modules;
 pub mod nmi_handler;
 pub mod not_const_allocator;
 pub mod panic_handler;
-pub mod phys_mapper;
 pub mod pic8259_interrupts;
 pub mod pt_allocator_2;
 pub mod rsdp_addr;
@@ -93,71 +86,25 @@ pub mod write_with_cr;
 
 use conquer_once::noblock::OnceCell;
 use ensure_mem_is_higher_half::ensure_mem_is_higher_half;
-use get_total_memory::{
-    get_acpi_reclaimable_memory, get_bootloader_reclaimable_memory, get_kernel_memory,
-    get_total_memory,
-};
 use hhdm_offset::HhdmOffset;
-use hlt_loop::hlt_loop;
-use hpet_memory::HpetMemory;
 use init_cpus::init_cpus;
 use iopb_size::IOPB_SIZE;
-use limine::{self, framebuffer::MemoryModel, memory_map::EntryType};
 use limine_requests::{
-    BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, KERNEL_ADDRESS_REQUEST,
-    LIMINE_BOOTLOADER_INFO_REQUEST, MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST, RSDP_REQUEST,
+    BASE_REVISION, HHDM_REQUEST, KERNEL_ADDRESS_REQUEST, MEMORY_MAP_REQUEST, MODULE_REQUEST,
+    MP_REQUEST, RSDP_REQUEST,
 };
 use log_boot_time::log_boot_time;
 use log_memory_usage::log_memory_usage;
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use modules::{
-    double_fault_handler_entry::get_double_fault_entry,
     gdt::Gdt,
-    get_apic::get_apic,
-    get_io_apic::get_io_apic,
-    get_local_apic::get_local_apic,
     idt::{disable_pic8259::disable_pic8259, IdtBuilder},
-    logging_breakpoint_handler::logging_breakpoint_handler,
-    logging_timer_interrupt_handler::get_logging_timer_interrupt_handler,
-    panicking_double_fault_handler::panicking_double_fault_handler,
-    panicking_general_protection_fault_handler::panicking_general_protection_fault_handler,
-    panicking_invalid_opcode_handler::panicking_invalid_opcode_handler,
-    panicking_invalid_tss_fault_handler::panicking_invalid_tss_fault_handler,
-    panicking_local_apic_error_interrupt_handler::panicking_local_apic_error_interrupt_handler,
-    panicking_page_fault_handler::panicking_page_fault_handler,
-    panicking_segment_not_present_handler::panicking_segment_not_present_handler,
-    panicking_spurious_interrupt_handler::panicking_spurious_interrupt_handler,
-    panicking_stack_segment_fault_handler::panicking_stack_segment_fault_handler,
-    spurious_interrupt_handler::set_spurious_interrupt_handler,
-    static_local_apic::{self, LOCAL_APIC},
-    syscall::{init_syscalls::init_syscalls, syscall_handler_closure::set_syscall_handler_closure},
-    tss::TssBuilder,
-    unsafe_local_apic::UnsafeLocalApic,
 };
-use phys_mapper::PhysMapper;
 use rsdp_addr::RsdpAddr;
-use run_tasks::run_tasks;
-use spawn_task::spawn_task;
-use spcr::replace_serial_logger_if_redirected;
-use spin::{Mutex, RwLock};
 use spinning_top::Spinlock;
 use store_but_borrow_mut::StoreButBorrowMut;
-use syscall_handler_closure::syscall_handler_closure;
-use tasks::TASKS;
-use test_allocator::test_allocator;
-use util::init_later::InitLater;
-use volatile::VolatileRef;
-use x86_64::{
-    instructions::interrupts,
-    registers::control::{Cr3, Cr3Flags},
-    structures::{
-        idt::{self, HandlerFunc, HandlerFuncWithErrCode, PageFaultHandlerFunc},
-        paging::PhysFrame,
-        tss::TaskStateSegment,
-    },
-    PhysAddr, VirtAddr,
-};
+use x86_64::structures::tss::TaskStateSegment;
 
 #[derive(Debug)]
 struct StaticStuff0 {
@@ -176,8 +123,6 @@ struct StaticStuff1 {
 }
 
 static STATIC_STUFF_1: OnceCell<StaticStuff1> = OnceCell::uninit();
-
-static HPET: OnceCell<RwLock<VolatileRef<HpetMemory>>> = OnceCell::uninit();
 
 #[export_name = "kernel_main"]
 unsafe extern "C" fn kernel_main() -> ! {

@@ -7,7 +7,7 @@ use crate::{
     hhdm_offset::HhdmOffset,
     pt_allocator_2::{
         initial_meta_allocator::InitialMetaAllocator, pt_allocator_2::PtAllocator2, ALLOCATOR,
-        KERNEL_ADDRESS_SPACE_TRACKER, PHYS_MEM_TRACKER, PHYS_MEM_USED_BY_KERNEL,
+        KERNEL_ADDRESS_SPACE_TRACKER, MEMORY_USAGE_STATS, PHYS_MEM_TRACKER,
     },
     traverse_cr3::PageTableDeepIterator,
     virt_addr_to_number::VirtAddrToNumber,
@@ -16,10 +16,12 @@ use crate::{
 pub fn init(memory_map_response: &'static MemoryMapResponse, hhdm_offset: HhdmOffset) {
     let used_phys_bytes = Default::default();
     // We need N to be 8 because making the phys_mem_tracker could use 4 items and making the kernel_address_space_tracker could use 4 items
+    let memory_usage_stats = Default::default();
     let initial_meta_allocator = InitialMetaAllocator {
         hhdm_offset,
         used_phys_bytes: &used_phys_bytes,
         memory_map_response,
+        memory_usage_stats: &memory_usage_stats,
     };
 
     // Calculate the number of pages. These pages could be >4KiB, and that's okay
@@ -151,8 +153,8 @@ pub fn init(memory_map_response: &'static MemoryMapResponse, hhdm_offset: HhdmOf
         })
         .unwrap();
 
-    PHYS_MEM_USED_BY_KERNEL
-        .try_init(Spinlock::new(used_phys_bytes.take()))
+    MEMORY_USAGE_STATS
+        .try_init(Spinlock::new(memory_usage_stats.take()))
         .unwrap();
 
     KERNEL_ADDRESS_SPACE_TRACKER

@@ -1,22 +1,20 @@
-use core::{arch::asm, mem::MaybeUninit, ptr::NonNull};
+use core::mem::MaybeUninit;
 
-use acpi::AcpiHandler;
 use alloc::boxed::Box;
 use limine::response::MpResponse;
 use spinning_top::Spinlock;
 use util::init_later::InitLater;
 use x2apic::lapic::{LocalApic, LocalApicBuilder};
 use x86_64::{
-    instructions::interrupts,
     structures::{
-        idt::{self, InterruptStackFrame},
+        idt::{self},
         tss::TaskStateSegment,
     },
     VirtAddr,
 };
 
 use crate::{
-    acpi::ACPI_TABLES,
+    get_total_memory::get_memory_usage_stats,
     hhdm_offset::HhdmOffset,
     hlt_loop::hlt_loop,
     map_local_xapic::{map_local_xapic, LocalXapicVirtAddr},
@@ -34,7 +32,7 @@ use crate::{
         panicking_stack_segment_fault_handler::panicking_stack_segment_fault_handler,
         spurious_interrupt_handler::set_spurious_interrupt_handler, tss::TssBuilder,
     },
-    nmi_handler::{self, nmi_handler},
+    nmi_handler::nmi_handler,
     rsdp_addr::RsdpAddr,
     store_but_borrow_mut::StoreButBorrowMut,
     tasks::StackChunk,
@@ -256,7 +254,7 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
 
     log::info!("Initialized GDT and IDT on CPU {}", cpu.id);
 
-    let mut lapic = CPU_LOCAL_APICS.try_get().unwrap()[cpu.id as usize]
+    CPU_LOCAL_APICS.try_get().unwrap()[cpu.id as usize]
         .try_init({
             let mut builder = LocalApicBuilder::new();
             builder
@@ -274,14 +272,15 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
         .unwrap();
 
     log::info!("Initialized Local APIC on CPU {}", cpu.id);
+    log::info!("{:#?}", get_memory_usage_stats());
 
-    if cpu.id == 0 {
-        panic!("Test panic");
-    }
+    // if cpu.id == 0 {
+    //     panic!("Test panic");
+    // }
 
-    loop {
-        log::info!("Log from CPU {:?}", cpu.id);
-    }
+    // loop {
+    //     log::info!("Log from CPU {:?}", cpu.id);
+    // }
 
     hlt_loop()
 }

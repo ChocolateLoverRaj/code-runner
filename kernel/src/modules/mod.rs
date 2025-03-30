@@ -3,8 +3,6 @@
 pub mod double_fault_handler_entry;
 pub mod gdt;
 pub mod get_apic;
-pub mod get_io_apic;
-pub mod get_local_apic;
 pub mod idt;
 pub mod logging_breakpoint_handler;
 pub mod logging_timer_interrupt_handler;

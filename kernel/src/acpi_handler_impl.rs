@@ -10,7 +10,7 @@ use crate::{
     hhdm_offset::HhdmOffset,
     pt_allocator_2::{
         get_offset_page_table::get_offset_page_table, pt_frame_allocator_2::PtFrameAllocator2,
-        KERNEL_ADDRESS_SPACE_TRACKER, PHYS_MEM_TRACKER,
+        KERNEL_ADDRESS_SPACE_TRACKER, MEMORY_USAGE_STATS, PHYS_MEM_TRACKER,
     },
 };
 
@@ -27,6 +27,7 @@ impl AcpiHandler for AcpiHandlerImpl {
     ) -> acpi::PhysicalMapping<Self, T> {
         let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
         let mut virt_mem = KERNEL_ADDRESS_SPACE_TRACKER.try_get().unwrap().lock();
+        let mut mem_usage = MEMORY_USAGE_STATS.try_get().unwrap().lock();
 
         let page_count =
             (physical_address + size - 1).div_ceil(0x1000) - physical_address.div_floor(0x1000);
@@ -55,10 +56,7 @@ impl AcpiHandler for AcpiHandlerImpl {
                 )
             };
         }
-        log::warn!(
-            "Used {} phys bytes to create page tables. We need to keep track of this.",
-            used_bytes
-        );
+        mem_usage.page_tables += used_bytes as usize;
         let mapped_length_from_start_ptr =
             ((first_page + page_count as u64).start_address() - virt_start) as usize;
         unsafe {

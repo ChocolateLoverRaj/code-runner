@@ -1,6 +1,5 @@
 use conquer_once::noblock::OnceCell;
 use spin::Mutex;
-use x2apic::lapic::LocalApic;
 use x86_64::structures::idt::{HandlerFunc, InterruptStackFrame};
 
 use super::unsafe_local_apic::UnsafeLocalApic;
