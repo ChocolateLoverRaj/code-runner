@@ -12,8 +12,7 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
     interrupts::disable();
 
     if let Ok(local_apics) = CPU_LOCAL_APICS.try_get() {
-        // FIXME: This is very hacky, we need a proper way of knowing th current CPU id. This code might reference a different local apic.
-        if let Ok(local_apic) = local_apics.first().unwrap().try_get() {
+        if let Ok(local_apic) = local_apics.try_get() {
             unsafe { local_apic.force_unlock() };
             unsafe {
                 local_apic

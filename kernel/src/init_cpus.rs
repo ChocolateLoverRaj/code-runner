@@ -1,7 +1,7 @@
 use core::mem::MaybeUninit;
 
 use alloc::boxed::Box;
-use limine::response::MpResponse;
+use limine::response::{ModuleResponse, MpResponse};
 use spinning_top::Spinlock;
 use util::init_later::InitLater;
 use x2apic::lapic::{LocalApic, LocalApicBuilder};
@@ -14,6 +14,8 @@ use x86_64::{
 };
 
 use crate::{
+    cpu_local::CpuLocal,
+    cpu_local_data,
     get_total_memory::get_memory_usage_stats,
     hhdm_offset::HhdmOffset,
     hlt_loop::hlt_loop,
@@ -33,21 +35,21 @@ use crate::{
         spurious_interrupt_handler::set_spurious_interrupt_handler, tss::TssBuilder,
     },
     nmi_handler::nmi_handler,
+    parse_ram_disk::parse_ram_disk,
     rsdp_addr::RsdpAddr,
     store_but_borrow_mut::StoreButBorrowMut,
     tasks::StackChunk,
     IOPB_SIZE,
 };
 
-static LOCAL_XAPIC: InitLater<Option<LocalXapicVirtAddr>> = InitLater::uninit();
+static LOCAL_APIC_ADDR: InitLater<Option<LocalXapicVirtAddr>> = InitLater::uninit();
 
 #[derive(Debug)]
 struct StaticStuff0 {
     double_fault_handler_stack: Box<[MaybeUninit<StackChunk>]>,
 }
 
-static CPU_LOCAL_STATIC_STUFF_0: InitLater<Box<[StoreButBorrowMut<StaticStuff0>]>> =
-    InitLater::uninit();
+static CPU_LOCAL_STATIC_STUFF_0: CpuLocal<StoreButBorrowMut<StaticStuff0>> = CpuLocal::uninit();
 
 #[derive(Debug)]
 struct StaticStuff1 {
@@ -60,8 +62,7 @@ struct StaticStuff1 {
     priv_tss_stack: Box<[MaybeUninit<u8>]>,
 }
 
-static CPU_LOCAL_STATIC_STUFF_1: InitLater<Box<[StoreButBorrowMut<StaticStuff1>]>> =
-    InitLater::uninit();
+static CPU_LOCAL_STATIC_STUFF_1: CpuLocal<StoreButBorrowMut<StaticStuff1>> = CpuLocal::uninit();
 
 #[derive(Debug)]
 struct StaticStuff2 {
@@ -69,42 +70,35 @@ struct StaticStuff2 {
     iopb: Spinlock<&'static mut [u8; IOPB_SIZE]>,
 }
 
-static CPU_LOCAL_STATIC_STUFF_2: InitLater<Box<[StoreButBorrowMut<StaticStuff2>]>> =
-    InitLater::uninit();
+static CPU_LOCAL_STATIC_STUFF_2: CpuLocal<StoreButBorrowMut<StaticStuff2>> = CpuLocal::uninit();
 
-pub static CPU_LOCAL_APICS: InitLater<Box<[InitLater<Spinlock<LocalApic>>]>> = InitLater::uninit();
+pub static CPU_LOCAL_APICS: CpuLocal<InitLater<Spinlock<LocalApic>>> = CpuLocal::uninit();
 
-pub fn init_cpus(mp_response: &mut MpResponse, rsdp_addr: RsdpAddr, hhdm_offset: HhdmOffset) -> ! {
+pub fn init_cpus(
+    mp_response: &mut MpResponse,
+    rsdp_addr: RsdpAddr,
+    hhdm_offset: HhdmOffset,
+    module_response: Option<&ModuleResponse>,
+) -> ! {
+    cpu_local_data::init(mp_response);
+
+    let ram_disk = parse_ram_disk(module_response.unwrap()).unwrap();
+    log::info!("Ram disk meta: {:#?}", ram_disk.meta_data);
+
     let acpi_tables = crate::acpi::init(rsdp_addr, hhdm_offset).unwrap();
-    let local_xapic = map_local_xapic(&acpi_tables.lock(), hhdm_offset).unwrap();
-    LOCAL_XAPIC.try_init(local_xapic);
-
-    let cpu_count = mp_response.cpus().len();
+    let local_apic_addr = map_local_xapic(&acpi_tables.lock(), hhdm_offset).unwrap();
+    LOCAL_APIC_ADDR.try_init(local_apic_addr);
 
     CPU_LOCAL_STATIC_STUFF_0
-        .try_init(
-            (0..cpu_count)
-                .map(|_| StoreButBorrowMut::uninit())
-                .collect(),
-        )
+        .try_init(StoreButBorrowMut::uninit)
         .unwrap();
     CPU_LOCAL_STATIC_STUFF_1
-        .try_init(
-            (0..cpu_count)
-                .map(|_| StoreButBorrowMut::uninit())
-                .collect(),
-        )
+        .try_init(StoreButBorrowMut::uninit)
         .unwrap();
     CPU_LOCAL_STATIC_STUFF_2
-        .try_init(
-            (0..cpu_count)
-                .map(|_| StoreButBorrowMut::uninit())
-                .collect(),
-        )
+        .try_init(StoreButBorrowMut::uninit)
         .unwrap();
-    CPU_LOCAL_APICS
-        .try_init((0..cpu_count).map(|_| InitLater::uninit()).collect())
-        .unwrap();
+    CPU_LOCAL_APICS.try_init(InitLater::uninit).unwrap();
     mp_response.cpus_mut().iter_mut().for_each(|cpu| {
         cpu.goto_address.write(init_cpu);
     });
@@ -121,20 +115,20 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     // This is probably needed cuz the allocator changed page tables. It did not change the location of the L4 page table though.
     x86_64::instructions::tlb::flush_all();
 
+    cpu_local_data::init_local(cpu);
+
     log::info!("Hello from CPU: {:?}. LAPIC ID: {:?}", cpu.id, cpu.lapic_id);
 
-    // let _array = [0_u8; 0x10000];
-    // let b = CPU_LOCAL_TEST.try_get().unwrap();
-    // log::info!("Box: {:p}", b.deref());
-    // x86_64::instructions::tlb::flush_all();
-    // log::info!("Box: {:?}", b[cpu.id as usize].store_but_borrow_mut(3));
-
-    let static_stuff_0 = CPU_LOCAL_STATIC_STUFF_0.try_get().unwrap()[cpu.id as usize]
+    let static_stuff_0 = CPU_LOCAL_STATIC_STUFF_0
+        .try_get()
+        .unwrap()
         .store_but_borrow_mut(StaticStuff0 {
             double_fault_handler_stack: Box::new_uninit_slice(0x200),
         })
         .unwrap();
-    let static_stuff_1 = CPU_LOCAL_STATIC_STUFF_1.try_get().unwrap()[cpu.id as usize]
+    let static_stuff_1 = CPU_LOCAL_STATIC_STUFF_1
+        .try_get()
+        .unwrap()
         .store_but_borrow_mut({
             let mut tss = TssBuilder::<IOPB_SIZE>::default();
             let mut idt_builder = IdtBuilder::default();
@@ -239,7 +233,9 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
             }
         })
         .unwrap();
-    let static_stuff_2 = CPU_LOCAL_STATIC_STUFF_2.try_get().unwrap()[cpu.id as usize]
+    let static_stuff_2 = CPU_LOCAL_STATIC_STUFF_2
+        .try_get()
+        .unwrap()
         .store_but_borrow_mut({
             let (tss_pointer, iopb) = static_stuff_1.tss.ready_to_activate();
             let gdt = Gdt::new(tss_pointer);
@@ -254,14 +250,16 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
 
     log::info!("Initialized GDT and IDT on CPU {}", cpu.id);
 
-    CPU_LOCAL_APICS.try_get().unwrap()[cpu.id as usize]
+    CPU_LOCAL_APICS
+        .try_get()
+        .unwrap()
         .try_init({
             let mut builder = LocalApicBuilder::new();
             builder
                 .timer_vector(static_stuff_1.timer_interrupt_index as usize)
                 .spurious_vector(static_stuff_1.spurious_interrupt_handler_index as usize)
                 .error_vector(static_stuff_1.local_apic_error_interrupt_index as usize);
-            if let Some(local_xapic) = LOCAL_XAPIC.try_get().unwrap() {
+            if let Some(local_xapic) = LOCAL_APIC_ADDR.try_get().unwrap() {
                 builder.set_xapic_base(VirtAddr::from(*local_xapic).as_u64());
             }
             let mut local_apic = builder.build().unwrap();
@@ -274,7 +272,9 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     log::info!("Initialized Local APIC on CPU {}", cpu.id);
     log::info!("{:#?}", get_memory_usage_stats());
 
+    x86_64::instructions::interrupts::int3();
     // if cpu.id == 0 {
+    //     for i in 0..500_000_000 {}
     //     panic!("Test panic");
     // }
 
