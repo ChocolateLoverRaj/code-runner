@@ -1,4 +1,6 @@
+use common::ram_disk::RamDisk;
 use limine::response::{ModuleResponse, MpResponse};
+use util::init_later::InitLater;
 
 use crate::{
     cpu_local_data,
@@ -7,20 +9,22 @@ use crate::{
     hlt_loop::hlt_loop,
     init_idt_and_gdt::{init_idt_and_gdt, init_vars_for_idt_and_gdt},
     parse_ram_disk::parse_ram_disk,
-    rsdp_addr::RsdpAddr,
+    rsdp_addr::RsdpAddr, spawn_task::spawn_task,
 };
+
+static RAM_DISK: InitLater<RamDisk<'static>> = InitLater::uninit();
 
 pub fn init_cpus(
     mp_response: &mut MpResponse,
     rsdp_addr: RsdpAddr,
     hhdm_offset: HhdmOffset,
-    module_response: Option<&ModuleResponse>,
+    module_response: Option<&'static ModuleResponse>,
 ) -> ! {
     cpu_local_data::init(mp_response);
     init_vars_for_idt_and_gdt(rsdp_addr, hhdm_offset);
 
     let ram_disk = parse_ram_disk(module_response.unwrap()).unwrap();
-    log::info!("Ram disk meta: {:#?}", ram_disk.meta_data);
+    RAM_DISK.try_init(ram_disk).unwrap();
 
     mp_response.cpus_mut().iter_mut().for_each(|cpu| {
         cpu.goto_address.write(init_cpu);
@@ -56,6 +60,8 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     // loop {
     //     log::info!("Log from CPU {:?}", cpu.id);
     // }
+
+    spawn_task(RAM_DISK.try_get().unwrap(), frame_allocator, mapper)
 
     hlt_loop()
 }

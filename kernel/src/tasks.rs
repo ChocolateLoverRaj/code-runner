@@ -2,6 +2,7 @@ use core::{mem::MaybeUninit, ops::Range};
 
 use alloc::{boxed::Box, vec::Vec};
 use spinning_top::Spinlock;
+use util::continuous_bool_vec::ContinuousBoolVec;
 use x86_64::{
     structures::paging::{PhysFrame, Size4KiB},
     PhysAddr, VirtAddr,
@@ -43,6 +44,7 @@ pub enum TaskState {
 pub struct Task {
     pub task_type: TaskType,
     pub state: TaskState,
+    pub owned_phys_mem: ContinuousBoolVec<Vec<usize>>,
 }
 
 /// Tasks are arranged from highest priority first to lowest priority

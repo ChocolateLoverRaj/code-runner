@@ -1,9 +1,10 @@
-use core::slice;
+use core::{slice, usize};
 
 use alloc::boxed::Box;
 use anyhow::{anyhow, Context};
 use common::{mem::KERNEL_VIRT_MEM_START, ram_disk::RamDisk};
 use elf::{endian::NativeEndian, ElfBytes};
+use util::continuous_bool_vec::ContinuousBoolVec;
 use x86_64::{
     registers::control::Cr3,
     structures::paging::{FrameAllocator, Mapper, Page, PageSize, PageTableFlags, Size4KiB},
@@ -12,6 +13,7 @@ use x86_64::{
 
 use crate::{
     iopb_size::IOPB_SIZE,
+    pt_allocator_2::{MEMORY_USAGE_STATS, PHYS_MEM_TRACKER},
     tasks::{ReadyToStartState, StackChunk, Task, TaskState, TaskType, UserTaskData, TASKS},
 };
 
@@ -27,11 +29,11 @@ pub fn elf_flags_to_page_table_flags(elf_flags: u32) -> PageTableFlags {
     page_table_flags
 }
 
-pub fn spawn_task(
-    program: RamDisk<'static>,
-    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-    mapper: &mut impl Mapper<Size4KiB>,
-) -> anyhow::Result<()> {
+pub fn spawn_task(program: RamDisk<'static>) -> anyhow::Result<()> {
+    let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
+    let mut memory_stats = MEMORY_USAGE_STATS.try_get().unwrap().lock();
+    let mut task_phys_mem = ContinuousBoolVec::new(usize::MAX, false);
+
     let elf = ElfBytes::<NativeEndian>::minimal_parse(&program.elf)?;
     let loadable_segments = elf
         .segments()
