@@ -1,9 +1,16 @@
 use alloc::{boxed::Box, collections::btree_map::BTreeMap};
 use common::syscall_uuids::{SYSCALL_EXISTS, SYSCALL_EXIT, SYSCALL_MAKE_ME_LOGGER};
 use uuid::Uuid;
-use x86_64::VirtAddr;
+use x86_64::{registers::control::Cr3, VirtAddr};
 
-use crate::modules::syscall::syscall_handler_closure::PushedRegisters;
+use crate::{
+    hhdm_offset::HhdmOffset,
+    limine_requests::HHDM_REQUEST,
+    modules::syscall::syscall_handler_closure::PushedRegisters,
+    pt_allocator_2::PHYS_MEM_TRACKER,
+    run_tasks::run_tasks,
+    tasks::{try_get_cpu_task_data, TaskType, TASKS},
+};
 
 pub trait Includes<K> {
     fn contains_key(&self, key: &K) -> bool;
@@ -91,7 +98,37 @@ pub fn syscall_handler_closure(
         let syscall_uuid = Uuid::from_u64_pair(input0, input1);
         match syscall_handlers.get(&syscall_uuid) {
             None => {
-                panic!("Invalid syscall");
+                let process_id = try_get_cpu_task_data()
+                    .unwrap()
+                    .lock()
+                    .current_task
+                    .unwrap();
+                log::warn!("Invalid syscall. Terminating process: {}", process_id);
+                // Switch Cr3 back to the kernel's Cr3 cuz we will be "deleting" the process's Cr3
+                let mut tasks = TASKS.try_get().unwrap().lock();
+                {
+                    let cr3_flags = Cr3::read().1;
+                    unsafe { Cr3::write(tasks.kernel_cr3, cr3_flags) };
+                }
+                let (task_index, task) = tasks
+                    .tasks
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_index, task)| task.id == process_id)
+                    .unwrap();
+                // Clean up all phys frames
+                {
+                    let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
+                    task.owned_phys_mem
+                        .iter()
+                        .filter(|segment| segment.value)
+                        .for_each(|segment| {
+                            phys_mem.set(segment.position..segment.position + segment.len, false);
+                        });
+                }
+                // FIXME: This deletes the current stack!
+                tasks.tasks.remove(task_index);
+                run_tasks((&HHDM_REQUEST).try_into().unwrap())
             }
             Some(syscall_handler) => syscall_handler(
                 [input2, input3, input4, input5, input6],

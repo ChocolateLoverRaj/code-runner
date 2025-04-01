@@ -10,7 +10,7 @@ use crate::{
     init_idt_and_gdt::get_iobp,
     modules::syscall::enter_user_mode::{enter_user_mode, EnterUserModeInput},
     pt_allocator_2::get_offset_page_table::get_offset_page_table_with_l4,
-    tasks::{TaskState, TaskType, TASKS},
+    tasks::{try_get_cpu_task_data, TaskState, TaskType, TASKS},
 };
 
 pub fn run_tasks(hhdm_offset: HhdmOffset) -> ! {
@@ -44,6 +44,8 @@ pub fn run_tasks(hhdm_offset: HhdmOffset) -> ! {
                                     data.kernel_stack.as_ptr_range().end,
                                 ));
                                 **get_iobp().lock() = data.iopb;
+                                try_get_cpu_task_data().unwrap().lock().current_task =
+                                    Some(task.id);
                                 Action::EnterUserMode(EnterUserModeInput {
                                     initialized_syscalls: tasks.initialized_syscalls,
                                     code: state.instruction_pointer,

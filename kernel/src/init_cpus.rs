@@ -13,7 +13,7 @@ use crate::{
     rsdp_addr::RsdpAddr,
     run_tasks::run_tasks,
     spawn_task::spawn_task,
-    tasks::{try_init_tasks, TASKS},
+    tasks::{try_init_cpu_task_data, try_init_tasks, TASKS},
 };
 
 static RAM_DISK: InitLater<RamDisk<'static>> = InitLater::uninit();
@@ -30,6 +30,7 @@ pub fn init_cpus(
     let ram_disk = parse_ram_disk(module_response.unwrap()).unwrap();
     RAM_DISK.try_init(ram_disk).unwrap();
     try_init_tasks().unwrap();
+    try_init_cpu_task_data().unwrap();
 
     mp_response.cpus_mut().iter_mut().for_each(|cpu| {
         cpu.goto_address.write(init_cpu);

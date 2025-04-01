@@ -1,10 +1,10 @@
-use core::{mem::MaybeUninit, ops::Range};
+use core::{mem::MaybeUninit, ops::Range, sync::atomic::AtomicUsize};
 
 use alloc::{boxed::Box, vec::Vec};
 use spinning_top::Spinlock;
 use util::{
     continuous_bool_vec::ContinuousBoolVec,
-    init_later::{InitLater, TryInitError},
+    init_later::{InitLater, TryGetError, TryInitError},
 };
 use x86_64::{
     registers::control::Cr3,
@@ -13,12 +13,13 @@ use x86_64::{
 };
 
 use crate::{
+    cpu_local::CpuLocal,
     iopb_size::IOPB_SIZE,
     modules::syscall::{
         init_syscalls::{init_syscalls, InitializedSyscalls},
         syscall_handler_closure::set_syscall_handler_closure,
     },
-    syscall_handler_closure::{self, syscall_handler_closure},
+    syscall_handler_closure::syscall_handler_closure,
 };
 
 #[repr(C, align(16))]
@@ -56,6 +57,7 @@ pub struct Task {
     pub task_type: TaskType,
     pub state: TaskState,
     pub owned_phys_mem: ContinuousBoolVec<Vec<usize>>,
+    pub id: usize,
 }
 
 #[derive(Debug)]
@@ -80,6 +82,8 @@ impl Tasks {
 /// Tasks are arranged from highest priority first to lowest priority
 pub static TASKS: InitLater<Spinlock<Tasks>> = InitLater::uninit();
 
+pub static NEXT_TASK_ID: AtomicUsize = AtomicUsize::new(0);
+
 pub fn get_running_task(tasks: &mut Vec<Task>) -> Option<&mut Task> {
     tasks.iter_mut().find(|task| match task.state {
         TaskState::Running => true,
@@ -89,4 +93,19 @@ pub fn get_running_task(tasks: &mut Vec<Task>) -> Option<&mut Task> {
 
 pub fn try_init_tasks() -> Result<&'static Spinlock<Tasks>, TryInitError> {
     TASKS.try_init(Spinlock::new(Tasks::from_current_cr3_and_init_syscalls()))
+}
+
+#[derive(Debug, Default)]
+pub struct CpuTaskData {
+    pub current_task: Option<usize>,
+}
+
+static CPU_TASK_DATA: CpuLocal<Spinlock<CpuTaskData>> = CpuLocal::uninit();
+
+pub fn try_init_cpu_task_data() -> Result<(), TryInitError> {
+    CPU_TASK_DATA.try_init(Default::default)
+}
+
+pub fn try_get_cpu_task_data() -> Result<&'static Spinlock<CpuTaskData>, TryGetError> {
+    CPU_TASK_DATA.try_get()
 }

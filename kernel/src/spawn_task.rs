@@ -1,4 +1,4 @@
-use core::slice;
+use core::{slice, sync::atomic::Ordering};
 
 use alloc::boxed::Box;
 use common::ram_disk::RamDisk;
@@ -20,7 +20,9 @@ use crate::{
         get_offset_page_table::get_offset_page_table_with_new_l4,
         pt_frame_allocator_3::PtFrameAllocator3,
     },
-    tasks::{ReadyToStartState, StackChunk, Task, TaskState, TaskType, UserTaskData, TASKS},
+    tasks::{
+        ReadyToStartState, StackChunk, Task, TaskState, TaskType, UserTaskData, NEXT_TASK_ID, TASKS,
+    },
 };
 
 /// Only specifies `WRITABLE` and `NO_EXECUTE` if needed. Other flags such as `PRESENT` and `USER_ACCESSIBLE` must be added.
@@ -234,6 +236,7 @@ pub fn spawn_task(
     let start_addr = VirtAddr::new(start_symbol.st_value);
 
     let task = Task {
+        id: NEXT_TASK_ID.fetch_add(1, Ordering::Relaxed),
         task_type: TaskType::User(UserTaskData {
             cr3: l4,
             kernel_stack: Box::new_uninit_slice(
