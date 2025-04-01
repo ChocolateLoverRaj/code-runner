@@ -6,6 +6,7 @@ pub mod memory_usage_stats;
 pub mod meta_frame_allocator;
 pub mod pt_allocator_2;
 pub mod pt_frame_allocator_2;
+pub mod pt_frame_allocator_3;
 use core::ops::Range;
 
 use alloc::vec::Vec;

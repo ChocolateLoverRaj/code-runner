@@ -1,19 +1,25 @@
-use core::{slice, usize};
+use core::slice;
 
 use alloc::boxed::Box;
-use anyhow::{anyhow, Context};
-use common::{mem::KERNEL_VIRT_MEM_START, ram_disk::RamDisk};
+use common::ram_disk::RamDisk;
 use elf::{endian::NativeEndian, ElfBytes};
+use thiserror::Error;
 use util::continuous_bool_vec::ContinuousBoolVec;
 use x86_64::{
-    registers::control::Cr3,
-    structures::paging::{FrameAllocator, Mapper, Page, PageSize, PageTableFlags, Size4KiB},
+    structures::paging::{
+        mapper::MapToError, FrameAllocator, Mapper, Page, PageSize, PageTableFlags, PhysFrame,
+        Size4KiB,
+    },
     VirtAddr,
 };
 
 use crate::{
+    hhdm_offset::HhdmOffset,
     iopb_size::IOPB_SIZE,
-    pt_allocator_2::{MEMORY_USAGE_STATS, PHYS_MEM_TRACKER},
+    pt_allocator_2::{
+        get_offset_page_table::get_offset_page_table_with_new_l4,
+        pt_frame_allocator_3::PtFrameAllocator3, PHYS_MEM_TRACKER,
+    },
     tasks::{ReadyToStartState, StackChunk, Task, TaskState, TaskType, UserTaskData, TASKS},
 };
 
@@ -29,21 +35,40 @@ pub fn elf_flags_to_page_table_flags(elf_flags: u32) -> PageTableFlags {
     page_table_flags
 }
 
-pub fn spawn_task(program: RamDisk<'static>) -> anyhow::Result<()> {
-    let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
-    let mut memory_stats = MEMORY_USAGE_STATS.try_get().unwrap().lock();
+#[derive(Debug, Error)]
+pub enum SpawnTaskError {
+    #[error("Error parsing ELF")]
+    ElfParseError(elf::ParseError),
+    #[error("The ELF has no segments")]
+    NoSegments,
+    #[error("The ELF has no symbol table")]
+    NoSymbolTable,
+    #[error("The ELF has no start symbol")]
+    NoStartSymbol,
+    #[error("Ran out of physical memory")]
+    OutOfPhysMem,
+    #[error("Error mapping page to physical frame")]
+    MapPageError(MapToError<Size4KiB>),
+}
+
+pub fn spawn_task(
+    program: &RamDisk<'static>,
+    hhdm_offset: HhdmOffset,
+) -> Result<(), SpawnTaskError> {
     let mut task_phys_mem = ContinuousBoolVec::new(usize::MAX, false);
 
-    let elf = ElfBytes::<NativeEndian>::minimal_parse(&program.elf)?;
+    let elf = ElfBytes::<NativeEndian>::minimal_parse(&program.elf)
+        .map_err(|e| SpawnTaskError::ElfParseError(e))?;
     let loadable_segments = elf
         .segments()
-        .ok_or(anyhow!("No segments"))?
+        .ok_or(SpawnTaskError::NoSegments)?
         .into_iter()
         .filter(|segment| segment.p_type == 1);
     let start_symbol = {
         let (symbols_parsing_table, symbols_strings) = elf
-            .symbol_table()?
-            .ok_or(anyhow!("No symbols / symbol strings"))?;
+            .symbol_table()
+            .map_err(|e| SpawnTaskError::ElfParseError(e))?
+            .ok_or(SpawnTaskError::NoSymbolTable)?;
         symbols_parsing_table
             .into_iter()
             .filter(|symbol| !symbol.is_undefined())
@@ -56,12 +81,30 @@ pub fn spawn_task(program: RamDisk<'static>) -> anyhow::Result<()> {
                     Err(e) => Some(Err(e)),
                 },
             )
-            .ok_or(anyhow!("_start not found"))?
-            .context("Error finding _start symbol")?
+            .ok_or(SpawnTaskError::NoStartSymbol)?
+            .map_err(|e| SpawnTaskError::ElfParseError(e))?
     };
     let mut elf_end = Page::<Size4KiB>::from_start_address(VirtAddr::zero()).unwrap();
+    let mut frame_allocator = PtFrameAllocator3 {
+        f: |frame: PhysFrame<Size4KiB>| {
+            task_phys_mem.set(
+                {
+                    let start = frame.start_address().as_u64() as usize;
+                    start..start + 0x1000
+                },
+                true,
+            );
+        },
+    };
+    // Because the task will have a different Cr3 value, we create a new L4 page table
+    let l4 = frame_allocator
+        .allocate_frame()
+        .ok_or(SpawnTaskError::OutOfPhysMem)?;
+    let mut offset_page_table = get_offset_page_table_with_new_l4(l4, hhdm_offset);
     for segment in loadable_segments {
-        let segment_data = elf.segment_data(&segment)?;
+        let segment_data = elf
+            .segment_data(&segment)
+            .map_err(|e| SpawnTaskError::ElfParseError(e))?;
         // log::info!("Must map segment accessible to the kernel at {:p} to virtual address 0x{:x} with size 0x{:x} and copy 0x{:x} bytes, with alignment down 0x{:x} with flags 0b{:b}", segment_data, segment.p_vaddr, segment.p_memsz, segment.p_filesz, segment.p_align, segment.p_flags);
         let page_range = {
             let start = Page::<Size4KiB>::from_start_address(
@@ -75,120 +118,54 @@ pub fn spawn_task(program: RamDisk<'static>) -> anyhow::Result<()> {
             start..end
         };
 
-        fn set_phys_frame(
-            frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-            mapper: &mut impl Mapper<Size4KiB>,
-            page: Page,
-            f: impl FnOnce(&mut [u8]),
-            final_flags: PageTableFlags,
-        ) -> anyhow::Result<()> {
+        for (page_index, page) in page_range.clone().enumerate() {
+            // Map the page
             let phys_frame = frame_allocator
                 .allocate_frame()
-                .ok_or(anyhow!("Failed to allocate frame"))?;
-            if page.start_address().is_null() {
-                let temp_page = Page::from_start_address(VirtAddr::new_truncate(
-                    KERNEL_VIRT_MEM_START - Size4KiB::SIZE,
-                ))
-                .unwrap();
-                unsafe {
-                    mapper.map_to(
-                        temp_page,
-                        phys_frame,
-                        PageTableFlags::PRESENT
-                            | PageTableFlags::WRITABLE
-                            // FIXME: Remove user accessible. But for now, we keep it cuz of [a bug in `update_flags`](https://github.com/rust-osdev/x86_64/issues/534)
-                            | PageTableFlags::USER_ACCESSIBLE,
-                        frame_allocator,
-                    )
-                }
-                .map_err(|_| anyhow!("Failed to map page"))?
-                .flush();
-
-                let slice = unsafe {
-                    slice::from_raw_parts_mut::<u8>(
-                        temp_page.start_address().as_mut_ptr(),
-                        temp_page.size() as usize,
-                    )
-                };
-                f(slice);
-
-                mapper
-                    .unmap(temp_page)
-                    .map_err(|_| anyhow!("Error un-mapping temp page"))?
-                    .1
-                    .flush();
-                unsafe { mapper.map_to(page, phys_frame, final_flags, frame_allocator) }
-                    .map_err(|_| anyhow!("Error mapping page"))?
-                    .flush();
-            } else {
-                unsafe {
-                    mapper.map_to(
-                        page,
-                        phys_frame,
-                        PageTableFlags::PRESENT
-                            | PageTableFlags::WRITABLE
-                            // FIXME: Remove user accessible. But for now, we keep it cuz of [a bug in `update_flags`](https://github.com/rust-osdev/x86_64/issues/534)
-                            | PageTableFlags::USER_ACCESSIBLE,
-                        frame_allocator,
-                    )
-                }
-                .map_err(|_| anyhow!("Failed to map page"))?
-                .flush();
-
-                let slice = unsafe {
-                    slice::from_raw_parts_mut::<u8>(
-                        page.start_address().as_mut_ptr(),
-                        page.size() as usize,
-                    )
-                };
-
-                f(slice);
-
-                unsafe { mapper.update_flags(page, final_flags) }
-                    .map_err(|_| anyhow!("Failed to update flags"))?
-                    .flush();
+                .ok_or(SpawnTaskError::OutOfPhysMem)?;
+            unsafe {
+                offset_page_table.map_to(
+                    page,
+                    phys_frame,
+                    PageTableFlags::PRESENT
+                        | PageTableFlags::USER_ACCESSIBLE
+                        | elf_flags_to_page_table_flags(segment.p_flags),
+                    &mut frame_allocator,
+                )
             }
-            Ok(())
-        }
+            .map_err(|e| SpawnTaskError::MapPageError(e))?
+            // No need to flush because it's not active yet
+            .ignore();
+            let offset_mapped_addr =
+                (phys_frame.start_address().as_u64() + u64::from(hhdm_offset)) as *mut u8;
+            let slice = unsafe { core::slice::from_raw_parts_mut(offset_mapped_addr, 0x1000) };
+            // Zero the phys frame to be secure
+            slice.fill(Default::default());
+            // Copy the data
+            let dest_start = if page_index == 0 {
+                segment.p_vaddr % segment.p_align
+            } else {
+                0
+            };
+            let already_copied = match page_index {
+                0 => 0,
+                n => Size4KiB::SIZE * n as u64 - (segment.p_vaddr % segment.p_align),
+            };
+            let dest_end =
+                (dest_start + (segment.p_filesz - already_copied)).min(slice.len() as u64);
 
-        for (page_index, page) in page_range.clone().enumerate() {
-            set_phys_frame(
-                frame_allocator,
-                mapper,
-                page,
-                |slice| {
-                    // Zero the phys frame to be secure
-                    slice.fill(Default::default());
-                    // Copy the data
-                    let dest_start = if page_index == 0 {
-                        segment.p_vaddr % segment.p_align
-                    } else {
-                        0
-                    };
-                    let already_copied = match page_index {
-                        0 => 0,
-                        n => Size4KiB::SIZE * n as u64 - (segment.p_vaddr % segment.p_align),
-                    };
-                    let dest_end =
-                        (dest_start + (segment.p_filesz - already_copied)).min(slice.len() as u64);
-
-                    let src_start = already_copied;
-                    let src_end = src_start + (dest_end - dest_start);
-                    // log::warn!(
-                    //     "Page index: {}, copy bytes: {}, already copied: {}, Copying to frame: {:?} from segment data: {:?}",
-                    //     page_index,
-                    //     segment.p_filesz,
-                    //     already_copied,
-                    //     dest_start..dest_end,
-                    //     src_start..src_end,
-                    // );
-                    slice[dest_start as usize..dest_end as usize]
-                        .copy_from_slice(&segment_data[src_start as usize..src_end as usize]);
-                },
-                PageTableFlags::PRESENT
-                    | PageTableFlags::USER_ACCESSIBLE
-                    | elf_flags_to_page_table_flags(segment.p_flags),
-            )?;
+            let src_start = already_copied;
+            let src_end = src_start + (dest_end - dest_start);
+            // log::warn!(
+            //     "Page index: {}, copy bytes: {}, already copied: {}, Copying to frame: {:?} from segment data: {:?}",
+            //     page_index,
+            //     segment.p_filesz,
+            //     already_copied,
+            //     dest_start..dest_end,
+            //     src_start..src_end,
+            // );
+            slice[dest_start as usize..dest_end as usize]
+                .copy_from_slice(&segment_data[src_start as usize..src_end as usize]);
         }
 
         elf_end = elf_end.max(page_range.end);
@@ -196,10 +173,14 @@ pub fn spawn_task(program: RamDisk<'static>) -> anyhow::Result<()> {
 
     // Do relocations
     // Warning: I don't fully understand this and the implementation may only work under certain assumptions
+    // FIXME: This will page fault since it's accessing lower half virtual addresses while the current Cr3 does not have those mapped
     if let Some(section_headers) = elf.section_headers() {
         for section_header in section_headers {
             if section_header.sh_type == 4 {
-                let relas = elf.section_data_as_relas(&section_header)?;
+                log::error!("Doing relocation. Will page fault.");
+                let relas = elf
+                    .section_data_as_relas(&section_header)
+                    .map_err(|e| SpawnTaskError::ElfParseError(e))?;
                 for rela in relas {
                     match rela.r_type {
                         8 => {
@@ -215,51 +196,46 @@ pub fn spawn_task(program: RamDisk<'static>) -> anyhow::Result<()> {
         }
     }
 
-    const USER_SPACE_STACK_SIZE: usize = 0x3000;
-    let page_count = (USER_SPACE_STACK_SIZE as u64).div_ceil(Size4KiB::SIZE);
+    // User space processes must claim entire phys frames. They cannot claim partial frames like the kernel can because then they can still access memory that they don't own.
+    let page_count = program.meta_data.stack_size.div_ceil(Size4KiB::SIZE);
     let stack_start = elf_end;
     let stack_end = stack_start + page_count;
     let stack_pages = stack_start..stack_end;
     log::info!("User space Stack: {stack_pages:?}");
     for page in stack_pages {
-        unsafe {
-            mapper.map_to(
-                page,
-                frame_allocator
-                    .allocate_frame()
-                    .ok_or(anyhow!("Failed to allocate frame for stack"))?,
-                PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                frame_allocator,
-            )
-        }
-        .map_err(|_| anyhow!("Failed to map page"))?
-        .flush();
+        let frame = frame_allocator
+            .allocate_frame()
+            .ok_or(SpawnTaskError::OutOfPhysMem)?;
 
         let slice = unsafe {
-            slice::from_raw_parts_mut::<u8>(page.start_address().as_mut_ptr(), page.size() as usize)
+            slice::from_raw_parts_mut::<u8>(
+                (frame.start_address().as_u64() + u64::from(hhdm_offset)) as *mut u8,
+                page.size() as usize,
+            )
         };
         // Zero the stack to avoid exposing data
         slice.fill(Default::default());
 
-        // Now that the page is zeroed, make it user accessible
         unsafe {
-            mapper.update_flags(
+            offset_page_table.map_to(
                 page,
+                frame,
                 PageTableFlags::PRESENT
                     | PageTableFlags::WRITABLE
                     | PageTableFlags::USER_ACCESSIBLE
-                    | PageTableFlags::NO_EXECUTE,
+                    | PageTableFlags::WRITABLE,
+                &mut frame_allocator,
             )
         }
-        .map_err(|_| anyhow!("Failed to update stack page flags"))?
-        .flush();
+        .map_err(|e| SpawnTaskError::MapPageError(e))?
+        .ignore();
     }
 
     let start_addr = VirtAddr::new(start_symbol.st_value);
 
     let task = Task {
         task_type: TaskType::User(UserTaskData {
-            cr3: Cr3::read().0,
+            cr3: l4,
             kernel_stack: Box::new_uninit_slice(
                 (program.meta_data.stack_size as usize).div_ceil(size_of::<StackChunk>()),
             ),
@@ -281,6 +257,7 @@ pub fn spawn_task(program: RamDisk<'static>) -> anyhow::Result<()> {
             instruction_pointer: start_addr,
             stack_pointer: stack_end.start_address(),
         }),
+        owned_phys_mem: task_phys_mem,
     };
     TASKS.lock().push(task);
 

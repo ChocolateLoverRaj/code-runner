@@ -8,8 +8,11 @@ use crate::{
     hhdm_offset::HhdmOffset,
     hlt_loop::hlt_loop,
     init_idt_and_gdt::{init_idt_and_gdt, init_vars_for_idt_and_gdt},
+    limine_requests::HHDM_REQUEST,
     parse_ram_disk::parse_ram_disk,
-    rsdp_addr::RsdpAddr, spawn_task::spawn_task,
+    rsdp_addr::RsdpAddr,
+    spawn_task::spawn_task,
+    tasks::TASKS,
 };
 
 static RAM_DISK: InitLater<RamDisk<'static>> = InitLater::uninit();
@@ -52,6 +55,7 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     log::info!("{:#?}", get_memory_usage_stats());
 
     x86_64::instructions::interrupts::int3();
+    log::info!("Spawning task");
     // if cpu.id == 0 {
     //     for i in 0..500_000_000 {}
     //     panic!("Test panic");
@@ -61,7 +65,12 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     //     log::info!("Log from CPU {:?}", cpu.id);
     // }
 
-    spawn_task(RAM_DISK.try_get().unwrap(), frame_allocator, mapper)
+    spawn_task(
+        RAM_DISK.try_get().unwrap(),
+        (&HHDM_REQUEST).try_into().unwrap(),
+    );
+    let tasks = TASKS.lock();
+    log::info!("Spawned task. {:#?}", tasks);
 
     hlt_loop()
 }
