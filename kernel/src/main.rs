@@ -25,12 +25,12 @@ pub mod apic;
 pub mod colorful_logger;
 pub mod combined_logger;
 pub mod context;
+pub mod cpu_local;
 pub mod cpu_local_data;
 pub mod draw_rust;
 pub mod dynamic_combined_logger;
 pub mod embedded_graphics_writer;
 pub mod ensure_mem_is_higher_half;
-pub mod enter_user_mode;
 pub mod execute_future;
 pub mod find_used_virt_addrs;
 pub mod frame_buffer;
@@ -66,7 +66,7 @@ pub mod parse_ram_disk;
 pub mod pic8259_interrupts;
 pub mod pt_allocator_2;
 pub mod rsdp_addr;
-// pub mod run_tasks;
+pub mod run_tasks;
 pub mod set_color;
 pub mod spawn_task;
 pub mod spcr;
@@ -74,11 +74,10 @@ pub mod split_draw_target;
 pub mod store_but_borrow_mut;
 // pub mod syscall_enable_hpet;
 // pub mod syscall_get_hpet_main_counter_period;
-// pub mod syscall_handler_closure;
+pub mod syscall_handler_closure;
 // pub mod syscall_handler_make_me_logger;
 // pub mod syscall_hpet_read_main_counter_value;
 // pub mod syscall_print_handler;
-pub mod cpu_local;
 pub mod tasks;
 pub mod test_allocator;
 pub mod traverse_cr3;
@@ -89,7 +88,6 @@ pub mod virt_mem_tracker;
 pub mod write_logger;
 pub mod write_with_cr;
 
-use conquer_once::noblock::OnceCell;
 use ensure_mem_is_higher_half::ensure_mem_is_higher_half;
 use hhdm_offset::HhdmOffset;
 use init_cpus::init_cpus;
@@ -102,32 +100,8 @@ use log_boot_time::log_boot_time;
 use log_memory_usage::log_memory_usage;
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
-use modules::{
-    gdt::Gdt,
-    idt::{disable_pic8259::disable_pic8259, IdtBuilder},
-};
+use modules::idt::disable_pic8259::disable_pic8259;
 use rsdp_addr::RsdpAddr;
-use spinning_top::Spinlock;
-use store_but_borrow_mut::StoreButBorrowMut;
-use x86_64::structures::tss::TaskStateSegment;
-
-#[derive(Debug)]
-struct StaticStuff0 {
-    tss: TaskStateSegment<IOPB_SIZE>,
-    idt_builder: IdtBuilder,
-    spurious_interrupt_handler_index: u8,
-    timer_interrupt_index: u8,
-    local_apic_error_interrupt_index: u8,
-}
-
-static STATIC_STUFF_0: StoreButBorrowMut<StaticStuff0> = StoreButBorrowMut::uninit();
-
-struct StaticStuff1 {
-    gdt: Gdt,
-    iopb: Spinlock<&'static mut [u8; IOPB_SIZE]>,
-}
-
-static STATIC_STUFF_1: OnceCell<StaticStuff1> = OnceCell::uninit();
 
 #[export_name = "kernel_main"]
 unsafe extern "C" fn kernel_main() -> ! {

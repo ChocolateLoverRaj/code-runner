@@ -18,7 +18,7 @@ use crate::{
     iopb_size::IOPB_SIZE,
     pt_allocator_2::{
         get_offset_page_table::get_offset_page_table_with_new_l4,
-        pt_frame_allocator_3::PtFrameAllocator3, PHYS_MEM_TRACKER,
+        pt_frame_allocator_3::PtFrameAllocator3,
     },
     tasks::{ReadyToStartState, StackChunk, Task, TaskState, TaskType, UserTaskData, TASKS},
 };
@@ -259,7 +259,7 @@ pub fn spawn_task(
         }),
         owned_phys_mem: task_phys_mem,
     };
-    TASKS.lock().push(task);
+    TASKS.try_get().unwrap().lock().tasks.push(task);
 
     Ok(())
 }

@@ -2544,6 +2544,7 @@ dependencies = [
  "atomic_enum",
  "futures-util",
  "heapless 0.8.0",
+ "thiserror 2.0.12",
 ]
 
 [[package]]

@@ -3,20 +3,9 @@ use core::{arch::naked_asm, mem::offset_of};
 use alloc::boxed::Box;
 use conquer_once::noblock::OnceCell;
 
+use crate::cpu_local_data::CpuLocalData;
+
 use super::syscall_handler::SyscallHandler;
-
-#[derive(Debug)]
-pub struct ThreadControlData {
-    pub user_stack_pointer: u64,
-    pub kernel_stack_pointer: u64,
-    pub cpu_id: usize,
-}
-
-pub static mut THREAD_CONTROL_DATA: ThreadControlData = ThreadControlData {
-    user_stack_pointer: 0,
-    kernel_stack_pointer: 0,
-    cpu_id: 0,
-};
 
 // save the registers, handle the syscall and return to user mode
 #[naked]
@@ -60,8 +49,8 @@ unsafe extern "sysv64" fn raw_syscall_handler() {
             ud2
             ",
             syscall_handler = sym syscall_handler,
-            sp_offset = const offset_of!(ThreadControlData, user_stack_pointer),
-            ksp_offset = const offset_of!(ThreadControlData, kernel_stack_pointer),
+            sp_offset = const offset_of!(CpuLocalData, user_stack_pointer),
+            ksp_offset = const offset_of!(CpuLocalData, kernel_stack_pointer),
         );
     }
 }

@@ -11,8 +11,9 @@ use crate::{
     limine_requests::HHDM_REQUEST,
     parse_ram_disk::parse_ram_disk,
     rsdp_addr::RsdpAddr,
+    run_tasks::run_tasks,
     spawn_task::spawn_task,
-    tasks::TASKS,
+    tasks::{try_init_tasks, TASKS},
 };
 
 static RAM_DISK: InitLater<RamDisk<'static>> = InitLater::uninit();
@@ -28,6 +29,7 @@ pub fn init_cpus(
 
     let ram_disk = parse_ram_disk(module_response.unwrap()).unwrap();
     RAM_DISK.try_init(ram_disk).unwrap();
+    try_init_tasks().unwrap();
 
     mp_response.cpus_mut().iter_mut().for_each(|cpu| {
         cpu.goto_address.write(init_cpu);
@@ -65,13 +67,18 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     //     log::info!("Log from CPU {:?}", cpu.id);
     // }
 
-    spawn_task(
-        RAM_DISK.try_get().unwrap(),
-        (&HHDM_REQUEST).try_into().unwrap(),
-    );
-    {
-        let tasks = TASKS.lock();
-        log::info!("Spawned task. {:#?}", tasks);
+    let hhdm_offset = (&HHDM_REQUEST).try_into().unwrap();
+    if cpu.id == 0 {
+        spawn_task(RAM_DISK.try_get().unwrap(), hhdm_offset);
+        {
+            let tasks = TASKS.try_get().unwrap().lock();
+            log::info!(
+                "Spawned task. {:#?}",
+                tasks.tasks.first().unwrap().owned_phys_mem
+            );
+        }
     }
-    hlt_loop()
+    run_tasks(hhdm_offset)
+
+    // hlt_loop()
 }

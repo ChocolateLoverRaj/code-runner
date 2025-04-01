@@ -9,6 +9,8 @@ use x86_64::{registers::model_specific::GsBase, VirtAddr};
 #[derive(Debug)]
 #[repr(packed)]
 pub struct CpuLocalData {
+    pub user_stack_pointer: u64,
+    pub kernel_stack_pointer: u64,
     pub cpu_id: usize,
 }
 
@@ -22,6 +24,8 @@ pub fn init(mp_response: &MpResponse) {
                 .iter()
                 .map(|cpu| {
                     SyncUnsafeCell::new(CpuLocalData {
+                        user_stack_pointer: 0,
+                        kernel_stack_pointer: 0,
                         cpu_id: cpu.id as usize,
                     })
                 })
@@ -45,4 +49,10 @@ pub fn get_local() -> &'static SyncUnsafeCell<CpuLocalData> {
     let cpu_local_data_ptr = GsBase::read().as_ptr::<SyncUnsafeCell<CpuLocalData>>();
     let cpu_local_data = unsafe { &*cpu_local_data_ptr };
     cpu_local_data
+}
+
+/// Set the value that `rsp` will be set to when transitioning from user mode to kernel mode through the `syscall` instruction
+pub fn set_syscall_stack_pointer(stack_pointer: VirtAddr) {
+    let cpu_local_data = unsafe { &mut *get_local().get() };
+    cpu_local_data.kernel_stack_pointer = stack_pointer.as_u64();
 }

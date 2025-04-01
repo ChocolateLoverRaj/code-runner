@@ -1,6 +1,6 @@
 use core::alloc::GlobalAlloc;
 
-use util::init_later::InitLater;
+use util::init_later::{InitLater, TryInitError};
 
 #[derive(Debug)]
 pub struct NotConstAllocator<A> {
@@ -13,7 +13,7 @@ impl<A> NotConstAllocator<A> {
             actual_allocator: InitLater::uninit(),
         }
     }
-    pub fn try_init(&self, val: A) -> Result<(), ()> {
+    pub fn try_init(&self, val: A) -> Result<(), TryInitError> {
         self.actual_allocator.try_init(val)?;
         Ok(())
     }

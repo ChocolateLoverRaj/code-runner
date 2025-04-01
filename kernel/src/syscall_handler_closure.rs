@@ -1,18 +1,9 @@
 use alloc::{boxed::Box, collections::btree_map::BTreeMap};
 use common::syscall_uuids::{SYSCALL_EXISTS, SYSCALL_EXIT, SYSCALL_MAKE_ME_LOGGER};
 use uuid::Uuid;
-use x86_64::{
-    registers::{model_specific::KernelGsBase, segmentation::GS},
-    VirtAddr,
-};
+use x86_64::VirtAddr;
 
-use crate::{
-    context::{Context, SyscallContext},
-    modules::syscall::syscall_handler_closure::{PushedRegisters, THREAD_CONTROL_DATA},
-    run_tasks::run_tasks,
-    syscall_handler_make_me_logger::get_syscall_make_me_logger_handler,
-    tasks::{TaskState, TaskType, TASKS},
-};
+use crate::modules::syscall::syscall_handler_closure::PushedRegisters;
 
 pub trait Includes<K> {
     fn contains_key(&self, key: &K) -> bool;
@@ -31,67 +22,63 @@ pub fn syscall_handler_closure(
 ) -> impl Fn(u64, u64, u64, u64, u64, u64, u64, &mut PushedRegisters) -> ! + Send + Sync + 'static {
     let syscall_handlers = {
         let mut syscall_handlers = BTreeMap::<Uuid, Box<SyscallHandler>>::new();
-        syscall_handlers.insert(
-            SYSCALL_EXIT,
-            Box::new(|_inputs, _pushed_registers, _| {
-                log::info!("Syscall exit called");
-                {
-                    let mut tasks = TASKS.lock();
-                    let (task_index, task) = tasks
-                        .iter_mut()
-                        .enumerate()
-                        .find(|(_index, task)| match task.state {
-                            TaskState::Running => true,
-                            _ => false,
-                        })
-                        .unwrap();
-                    match &task.task_type {
-                        TaskType::User(_data) => {
-                            // FIXME: Cleanup Cr3 / page tables
-                            // Kernel stack will be cleaned up by the `Drop` trait
-                        }
-                    }
-                    tasks.remove(task_index);
-                }
-                log::info!("Running tasks");
-                run_tasks()
-            }),
-        );
-        syscall_handlers.insert(
-            SYSCALL_EXISTS,
-            Box::new(|inputs, pushed_registers, syscalls| {
-                let return_value =
-                    match syscalls.contains_key(&Uuid::from_u64_pair(inputs[0], inputs[1])) {
-                        true => 1,
-                        false => 0,
-                    };
-                let s = SyscallContext {
-                    r15: pushed_registers.r15,
-                    r14: pushed_registers.r14,
-                    r13: pushed_registers.r13,
-                    r12: pushed_registers.r12,
-                    rbx: pushed_registers.rbx,
-                    rbp: pushed_registers.rbp,
-                    r11: pushed_registers.r11,
-                    rcx: pushed_registers.rcx,
-                    rax: return_value,
-                    rsp: unsafe { THREAD_CONTROL_DATA.user_stack_pointer },
-                };
-                unsafe { GS::swap() };
-                unsafe { s.restore() }
-            }),
-        );
-        syscall_handlers.insert(
-            SYSCALL_MAKE_ME_LOGGER,
-            Box::new(get_syscall_make_me_logger_handler()),
-        );
+        // syscall_handlers.insert(
+        //     SYSCALL_EXIT,
+        //     Box::new(|_inputs, _pushed_registers, _| {
+        //         log::info!("Syscall exit called");
+        //         {
+        //             let mut tasks = TASKS.lock();
+        //             let (task_index, task) = tasks
+        //                 .iter_mut()
+        //                 .enumerate()
+        //                 .find(|(_index, task)| match task.state {
+        //                     TaskState::Running => true,
+        //                     _ => false,
+        //                 })
+        //                 .unwrap();
+        //             match &task.task_type {
+        //                 TaskType::User(_data) => {
+        //                     // FIXME: Cleanup Cr3 / page tables
+        //                     // Kernel stack will be cleaned up by the `Drop` trait
+        //                 }
+        //             }
+        //             tasks.remove(task_index);
+        //         }
+        //         log::info!("Running tasks");
+        //         run_tasks()
+        //     }),
+        // );
+        // syscall_handlers.insert(
+        //     SYSCALL_EXISTS,
+        //     Box::new(|inputs, pushed_registers, syscalls| {
+        //         let return_value =
+        //             match syscalls.contains_key(&Uuid::from_u64_pair(inputs[0], inputs[1])) {
+        //                 true => 1,
+        //                 false => 0,
+        //             };
+        //         let s = SyscallContext {
+        //             r15: pushed_registers.r15,
+        //             r14: pushed_registers.r14,
+        //             r13: pushed_registers.r13,
+        //             r12: pushed_registers.r12,
+        //             rbx: pushed_registers.rbx,
+        //             rbp: pushed_registers.rbp,
+        //             r11: pushed_registers.r11,
+        //             rcx: pushed_registers.rcx,
+        //             rax: return_value,
+        //             rsp: unsafe { THREAD_CONTROL_DATA.user_stack_pointer },
+        //         };
+        //         unsafe { GS::swap() };
+        //         unsafe { s.restore() }
+        //     }),
+        // );
+        // syscall_handlers.insert(
+        //     SYSCALL_MAKE_ME_LOGGER,
+        //     Box::new(get_syscall_make_me_logger_handler()),
+        // );
 
         syscall_handlers
     };
-
-    KernelGsBase::write(VirtAddr::from_ptr(unsafe {
-        &THREAD_CONTROL_DATA as *const _
-    }));
 
     move |input0,
           input1,
@@ -113,9 +100,4 @@ pub fn syscall_handler_closure(
             ),
         };
     }
-}
-
-pub fn set_syscall_stack_pointer(syscall_stack_pointer: VirtAddr) {
-    // This is needed to access `gs:` in asm
-    unsafe { THREAD_CONTROL_DATA.kernel_stack_pointer = syscall_stack_pointer.as_u64() };
 }

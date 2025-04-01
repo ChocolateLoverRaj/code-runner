@@ -64,7 +64,7 @@ struct StaticStuff2 {
     iopb: Spinlock<&'static mut [u8; IOPB_SIZE]>,
 }
 
-static CPU_LOCAL_STATIC_STUFF_2: CpuLocal<StoreButBorrowMut<StaticStuff2>> = CpuLocal::uninit();
+static CPU_LOCAL_STATIC_STUFF_2: CpuLocal<InitLater<StaticStuff2>> = CpuLocal::uninit();
 
 pub static CPU_LOCAL_APICS: CpuLocal<InitLater<Spinlock<LocalApic>>> = CpuLocal::uninit();
 
@@ -79,7 +79,7 @@ pub fn init_vars_for_idt_and_gdt(rsdp_addr: RsdpAddr, hhdm_offset: HhdmOffset) {
         .try_init(StoreButBorrowMut::uninit)
         .unwrap();
     CPU_LOCAL_STATIC_STUFF_2
-        .try_init(StoreButBorrowMut::uninit)
+        .try_init(InitLater::uninit)
         .unwrap();
     CPU_LOCAL_APICS.try_init(InitLater::uninit).unwrap();
 }
@@ -202,7 +202,7 @@ pub fn init_idt_and_gdt() {
     let static_stuff_2 = CPU_LOCAL_STATIC_STUFF_2
         .try_get()
         .unwrap()
-        .store_but_borrow_mut({
+        .try_init({
             let (tss_pointer, iopb) = static_stuff_1.tss.ready_to_activate();
             let gdt = Gdt::new(tss_pointer);
             StaticStuff2 {
@@ -231,4 +231,13 @@ pub fn init_idt_and_gdt() {
             Spinlock::new(local_apic)
         })
         .unwrap();
+}
+
+pub fn get_iobp() -> &'static Spinlock<&'static mut [u8; IOPB_SIZE]> {
+    &CPU_LOCAL_STATIC_STUFF_2
+        .try_get()
+        .unwrap()
+        .try_get()
+        .unwrap()
+        .iopb
 }
