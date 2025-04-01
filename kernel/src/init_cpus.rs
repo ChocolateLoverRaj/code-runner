@@ -69,8 +69,9 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
         RAM_DISK.try_get().unwrap(),
         (&HHDM_REQUEST).try_into().unwrap(),
     );
-    let tasks = TASKS.lock();
-    log::info!("Spawned task. {:#?}", tasks);
-
+    {
+        let tasks = TASKS.lock();
+        log::info!("Spawned task. {:#?}", tasks);
+    }
     hlt_loop()
 }
