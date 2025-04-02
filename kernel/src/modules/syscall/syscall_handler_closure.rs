@@ -1,9 +1,9 @@
 use core::{arch::naked_asm, mem::offset_of};
 
 use alloc::boxed::Box;
-use conquer_once::noblock::OnceCell;
+use util::init_later::InitLater;
 
-use crate::cpu_local_data::CpuLocalData;
+use crate::{cpu_local::CpuLocal, cpu_local_data::CpuLocalData};
 
 use super::syscall_handler::SyscallHandler;
 
@@ -68,9 +68,15 @@ pub struct PushedRegisters {
     pub rcx: u64,
 }
 
-static CLOSURE: OnceCell<
-    Box<dyn Fn(u64, u64, u64, u64, u64, u64, u64, &mut PushedRegisters) -> ! + Send + Sync>,
-> = OnceCell::uninit();
+static CLOSURE: CpuLocal<
+    InitLater<
+        Box<dyn Fn(u64, u64, u64, u64, u64, u64, u64, &mut PushedRegisters) -> ! + Send + Sync>,
+    >,
+> = CpuLocal::uninit();
+
+pub fn init() {
+    CLOSURE.try_init(InitLater::uninit).unwrap()
+}
 
 extern "sysv64" fn syscall_handler(
     input0: u64,
@@ -83,7 +89,7 @@ extern "sysv64" fn syscall_handler(
     rsp: u64,
 ) -> ! {
     let pushed_registers = unsafe { &mut *(rsp as *mut PushedRegisters) };
-    CLOSURE.try_get().unwrap()(
+    CLOSURE.try_get().unwrap().try_get().unwrap()(
         input0,
         input1,
         input2,
@@ -123,6 +129,6 @@ pub fn set_syscall_handler_closure<C>(closure: Box<C>) -> SyscallHandler
 where
     C: Fn(u64, u64, u64, u64, u64, u64, u64, &mut PushedRegisters) -> ! + Send + Sync + 'static,
 {
-    CLOSURE.try_init_once(|| closure).unwrap();
+    CLOSURE.try_get().unwrap().try_init(closure).unwrap();
     unsafe { SyscallHandler::new_unchecked(raw_syscall_handler) }
 }

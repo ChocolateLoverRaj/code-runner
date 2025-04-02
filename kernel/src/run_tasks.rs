@@ -1,4 +1,5 @@
 use x86_64::{
+    instructions::tlb::flush_all,
     registers::{control::Cr3, rflags::RFlags},
     VirtAddr,
 };
@@ -26,9 +27,14 @@ pub extern "sysv64" fn run_tasks() -> ! {
     }
     let action: Action = {
         let mut tasks = TASKS.try_get().unwrap().lock();
+        // FIXME: Even though the allocator does invlpg, that only flushes the TLB for the CPU in which the allocator is running on.
+        // It doesn't flush the TLB for other CPUs. Without this `flush_all` instruction, we can get page faults.
+        flush_all();
         let kernel_cr3 = tasks.kernel_cr3;
-        match tasks.tasks.first_mut() {
-            Some(task) => {
+        tasks
+            .tasks
+            .iter_mut()
+            .find_map(|task| {
                 match task.state {
                     TaskState::ReadyToStart(state) => {
                         match &task.task_type {
@@ -50,27 +56,26 @@ pub extern "sysv64" fn run_tasks() -> ! {
                                     data.kernel_stack.as_ptr_range().end,
                                 ));
                                 **get_iobp().lock() = data.iopb;
-                                try_get_cpu_task_data().unwrap().lock().current_task =
-                                    Some(task.id);
-                                Action::EnterUserMode(EnterUserModeInput {
-                                    initialized_syscalls: tasks.initialized_syscalls,
+                                let mut cpu_task_data = try_get_cpu_task_data().unwrap().lock();
+                                cpu_task_data.current_task = Some(task.id);
+                                Some(Action::EnterUserMode(EnterUserModeInput {
+                                    initialized_syscalls: cpu_task_data
+                                        .initialized_syscalls
+                                        .expect("Syscalls not initialized on this CPU"),
                                     code: state.instruction_pointer,
                                     stack_end: state.stack_pointer,
                                     rflags: RFlags::INTERRUPT_FLAG,
-                                })
+                                }))
                             }
                         }
                     }
-                    TaskState::Running => {
-                        unreachable!("If the task is running, how is this code running? They both can't be running at the same time. Was the task state not updating from running to something else?");
-                    }
+                    TaskState::Running => None,
                 }
-            }
-            None => {
+            })
+            .unwrap_or_else(|| {
                 log::warn!("No tasks to run. Halting.");
                 Action::Halt
-            }
-        }
+            })
     };
     match action {
         Action::EnterUserMode(input) => unsafe { enter_user_mode(input) },

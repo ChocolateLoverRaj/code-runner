@@ -8,11 +8,12 @@ use crate::{
     hhdm_offset::HhdmOffset,
     init_idt_and_gdt::{init_idt_and_gdt, init_vars_for_idt_and_gdt},
     limine_requests::HHDM_REQUEST,
+    modules::syscall::syscall_handler_closure,
     parse_ram_disk::parse_ram_disk,
     rsdp_addr::RsdpAddr,
     run_tasks::run_tasks,
     spawn_task::spawn_task,
-    tasks::{try_init_cpu_task_data, try_init_tasks, TASKS},
+    tasks::{init_cpu_local_task_data, try_init_cpu_task_data, try_init_tasks, TASKS},
 };
 
 static RAM_DISK: InitLater<RamDisk<'static>> = InitLater::uninit();
@@ -30,6 +31,7 @@ pub fn init_cpus(
     RAM_DISK.try_init(ram_disk).unwrap();
     try_init_tasks().unwrap();
     try_init_cpu_task_data().unwrap();
+    syscall_handler_closure::init();
 
     mp_response.cpus_mut().iter_mut().for_each(|cpu| {
         cpu.goto_address.write(init_cpu);
@@ -57,7 +59,6 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     log::info!("{:#?}", get_memory_usage_stats());
 
     x86_64::instructions::interrupts::int3();
-    log::info!("Spawning task");
     // if cpu.id == 0 {
     //     for i in 0..500_000_000 {}
     //     panic!("Test panic");
@@ -66,9 +67,11 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     // loop {
     //     log::info!("Log from CPU {:?}", cpu.id);
     // }
+    init_cpu_local_task_data();
 
     let hhdm_offset = (&HHDM_REQUEST).try_into().unwrap();
-    if cpu.id == 0 {
+    if cpu.id == 0 || cpu.id == 1 {
+        log::info!("Spawning task");
         spawn_task(RAM_DISK.try_get().unwrap(), hhdm_offset);
         {
             let tasks = TASKS.try_get().unwrap().lock();

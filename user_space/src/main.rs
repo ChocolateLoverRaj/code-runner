@@ -54,7 +54,6 @@ extern "C" fn _start() -> ! {
     let mut count = 0;
 
     // let v = unsafe { Port::<u8>::new(0x3F8).read() };
-
     let mut port = unsafe { uart_16550::port::new(0x3F8) };
     port.init();
     port.write_str("Hello from User space! User space has taken over the UART!\n");

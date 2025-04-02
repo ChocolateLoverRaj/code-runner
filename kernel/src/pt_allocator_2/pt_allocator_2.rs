@@ -462,7 +462,7 @@ unsafe impl GlobalAlloc for PtAllocator2 {
         memory_usage.global_allocations -= layout.size();
         memory_usage.global_allocations += new_size;
 
-        log::debug!(
+        log::info!(
             "realloc: {:?}. layout: {:?}. new size: {:?}. new ptr: {:?}",
             ptr,
             layout,

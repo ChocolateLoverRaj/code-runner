@@ -72,6 +72,7 @@ pub mod spawn_task;
 pub mod spcr;
 pub mod split_draw_target;
 pub mod store_but_borrow_mut;
+pub mod terminate_current_task;
 // pub mod syscall_enable_hpet;
 // pub mod syscall_get_hpet_main_counter_period;
 pub mod syscall_handler_closure;
@@ -102,6 +103,7 @@ use log_memory_usage::log_memory_usage;
 use logger::init_logger_with_framebuffer;
 use modules::idt::disable_pic8259::disable_pic8259;
 use rsdp_addr::RsdpAddr;
+use test_allocator::test_allocator;
 
 #[export_name = "kernel_main"]
 unsafe extern "C" fn kernel_main() -> ! {
@@ -144,6 +146,7 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     // Test assuming 100MiB is available for dynamic allocation
     // test_allocator(0x6400000);
+    test_allocator(0x2000);
 
     init_cpus(mp_response, rsdp_addr, hhdm_offset, module_response)
 }

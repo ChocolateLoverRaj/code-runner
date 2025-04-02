@@ -8,7 +8,7 @@ use common::{
     syscall_take_frame_buffer::{
         TakeFrameBufferError, TakeFrameBufferOutput, TakeFrameBufferOutputData,
     },
-    syscall_uuids::SYSCALL_EXISTS,
+    syscall_uuids::{SYSCALL_EXISTS, SYSCALL_EXIT},
 };
 use uuid::Uuid;
 use x86_64::VirtAddr;
@@ -89,7 +89,7 @@ pub fn syscall_print(string: &str) -> Result<(), SyscallPrintError> {
 }
 
 pub fn syscall_exit() -> ! {
-    syscall(&Syscall::Exit);
+    unsafe { syscall_uuid(SYSCALL_EXIT, Default::default()) };
     unreachable!()
 }
 

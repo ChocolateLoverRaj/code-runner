@@ -1,6 +1,6 @@
 use core::{slice, sync::atomic::Ordering};
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, vec::Vec};
 use common::ram_disk::RamDisk;
 use elf::{endian::NativeEndian, ElfBytes};
 use thiserror::Error;
@@ -57,7 +57,7 @@ pub fn spawn_task(
     program: &RamDisk<'static>,
     hhdm_offset: HhdmOffset,
 ) -> Result<(), SpawnTaskError> {
-    let mut task_phys_mem = ContinuousBoolVec::new(usize::MAX, false);
+    let mut task_phys_mem = ContinuousBoolVec::<Vec<_>>::new(usize::MAX, false);
 
     let elf = ElfBytes::<NativeEndian>::minimal_parse(&program.elf)
         .map_err(|e| SpawnTaskError::ElfParseError(e))?;
@@ -89,6 +89,8 @@ pub fn spawn_task(
     let mut elf_end = Page::<Size4KiB>::from_start_address(VirtAddr::zero()).unwrap();
     let mut frame_allocator = PtFrameAllocator3 {
         f: |frame: PhysFrame<Size4KiB>| {
+            let vec_ptr = task_phys_mem.len_vec.as_ptr_range();
+            log::warn!("{:?}", vec_ptr);
             task_phys_mem.set(
                 {
                     let start = frame.start_address().as_u64() as usize;

@@ -88,4 +88,22 @@ pub fn test_allocator(max_size: usize) {
         let layout = Layout::from_size_align(0x1800, 1).unwrap();
         unsafe { dealloc(ptr, layout) };
     }
+
+    {
+        log::info!("Testing realloc with relocation");
+        let layout = Layout::from_size_align(8, 1).unwrap();
+        let ptr = unsafe { alloc(layout) };
+        unsafe { core::slice::from_raw_parts_mut(ptr, 8) }.fill(1);
+        let ptr2 = unsafe { alloc(layout) };
+        let new_layout = Layout::from_size_align(0x1800, 1).unwrap();
+        let ptr = unsafe { realloc(ptr, new_layout, 16) };
+        assert!(unsafe { core::slice::from_raw_parts_mut(ptr, 0x1800) }
+            .iter()
+            .copied()
+            .eq(core::iter::repeat_n(1, 8)));
+        unsafe {
+            dealloc(ptr2, layout);
+            dealloc(ptr, new_layout);
+        }
+    }
 }
