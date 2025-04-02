@@ -11,7 +11,7 @@ use x86_64::{
 use crate::{
     hhdm_offset::HhdmOffset,
     pt_allocator_2::{
-        get_offset_page_table::get_offset_page_table, pt_frame_allocator_2::PtFrameAllocator2,
+        get_offset_page_table::get_offset_page_table, pt_frame_allocator_3::PtFrameAllocator3,
         MEMORY_USAGE_STATS, PHYS_MEM_TRACKER,
     },
     virt_addr_to_number::VirtAddrToNumber,
@@ -26,33 +26,32 @@ pub struct PtAllocator2 {
 
 unsafe impl GlobalAlloc for PtAllocator2 {
     unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
-        let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
         let mut virt_mem = KERNEL_ADDRESS_SPACE_TRACKER.try_get().unwrap().lock();
         let mut memory_usage_stats = MEMORY_USAGE_STATS.try_get().unwrap().lock();
 
         // First we find the first phys frame
-        let first_frame_portion = phys_mem
-            .iter()
-            .filter(|segment| !segment.value)
-            .find_map(|segment| {
-                let start = segment.position.next_multiple_of(layout.align());
-                // This is the end of the frame, or the end of the data, depending on which one is smaller
-                let end = (start + 1)
-                    .next_multiple_of(0x1000)
-                    .min(start + layout.size());
-                if end <= segment.position + segment.len {
-                    Some(start..end)
-                } else {
-                    None
-                }
-            })
-            .unwrap();
-        log::debug!(
-            "Using phys range: {:X?}. Layout: {:#?}",
-            first_frame_portion,
-            layout,
-        );
-        phys_mem.set(first_frame_portion.clone(), true);
+        let first_frame_portion = {
+            let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
+            let first_frame_portion = phys_mem
+                .iter()
+                .filter(|segment| !segment.value)
+                .find_map(|segment| {
+                    let start = segment.position.next_multiple_of(layout.align());
+                    // This is the end of the frame, or the end of the data, depending on which one is smaller
+                    let end = (start + 1)
+                        .next_multiple_of(0x1000)
+                        .min(start + layout.size());
+                    if end <= segment.position + segment.len {
+                        Some(start..end)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap();
+            phys_mem.set(first_frame_portion.clone(), true);
+            memory_usage_stats.global_allocations += first_frame_portion.len();
+            first_frame_portion
+        };
 
         // If the entire layout is in a single phys frame, we can just use a pointer to an offset-mapped page
         let ptr = if first_frame_portion.len() == layout.size() {
@@ -83,10 +82,10 @@ unsafe impl GlobalAlloc for PtAllocator2 {
             ))
             .unwrap();
             {
-                let mut used_bytes = 0;
-                let mut frame_allocator = PtFrameAllocator2 {
-                    phys_mem: phys_mem.deref_mut(),
-                    used_bytes: &mut used_bytes,
+                let mut frame_allocator = PtFrameAllocator3 {
+                    f: |_| {
+                        memory_usage_stats.page_tables += 0x1000;
+                    },
                 };
                 let first_frame =
                     PhysFrame::containing_address(PhysAddr::new(first_frame_portion.start as u64));
@@ -102,7 +101,6 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 }
                 .unwrap()
                 .flush();
-                memory_usage_stats.page_tables += used_bytes as usize;
             }
 
             // Map rest of memory
@@ -114,19 +112,22 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 }
                 // The last frame might not extend to the frame boundary, so we don't need the whole frame in that case
                 let bytes_to_map = remaining_to_map.min(0x1000);
-                let frame_start = phys_mem
-                    .get_continuous_range_with_alignment(false, bytes_to_map, 0x1000)
-                    .unwrap();
-                phys_mem.set(frame_start..frame_start + bytes_to_map, true);
-                let mut page_table_bytes = 0;
-                let mut frame_allocator = PtFrameAllocator2 {
-                    phys_mem: phys_mem.deref_mut(),
-                    used_bytes: &mut page_table_bytes,
+                let phys_frame = PtFrameAllocator3 {
+                    f: |_| {
+                        memory_usage_stats.global_allocations += 0x1000;
+                    },
+                }
+                .allocate_frame()
+                .unwrap();
+                let mut frame_allocator = PtFrameAllocator3 {
+                    f: |_| {
+                        memory_usage_stats.page_tables += 0x1000;
+                    },
                 };
                 unsafe {
                     offset_page_table.map_to(
                         start_page + page_offset,
-                        PhysFrame::from_start_address(PhysAddr::new(frame_start as u64)).unwrap(),
+                        phys_frame,
                         PageTableFlags::PRESENT
                             | PageTableFlags::WRITABLE
                             | PageTableFlags::NO_EXECUTE,
@@ -135,7 +136,6 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 }
                 .unwrap()
                 .flush();
-                memory_usage_stats.page_tables += page_table_bytes as usize;
                 remaining_to_map -= bytes_to_map;
                 page_offset += 1;
             }
@@ -143,14 +143,12 @@ unsafe impl GlobalAlloc for PtAllocator2 {
             VirtAddr::new_truncate(data_virt_range.start as u64).as_mut_ptr()
         };
 
-        memory_usage_stats.global_allocations += layout.size();
-
         log::info!("alloc: {:?}. layout: {:?}", ptr, layout);
         ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
-        log::debug!("dealloc: {:?}. layout: {:?}", ptr, layout);
+        log::info!("dealloc: {:?}. layout: {:?}", ptr, layout);
 
         let mut phys_tracker = PHYS_MEM_TRACKER.try_get().unwrap().lock();
         let mut virt_tracker = KERNEL_ADDRESS_SPACE_TRACKER.try_get().unwrap().lock();
@@ -227,7 +225,6 @@ unsafe impl GlobalAlloc for PtAllocator2 {
         layout: core::alloc::Layout,
         new_size: usize,
     ) -> *mut u8 {
-        let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
         let mut virt_mem = KERNEL_ADDRESS_SPACE_TRACKER.try_get().unwrap().lock();
         let mut memory_usage = MEMORY_USAGE_STATS.try_get().unwrap().lock();
 
@@ -248,27 +245,32 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 layout.size()
             );
             let current_page_count = {
-                (current_start_number + (layout.size() - 1)).div_floor(0x1000)
+                (current_start_number + layout.size()).div_ceil(0x1000)
                     - current_start_number.div_floor(0x1000)
-                    + 1
             };
-            let new_page_count = {
-                let first_page = Page::<Size4KiB>::containing_address(VirtAddr::from_ptr(ptr));
-                let last_page = Page::<Size4KiB>::containing_address(
-                    VirtAddr::from_ptr(ptr) + layout.size() as u64 - 1,
-                ) + 1;
-                (last_page - first_page) as usize
-            };
+            let new_page_count = (current_start_number + new_size).div_ceil(0x1000)
+                - current_start_number.div_floor(0x1000);
             let new_virt_start_page_addr = virt_mem
                 .get_continuous_range_with_alignment(false, new_page_count * 0x1000, 0x1000)
                 .unwrap();
+            virt_mem.set(
+                new_virt_start_page_addr..new_virt_start_page_addr + new_page_count * 0x1000,
+                true,
+            );
             let current_start_page = Page::<Size4KiB>::containing_address(VirtAddr::from_ptr(ptr));
             let new_start_page = Page::<Size4KiB>::containing_address(VirtAddr::new_truncate(
                 new_virt_start_page_addr as u64,
             ));
             let new_virt_start = new_virt_start_page_addr + (ptr as usize % 0x1000);
 
-            let last_frame_is_full = (current_start_number + layout.size()) % 0x1000 == 0;
+            let last_partial_frame_bytes = (current_start_number + layout.size()) % 0x1000;
+            let last_frame_is_full = last_partial_frame_bytes == 0;
+            log::debug!(
+                "Current page count: {}. New page count: {}. Last frame is full?: {}",
+                current_page_count,
+                new_page_count,
+                last_frame_is_full
+            );
             let current_full_page_count = if last_frame_is_full {
                 current_page_count
             } else {
@@ -276,6 +278,11 @@ unsafe impl GlobalAlloc for PtAllocator2 {
             };
 
             // Switch existing mappings
+            let mut frame_allocator = PtFrameAllocator3 {
+                f: |_frame| {
+                    memory_usage.page_tables += 0x1000;
+                },
+            };
             for page_offset in 0..current_full_page_count {
                 // No need to flush because the unmapped memory won't be used anyway
                 let frame = if is_offset_mapped {
@@ -292,11 +299,6 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                     log::info!("Unmapping page: {:?}", page);
                     offset_page_table.unmap(page).unwrap().0
                 };
-                let mut page_table_bytes = 0;
-                let mut frame_allocator = PtFrameAllocator2 {
-                    phys_mem: &mut phys_mem,
-                    used_bytes: &mut page_table_bytes,
-                };
                 unsafe {
                     offset_page_table.map_to(
                         new_start_page + page_offset as u64,
@@ -307,21 +309,19 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 }
                 .unwrap()
                 .flush();
-                memory_usage.page_tables += page_table_bytes as usize;
             }
 
             if !last_frame_is_full {
                 // TODO: For better performance, try to extend the last phys frame
 
                 // Find a new phys frame and map to it
-                log::debug!("Phys mem: {:#?}", phys_mem);
-                let mut page_table_bytes = 0;
-                let mut frame_allocator = PtFrameAllocator2 {
-                    phys_mem: &mut phys_mem,
-                    used_bytes: &mut page_table_bytes,
-                };
-                let frame = frame_allocator.allocate_frame().unwrap();
+                let frame = PtFrameAllocator3 { f: |_| {} }.allocate_frame().unwrap();
                 log::debug!("Frame: {:?}", frame);
+                let mut frame_allocator = PtFrameAllocator3 {
+                    f: |_frame| {
+                        memory_usage.page_tables += 0x1000;
+                    },
+                };
                 unsafe {
                     offset_page_table.map_to(
                         new_start_page + current_full_page_count as u64,
@@ -334,10 +334,8 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 }
                 .unwrap()
                 .flush();
-                memory_usage.page_tables += page_table_bytes as usize;
 
                 // Copy existing memory
-                // TODO: May improve performance if we don't copy all 4KiB
                 let current_page = current_start_page + current_full_page_count as u64;
                 let current_frame_ptr = VirtAddr::new_truncate(
                     offset_page_table
@@ -351,15 +349,22 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                     frame.start_address().as_u64() + u64::from(self.hhdm_offset),
                 )
                 .as_mut_ptr();
-                log::debug!(
-                    "Copying from {:?} to {:?}. Current page count: {}. Current full page count: {}, is offset mapped: {}",
+                log::info!(
+                    "Copying from {:?} to {:?}. Current page count: {}. Current full page count: {}, is offset mapped: {}. copying bytes: {}",
                     current_frame_ptr,
                     new_frame_ptr,
                     current_page_count,
                     current_full_page_count,
-                    is_offset_mapped
+                    is_offset_mapped,
+                    last_partial_frame_bytes
                 );
-                unsafe { core::ptr::copy_nonoverlapping(current_frame_ptr, new_frame_ptr, 0x1000) };
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        current_frame_ptr,
+                        new_frame_ptr,
+                        last_partial_frame_bytes,
+                    )
+                };
 
                 // Unmap old
                 if !is_offset_mapped {
@@ -369,18 +374,12 @@ unsafe impl GlobalAlloc for PtAllocator2 {
             }
 
             for page_offset in current_page_count..new_page_count {
-                let mut page_table_bytes = 0;
-                let mut frame_allocator = PtFrameAllocator2 {
-                    phys_mem: &mut phys_mem,
-                    used_bytes: &mut page_table_bytes,
-                };
                 // Allocate new frames
-                let frame = frame_allocator.allocate_frame().unwrap();
-                memory_usage.page_tables += page_table_bytes as usize;
-                let mut page_table_bytes = 0;
-                let mut frame_allocator = PtFrameAllocator2 {
-                    phys_mem: &mut phys_mem,
-                    used_bytes: &mut page_table_bytes,
+                let frame = PtFrameAllocator3 { f: |_| {} }.allocate_frame().unwrap();
+                let mut frame_allocator = PtFrameAllocator3 {
+                    f: |_frame| {
+                        memory_usage.page_tables += 0x1000;
+                    },
                 };
                 unsafe {
                     offset_page_table.map_to(
@@ -394,15 +393,13 @@ unsafe impl GlobalAlloc for PtAllocator2 {
                 }
                 .unwrap()
                 .flush();
-                memory_usage.page_tables += page_table_bytes as usize;
             }
-
-            virt_mem.set(new_virt_start..new_virt_start + new_size, true);
 
             VirtAddr::new_truncate(new_virt_start as u64).as_mut_ptr()
         } else {
             // Either unmap or shrink pages and frames, starting from the end
             let mut end_pos = layout.size();
+            let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
             loop {
                 let virt_start_number = VirtAddr::from_ptr(ptr).into_number();
                 let virt_end_number = virt_start_number + end_pos;

@@ -12,7 +12,6 @@ unsafe impl<F: FnMut(PhysFrame<Size4KiB>)> FrameAllocator<Size4KiB> for PtFrameA
     fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
         let start = {
             let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
-
             let start = phys_mem.get_continuous_range_with_alignment(false, 0x1000, 0x1000)?;
             phys_mem.set(start..start + 0x1000, true);
             start

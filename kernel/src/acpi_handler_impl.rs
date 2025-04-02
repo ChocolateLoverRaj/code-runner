@@ -9,8 +9,8 @@ use x86_64::{
 use crate::{
     hhdm_offset::HhdmOffset,
     pt_allocator_2::{
-        get_offset_page_table::get_offset_page_table, pt_frame_allocator_2::PtFrameAllocator2,
-        KERNEL_ADDRESS_SPACE_TRACKER, MEMORY_USAGE_STATS, PHYS_MEM_TRACKER,
+        get_offset_page_table::get_offset_page_table, pt_frame_allocator_3::PtFrameAllocator3,
+        KERNEL_ADDRESS_SPACE_TRACKER, MEMORY_USAGE_STATS,
     },
 };
 
@@ -25,12 +25,16 @@ impl AcpiHandler for AcpiHandlerImpl {
         physical_address: usize,
         size: usize,
     ) -> acpi::PhysicalMapping<Self, T> {
-        let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
+        log::info!(
+            "Mapping phys: 0x{:X} with len 0x{:X}",
+            physical_address,
+            size
+        );
         let mut virt_mem = KERNEL_ADDRESS_SPACE_TRACKER.try_get().unwrap().lock();
         let mut mem_usage = MEMORY_USAGE_STATS.try_get().unwrap().lock();
 
         let page_count =
-            (physical_address + size - 1).div_ceil(0x1000) - physical_address.div_floor(0x1000);
+            (physical_address + size).div_ceil(0x1000) - physical_address.div_floor(0x1000);
         let virt_start = virt_mem
             .get_continuous_range_with_alignment(false, page_count * 0x1000, 0x1000)
             .unwrap();
@@ -40,10 +44,10 @@ impl AcpiHandler for AcpiHandlerImpl {
         let virt_start = VirtAddr::new_truncate(virt_start as u64);
         let first_page = Page::<Size4KiB>::from_start_address(virt_start).unwrap();
         let mut offset_page_table = get_offset_page_table(self.hhdm_offset.into());
-        let mut used_bytes = 0;
-        let mut frame_allocator = PtFrameAllocator2 {
-            phys_mem: &mut phys_mem,
-            used_bytes: &mut used_bytes,
+        let mut frame_allocator = PtFrameAllocator3 {
+            f: |_| {
+                mem_usage.page_tables += 0x1000;
+            },
         };
 
         for i in 0..page_count {
@@ -56,7 +60,6 @@ impl AcpiHandler for AcpiHandlerImpl {
                 )
             };
         }
-        mem_usage.page_tables += used_bytes as usize;
         let mapped_length_from_start_ptr =
             ((first_page + page_count as u64).start_address() - virt_start) as usize;
         unsafe {
