@@ -6,7 +6,6 @@ use crate::{
     cpu_local_data,
     get_total_memory::get_memory_usage_stats,
     hhdm_offset::HhdmOffset,
-    hlt_loop::hlt_loop,
     init_idt_and_gdt::{init_idt_and_gdt, init_vars_for_idt_and_gdt},
     limine_requests::HHDM_REQUEST,
     parse_ram_disk::parse_ram_disk,
@@ -79,7 +78,7 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
             );
         }
     }
-    run_tasks(hhdm_offset)
+    run_tasks()
 
     // hlt_loop()
 }

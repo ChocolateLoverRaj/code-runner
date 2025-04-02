@@ -11,7 +11,7 @@ pub trait Context {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct FullContext {
     pub rbp: u64,
     pub rax: u64,
@@ -43,13 +43,13 @@ impl Context for FullContext {
                 pop rbp
                 pop rax
                 pop rbx
-                pop rcx 
+                pop rcx
                 pop rdx
                 pop rsi
                 pop rdi
                 pop r8
                 pop r9
-                pop r10 
+                pop r10
                 pop r11
                 pop r12
                 pop r13

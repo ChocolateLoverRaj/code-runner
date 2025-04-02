@@ -52,8 +52,6 @@ struct StaticStuff1 {
     spurious_interrupt_handler_index: u8,
     timer_interrupt_index: u8,
     local_apic_error_interrupt_index: u8,
-    /// This is to make sure that the privileged TSS stack is not dropped during the kernel's execution
-    priv_tss_stack: Box<[MaybeUninit<u8>]>,
 }
 
 static CPU_LOCAL_STATIC_STUFF_1: CpuLocal<StoreButBorrowMut<StaticStuff1>> = CpuLocal::uninit();
@@ -62,9 +60,13 @@ static CPU_LOCAL_STATIC_STUFF_1: CpuLocal<StoreButBorrowMut<StaticStuff1>> = Cpu
 struct StaticStuff2 {
     gdt: Gdt,
     iopb: Spinlock<&'static mut [u8; IOPB_SIZE]>,
+    priv_tss_stack: Box<[MaybeUninit<StackChunk>]>,
 }
 
 static CPU_LOCAL_STATIC_STUFF_2: CpuLocal<InitLater<StaticStuff2>> = CpuLocal::uninit();
+
+static CPU_LOCAL_PRIV_STACK: CpuLocal<InitLater<Box<[MaybeUninit<StackChunk>]>>> =
+    CpuLocal::uninit();
 
 pub static CPU_LOCAL_APICS: CpuLocal<InitLater<Spinlock<LocalApic>>> = CpuLocal::uninit();
 
@@ -85,6 +87,7 @@ pub fn init_vars_for_idt_and_gdt(rsdp_addr: RsdpAddr, hhdm_offset: HhdmOffset) {
 }
 
 pub fn init_idt_and_gdt() {
+    let priv_tss_stack = Box::new_uninit_slice(0x200);
     let static_stuff_0 = CPU_LOCAL_STATIC_STUFF_0
         .try_get()
         .unwrap()
@@ -180,13 +183,10 @@ pub fn init_idt_and_gdt() {
                 ))
                 .unwrap();
 
-            /// This is the stack that gets switched to when an interrupt handler is called while the CPU is in user mode
-            const PRIV_TSS_STACK_SIZE: usize = 0x2000;
-            let mut priv_tss_stack = Box::<[u8]>::new_uninit_slice(PRIV_TSS_STACK_SIZE);
-            tss.add_privilege_stack_table_entry({
-                let stack_start = VirtAddr::from_ptr(priv_tss_stack.as_mut_ptr());
-                stack_start + PRIV_TSS_STACK_SIZE as u64
-            })
+            // This is the stack that gets switched to when an interrupt handler is called while the CPU is in user mode
+            tss.add_privilege_stack_table_entry(VirtAddr::from_ptr(
+                priv_tss_stack.as_ptr_range().end,
+            ))
             .unwrap();
             let tss = tss.get_tss();
             StaticStuff1 {
@@ -195,7 +195,6 @@ pub fn init_idt_and_gdt() {
                 spurious_interrupt_handler_index,
                 timer_interrupt_index,
                 local_apic_error_interrupt_index,
-                priv_tss_stack,
             }
         })
         .unwrap();
@@ -208,6 +207,7 @@ pub fn init_idt_and_gdt() {
             StaticStuff2 {
                 gdt,
                 iopb: Spinlock::new(iopb),
+                priv_tss_stack,
             }
         })
         .unwrap();
@@ -240,4 +240,13 @@ pub fn get_iobp() -> &'static Spinlock<&'static mut [u8; IOPB_SIZE]> {
         .try_get()
         .unwrap()
         .iopb
+}
+
+pub fn get_priv_stack() -> &'static Box<[MaybeUninit<StackChunk>]> {
+    &CPU_LOCAL_STATIC_STUFF_2
+        .try_get()
+        .unwrap()
+        .try_get()
+        .unwrap()
+        .priv_tss_stack
 }

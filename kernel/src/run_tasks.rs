@@ -5,15 +5,21 @@ use x86_64::{
 
 use crate::{
     cpu_local_data::set_syscall_stack_pointer,
-    hhdm_offset::HhdmOffset,
     hlt_loop::hlt_loop,
     init_idt_and_gdt::get_iobp,
+    limine_requests::HHDM_REQUEST,
     modules::syscall::enter_user_mode::{enter_user_mode, EnterUserModeInput},
     pt_allocator_2::get_offset_page_table::get_offset_page_table_with_l4,
     tasks::{try_get_cpu_task_data, TaskState, TaskType, TASKS},
 };
 
-pub fn run_tasks(hhdm_offset: HhdmOffset) -> ! {
+/// This function can be called through Rust code, or it can be entered through a iretq instruction
+/// The iretq instruction method is for when this function needs to be entered while also switching stacks
+pub extern "sysv64" fn run_tasks() -> ! {
+    // Cleanup the previous stack
+    try_get_cpu_task_data().unwrap().lock().stack_to_delete = None;
+
+    let hhdm_offset = (&HHDM_REQUEST).try_into().unwrap();
     enum Action {
         EnterUserMode(EnterUserModeInput),
         Halt,

@@ -98,6 +98,7 @@ pub fn try_init_tasks() -> Result<&'static Spinlock<Tasks>, TryInitError> {
 #[derive(Debug, Default)]
 pub struct CpuTaskData {
     pub current_task: Option<usize>,
+    pub stack_to_delete: Option<Box<[MaybeUninit<StackChunk>]>>,
 }
 
 static CPU_TASK_DATA: CpuLocal<Spinlock<CpuTaskData>> = CpuLocal::uninit();

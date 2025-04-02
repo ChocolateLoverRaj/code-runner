@@ -239,9 +239,7 @@ pub fn spawn_task(
         id: NEXT_TASK_ID.fetch_add(1, Ordering::Relaxed),
         task_type: TaskType::User(UserTaskData {
             cr3: l4,
-            kernel_stack: Box::new_uninit_slice(
-                (program.meta_data.stack_size as usize).div_ceil(size_of::<StackChunk>()),
-            ),
+            kernel_stack: Box::new_uninit_slice(0x200),
             iopb: {
                 let mut iopb = [u8::MAX; IOPB_SIZE];
                 program
