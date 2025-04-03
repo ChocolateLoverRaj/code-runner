@@ -33,6 +33,17 @@ pub fn init_cpus(
     try_init_cpu_task_data().unwrap();
     syscall_handler_closure::init();
 
+    let hhdm_offset = (&HHDM_REQUEST).try_into().unwrap();
+    log::info!("Spawning task");
+    spawn_task(RAM_DISK.try_get().unwrap(), hhdm_offset).unwrap();
+    {
+        let tasks = TASKS.try_get().unwrap().lock();
+        log::info!(
+            "Spawned task. {:#?}",
+            tasks.tasks.first().unwrap().owned_phys_mem
+        );
+    }
+
     mp_response.cpus_mut().iter_mut().for_each(|cpu| {
         cpu.goto_address.write(init_cpu);
     });
@@ -57,29 +68,6 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
 
     log::info!("Initialized Local APIC on CPU {}", cpu.id);
     log::info!("{:#?}", get_memory_usage_stats());
-
-    x86_64::instructions::interrupts::int3();
-    // if cpu.id == 0 {
-    //     for i in 0..500_000_000 {}
-    //     panic!("Test panic");
-    // }
-
-    // loop {
-    //     log::info!("Log from CPU {:?}", cpu.id);
-    // }
-
-    let hhdm_offset = (&HHDM_REQUEST).try_into().unwrap();
-    if cpu.id == 0 {
-        log::info!("Spawning task");
-        spawn_task(RAM_DISK.try_get().unwrap(), hhdm_offset);
-        {
-            let tasks = TASKS.try_get().unwrap().lock();
-            log::info!(
-                "Spawned task. {:#?}",
-                tasks.tasks.first().unwrap().owned_phys_mem
-            );
-        }
-    }
 
     init_cpu_local_task_data();
     run_tasks()

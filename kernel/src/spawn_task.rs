@@ -87,8 +87,6 @@ pub fn spawn_task(
     let mut elf_end = Page::<Size4KiB>::from_start_address(VirtAddr::zero()).unwrap();
     let mut frame_allocator = PtFrameAllocator3 {
         f: |frame: PhysFrame<Size4KiB>| {
-            let vec_ptr = task_phys_mem.len_vec.as_ptr_range();
-            log::warn!("{:?}", vec_ptr);
             task_phys_mem.set(
                 {
                     let start = frame.start_address().as_u64() as usize;
