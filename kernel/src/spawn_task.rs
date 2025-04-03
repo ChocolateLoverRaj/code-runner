@@ -239,16 +239,9 @@ pub fn spawn_task(
             cr3: l4,
             kernel_stack: Box::new_uninit_slice(0x200),
             iopb: {
-                let mut iopb = [u8::MAX; IOPB_SIZE];
-                program
-                    .meta_data
-                    .permissions
-                    .ports
-                    .iter()
-                    .for_each(|allowed_port| {
-                        iopb[allowed_port.div_floor(8) as usize] &= !(1 << (allowed_port % 8));
-                    });
-                iopb
+                // Even if a program is allowed to use COM1, it must "take ownership" of it so that a program and another program or the kernel doesn't try to use it at the same time
+                // So set to all 1s to deny all ports
+                [u8::MAX; IOPB_SIZE]
             },
             log_stream: None,
         }),
