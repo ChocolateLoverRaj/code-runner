@@ -14,6 +14,7 @@ use x86_64::{
 
 use crate::{
     cpu_local::CpuLocal,
+    fault_handlers::{gp_fault::gp_fault_handler, page_fault::page_fault_handler},
     hhdm_offset::HhdmOffset,
     map_local_xapic::{map_local_xapic, LocalXapicVirtAddr},
     modules::{
@@ -114,13 +115,13 @@ pub fn init_idt_and_gdt() {
                 .unwrap();
             idt_builder
                 .set_general_protection_fault_entry(idt::Entry::from_handler_fn(
-                    panicking_general_protection_fault_handler,
+                    gp_fault_handler,
                     idt::EntryOptions::present_with_cs(Gdt::cs()),
                 ))
                 .unwrap();
             idt_builder
                 .set_page_fault_entry(idt::Entry::from_handler_fn(
-                    panicking_page_fault_handler,
+                    page_fault_handler,
                     idt::EntryOptions::present_with_cs(Gdt::cs()),
                 ))
                 .unwrap();

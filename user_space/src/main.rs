@@ -49,6 +49,7 @@ pub fn spin_fs(duration_fs: u128) {
 
 #[unsafe(no_mangle)]
 extern "C" fn _start() -> ! {
+    unsafe { (1 as *const u8).read_volatile() };
     let can_exit = syscall_exists(SYSCALL_EXIT);
     let should_be_false = syscall_exists(Uuid::default());
     let mut count = 0;
