@@ -67,10 +67,9 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     // loop {
     //     log::info!("Log from CPU {:?}", cpu.id);
     // }
-    init_cpu_local_task_data();
 
     let hhdm_offset = (&HHDM_REQUEST).try_into().unwrap();
-    if cpu.id == 0 || cpu.id == 1 {
+    if cpu.id == 0 {
         log::info!("Spawning task");
         spawn_task(RAM_DISK.try_get().unwrap(), hhdm_offset);
         {
@@ -81,6 +80,8 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
             );
         }
     }
+
+    init_cpu_local_task_data();
     run_tasks()
 
     // hlt_loop()

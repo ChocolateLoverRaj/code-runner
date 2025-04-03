@@ -20,9 +20,7 @@ use crate::{
         get_offset_page_table::get_offset_page_table_with_new_l4,
         pt_frame_allocator_3::PtFrameAllocator3,
     },
-    tasks::{
-        ReadyToStartState, StackChunk, Task, TaskState, TaskType, UserTaskData, NEXT_TASK_ID, TASKS,
-    },
+    tasks::{ReadyToStartState, Task, TaskState, TaskType, UserTaskData, NEXT_TASK_ID, TASKS},
 };
 
 /// Only specifies `WRITABLE` and `NO_EXECUTE` if needed. Other flags such as `PRESENT` and `USER_ACCESSIBLE` must be added.
