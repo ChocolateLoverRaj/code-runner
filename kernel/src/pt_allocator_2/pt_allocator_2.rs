@@ -1,4 +1,4 @@
-use core::{alloc::GlobalAlloc, ops::DerefMut};
+use core::alloc::GlobalAlloc;
 
 use limine::response::MemoryMapResponse;
 use x86_64::{

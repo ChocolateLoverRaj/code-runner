@@ -58,7 +58,9 @@ impl AcpiHandler for AcpiHandlerImpl {
                     PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE | PageTableFlags::NO_CACHE,
                     &mut frame_allocator,
                 )
-            };
+            }
+            .unwrap()
+            .flush();
         }
         let mapped_length_from_start_ptr =
             ((first_page + page_count as u64).start_address() - virt_start) as usize;
@@ -81,7 +83,7 @@ impl AcpiHandler for AcpiHandlerImpl {
         let end_page = Page::<Size4KiB>::containing_address(end_addr_exclusive - 1);
         let mut offset_page_table = get_offset_page_table(region.handler().hhdm_offset.into());
         for page in start_page..=end_page {
-            offset_page_table.unmap(page);
+            offset_page_table.unmap(page).unwrap().1.ignore();
         }
     }
 }

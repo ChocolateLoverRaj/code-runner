@@ -1,24 +1,12 @@
 use alloc::{boxed::Box, collections::btree_map::BTreeMap};
-use common::syscall_uuids::{SYSCALL_EXISTS, SYSCALL_EXIT, SYSCALL_MAKE_ME_LOGGER};
+use common::syscall_uuids::{SYSCALL_EXISTS, SYSCALL_EXIT};
 use uuid::Uuid;
-use x86_64::{
-    registers::{
-        control::Cr3,
-        segmentation::{Segment, CS, GS},
-    },
-    VirtAddr,
-};
+use x86_64::registers::segmentation::GS;
 
 use crate::{
-    context::{Context, FullContext, SyscallContext},
+    context::{Context, SyscallContext},
     cpu_local_data::get_local,
-    hhdm_offset::HhdmOffset,
-    init_idt_and_gdt::get_priv_stack,
-    limine_requests::HHDM_REQUEST,
     modules::syscall::syscall_handler_closure::PushedRegisters,
-    pt_allocator_2::PHYS_MEM_TRACKER,
-    run_tasks::run_tasks,
-    tasks::{try_get_cpu_task_data, TaskType, TASKS},
     terminate_current_task::terminate_current_task,
 };
 

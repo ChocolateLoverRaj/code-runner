@@ -65,9 +65,6 @@ struct StaticStuff2 {
 
 static CPU_LOCAL_STATIC_STUFF_2: CpuLocal<InitLater<StaticStuff2>> = CpuLocal::uninit();
 
-static CPU_LOCAL_PRIV_STACK: CpuLocal<InitLater<Box<[MaybeUninit<StackChunk>]>>> =
-    CpuLocal::uninit();
-
 pub static CPU_LOCAL_APICS: CpuLocal<InitLater<Spinlock<LocalApic>>> = CpuLocal::uninit();
 
 pub fn init_vars_for_idt_and_gdt(rsdp_addr: RsdpAddr, hhdm_offset: HhdmOffset) {

@@ -25,7 +25,7 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
     // Because the logger might be locked, we just create a new logger
     // TODO: Log on screen and through SPCR port too
     let mut serial_port = unsafe { SerialPort::init() };
-    write!(serial_port, "\r\n\r\n{}", info);
+    let _ = write!(serial_port, "\r\n\r\n{}", info);
 
     hlt_loop()
 }

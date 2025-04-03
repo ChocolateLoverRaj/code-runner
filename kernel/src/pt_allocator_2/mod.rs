@@ -7,7 +7,6 @@ pub mod meta_frame_allocator;
 pub mod pt_allocator_2;
 pub mod pt_frame_allocator_2;
 pub mod pt_frame_allocator_3;
-use core::ops::Range;
 
 use alloc::vec::Vec;
 use memory_usage_stats::MemoryUsageStats;
@@ -22,10 +21,6 @@ pub static PHYS_MEM_TRACKER: InitLater<Spinlock<ContinuousBoolVec<Vec<usize>>>> 
 pub static MEMORY_USAGE_STATS: InitLater<Spinlock<MemoryUsageStats>> = InitLater::uninit();
 pub static KERNEL_ADDRESS_SPACE_TRACKER: InitLater<Spinlock<ContinuousBoolVec<Vec<usize>>>> =
     InitLater::uninit();
-
-fn align_range(range: Range<usize>, alignment: usize) -> Range<usize> {
-    range.start.div_floor(alignment) * alignment..range.end.div_ceil(alignment) * alignment
-}
 
 #[global_allocator]
 static ALLOCATOR: NotConstAllocator<PtAllocator2> = NotConstAllocator::uninit();

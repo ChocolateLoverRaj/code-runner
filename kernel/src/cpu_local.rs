@@ -4,7 +4,14 @@ use util::init_later::{InitLater, TryGetError, TryInitError};
 use crate::{cpu_local_data::get_local, limine_requests::MP_REQUEST};
 
 fn get_cpu_count() -> usize {
-    unsafe { &MP_REQUEST }.get_response().unwrap().cpus().len()
+    unsafe {
+        #[allow(static_mut_refs)]
+        &MP_REQUEST
+    }
+    .get_response()
+    .unwrap()
+    .cpus()
+    .len()
 }
 
 pub struct CpuLocal<T> {
