@@ -24,6 +24,7 @@ pub mod acpi_handler_impl;
 pub mod apic;
 pub mod colorful_logger;
 pub mod combined_logger;
+pub mod config;
 pub mod context;
 pub mod cpu_local;
 pub mod cpu_local_data;
@@ -55,6 +56,7 @@ pub mod log_ram_disk;
 pub mod log_rsdp_addr;
 pub mod log_sample_messages;
 pub mod logger;
+pub mod logger_2;
 pub mod logger_without_interrupts;
 pub mod map_local_xapic;
 pub mod memory;
@@ -110,8 +112,9 @@ use test_allocator::test_allocator;
 unsafe extern "C" fn kernel_main() -> ! {
     assert!(BASE_REVISION.is_supported());
 
-    init_logger_with_framebuffer(None);
+    // init_logger_with_framebuffer(None);
     // log_sample_messages::log_sample_messages();
+    logger_2::init();
 
     disable_pic8259();
 

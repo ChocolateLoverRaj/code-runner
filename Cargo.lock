@@ -1073,6 +1073,7 @@ dependencies = [
  "rand 0.9.0",
  "spin",
  "spinning_top 0.3.0",
+ "string-alloc",
  "thiserror 2.0.12",
  "tinytga",
  "uart_16550 0.3.2",
@@ -2137,6 +2138,12 @@ checksum = "2b8c4a4445d81357df8b1a650d0d0d6fbbbfe99d064aa5e02f3e4022061476d8"
 dependencies = [
  "loom",
 ]
+
+[[package]]
+name = "string-alloc"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fc7909ff677a6208e324924331f1bafc944791ca7f9c89ee82991d38ae252a2"
 
 [[package]]
 name = "syn"

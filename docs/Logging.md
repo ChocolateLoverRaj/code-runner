@@ -8,3 +8,16 @@ For now, to keep things simple, we will have an unbounded `Vec` for log messages
 
 ## Syscalls for reading logs
 Reading current logs is ez pez. But what if we want to watch as logs happen and continuously display the latest logs? We need some way of asynchronously receiving log messages. For this we will need a task (which can run as kernel) to receive log messages.
+
+## Timeline
+First, the kernel just stores logs in a `static` Vec. You can't see them without a debugger.
+
+Optional - Have the kernel log to COM1 in case debugging is needed before the allocator is set up or user space tasks are created.
+
+Optional - Have the kernel log to the screen.
+
+Then, once the allocator is set up, the vec can be converted into a dynamically growing Vec for logs.
+
+Optional - Have the kernel log to the SPCR (if present) once ACPI tables are parsed.
+
+Then, a user space tasks can take ov

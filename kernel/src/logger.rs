@@ -12,7 +12,7 @@ use crate::{
     embedded_graphics_writer::EmbeddedGraphicsWriter,
     frame_buffer::Display,
     get_rgb_color::GET_RGB_COLOR,
-    logger_without_interrupts::LockedLoggerWithoutInterrupts,
+    logger_without_interrupts::LoggerWithoutInterrupts,
     write_logger::LockedWriteLogger,
 };
 
@@ -20,8 +20,8 @@ static SCREEN_LOGGER: OnceCell<ColorfulLogger<Rgb888, EmbeddedGraphicsWriter<Dis
     OnceCell::uninit();
 static SERIAL_LOGGER: LockedWriteLogger<Uart16550Registers<PortAccessedRegister>> =
     LockedWriteLogger::new(unsafe { uart_16550::port::new(0x3F8) }, true);
-static LOGGER: LockedLoggerWithoutInterrupts<DynamicCombinedLogger<'static, 2>> =
-    LockedLoggerWithoutInterrupts::new(DynamicCombinedLogger {
+static LOGGER: LoggerWithoutInterrupts<DynamicCombinedLogger<'static, 2>> =
+    LoggerWithoutInterrupts::new(DynamicCombinedLogger {
         loggers: Spinlock::new(heapless::Vec::new()),
     });
 

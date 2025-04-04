@@ -8,6 +8,7 @@ use crate::{
     hhdm_offset::HhdmOffset,
     init_idt_and_gdt::{init_idt_and_gdt, init_vars_for_idt_and_gdt},
     limine_requests::HHDM_REQUEST,
+    logger_2::LOG_MESSAGES,
     modules::syscall::syscall_handler_closure,
     parse_ram_disk::parse_ram_disk,
     rsdp_addr::RsdpAddr,
@@ -44,6 +45,16 @@ pub fn init_cpus(
         );
     }
 
+    let (len, bytes_used) = {
+        let log_messages = LOG_MESSAGES.lock();
+        let allocator = log_messages.allocator().heap.lock();
+        (
+            log_messages.len(),
+            allocator.top() as usize - allocator.bottom() as usize,
+        )
+    };
+    log::info!("{} log messages, using {} bytes", len, bytes_used);
+
     mp_response.cpus_mut().iter_mut().for_each(|cpu| {
         cpu.goto_address.write(init_cpu);
     });
@@ -71,6 +82,4 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
 
     init_cpu_local_task_data();
     run_tasks()
-
-    // hlt_loop()
 }
