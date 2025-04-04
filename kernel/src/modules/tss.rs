@@ -1,38 +1,9 @@
 use x86_64::{structures::tss::TaskStateSegment, VirtAddr};
 
-/// `N` is the size of the IOBP in **bytes**
-/// Do not change `iomap_base`. It is set to the correct value by the `default` function.
-/// By default, the IOPB is set to all 1s, so that no port access is allowed
-// #[derive(Debug, Clone, Copy)]
-// #[repr(C, packed(4))]
-// pub struct TssWithIoBitMap<const N: usize> {
-//     pub above_iobp: TaskStateSegment,
-//     pub actual_io_bitmap: [u8; N],
-//     /// According to Section 20.5.2 in *Intel® 64 and IA-32 Architectures Software Developer’s Manual*
-//     /// > Last byte of bitmap must be followed by a byte with all bits set.
-//     io_bit_map_last_byte: u8,
-// }
-
-// impl<const N: usize> Default for TssWithIoBitMap<N> {
-//     fn default() -> Self {
-//         Self {
-//             above_iobp: {
-//                 let mut tss = TaskStateSegment::default();
-//                 // tss.iomap_base = (offset_of!(Self, actual_io_bitmap)).try_into().unwrap();
-//                 tss
-//             },
-//             // If a bit is 0 it means the port is allowed, 1 is not allowed
-//             // actual_io_bitmap: [u8::MAX; N],
-//             actual_io_bitmap: [u8::MAX; N],
-//             io_bit_map_last_byte: u8::MAX,
-//         }
-//     }
-// }
-
 #[derive(Debug)]
 pub struct TssBuilder<const N: usize> {
     used_interrupt_stack_table_entries: u16,
-    used_privilege_stack_table_entries: usize,
+    set_privilege_stack_table_entry_from_ring_3: bool,
     pub tss: TaskStateSegment<N>,
 }
 
@@ -40,7 +11,7 @@ impl<const N: usize> Default for TssBuilder<N> {
     fn default() -> Self {
         Self {
             used_interrupt_stack_table_entries: 0,
-            used_privilege_stack_table_entries: 0,
+            set_privilege_stack_table_entry_from_ring_3: false,
             tss: Default::default(),
         }
     }
@@ -60,14 +31,19 @@ impl<const N: usize> TssBuilder<N> {
         }
     }
 
-    pub fn add_privilege_stack_table_entry(&mut self, address: VirtAddr) -> Option<usize> {
-        if self.used_privilege_stack_table_entries < 3 {
-            self.tss.privilege_stack_table[self.used_privilege_stack_table_entries] = address;
-            let r = Some(self.used_privilege_stack_table_entries);
-            self.used_privilege_stack_table_entries += 1;
-            r
+    /// Set the privilege stack table entry that tells the CPU which stack to switch to when an interrupt causes a switch from ring 3 to ring 0.
+    /// The other privilege stack table entries are for transitioning from ring 1 and ring 2. Since in 2025 no one uses ring 1 or 2, those can be ignored.
+    /// If this entry is already set, returns `Err` with the provided address.
+    pub fn set_privilege_stack_table_entry_from_ring_3(
+        &mut self,
+        address: VirtAddr,
+    ) -> Result<(), VirtAddr> {
+        if !self.set_privilege_stack_table_entry_from_ring_3 {
+            self.tss.privilege_stack_table[0] = address;
+            self.set_privilege_stack_table_entry_from_ring_3 = true;
+            Ok(())
         } else {
-            None
+            Err(address)
         }
     }
 

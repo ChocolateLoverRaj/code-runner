@@ -15,7 +15,7 @@ pub mod panic_handler;
 pub mod syscall;
 pub mod test_disable_interrupts;
 
-use core::fmt::Write;
+use core::{arch::asm, fmt::Write};
 
 use async_keyboard::AsyncKeyboard;
 use common::{syscall_start_recording_keyboard::FullQueueBehavior, syscall_uuids::SYSCALL_EXIT};
@@ -49,7 +49,10 @@ pub fn spin_fs(duration_fs: u128) {
 
 #[unsafe(no_mangle)]
 extern "C" fn _start() -> ! {
-    unsafe { (1 as *const u8).read_volatile() };
+    // unsafe {
+    //     asm!("ud2");
+    // }
+    // unsafe { (1 as *const u8).read_volatile() };
     let can_exit = syscall_exists(SYSCALL_EXIT);
     let should_be_false = syscall_exists(Uuid::default());
     let mut count = 0;

@@ -14,19 +14,18 @@ use x86_64::{
 
 use crate::{
     cpu_local::CpuLocal,
-    fault_handlers::{gp_fault::gp_fault_handler, page_fault::page_fault_handler},
+    fault_handlers::{
+        double_fault::double_fault_handler, gp_fault::gp_fault_handler,
+        invalid_opcode_fault::invalid_opcode_handler, page_fault::page_fault_handler,
+        segment_not_present::segment_not_present_handler,
+    },
     hhdm_offset::HhdmOffset,
     map_local_xapic::{map_local_xapic, LocalXapicVirtAddr},
     modules::{
-        double_fault_handler_entry::get_double_fault_entry, gdt::Gdt, idt::IdtBuilder,
-        logging_breakpoint_handler::logging_breakpoint_handler,
-        panicking_double_fault_handler::panicking_double_fault_handler,
+        gdt::Gdt, idt::IdtBuilder, logging_breakpoint_handler::logging_breakpoint_handler,
         panicking_general_protection_fault_handler::panicking_general_protection_fault_handler,
-        panicking_invalid_opcode_handler::panicking_invalid_opcode_handler,
         panicking_invalid_tss_fault_handler::panicking_invalid_tss_fault_handler,
         panicking_local_apic_error_interrupt_handler::panicking_local_apic_error_interrupt_handler,
-        panicking_page_fault_handler::panicking_page_fault_handler,
-        panicking_segment_not_present_handler::panicking_segment_not_present_handler,
         panicking_spurious_interrupt_handler::panicking_spurious_interrupt_handler,
         panicking_stack_segment_fault_handler::panicking_stack_segment_fault_handler,
         spurious_interrupt_handler::set_spurious_interrupt_handler, tss::TssBuilder,
@@ -38,13 +37,6 @@ use crate::{
     IOPB_SIZE,
 };
 static LOCAL_APIC_ADDR: InitLater<Option<LocalXapicVirtAddr>> = InitLater::uninit();
-
-#[derive(Debug)]
-struct StaticStuff0 {
-    double_fault_handler_stack: Box<[MaybeUninit<StackChunk>]>,
-}
-
-static CPU_LOCAL_STATIC_STUFF_0: CpuLocal<StoreButBorrowMut<StaticStuff0>> = CpuLocal::uninit();
 
 #[derive(Debug)]
 struct StaticStuff1 {
@@ -61,6 +53,11 @@ static CPU_LOCAL_STATIC_STUFF_1: CpuLocal<StoreButBorrowMut<StaticStuff1>> = Cpu
 struct StaticStuff2 {
     gdt: Gdt,
     iopb: Spinlock<&'static mut [u8; IOPB_SIZE]>,
+    /// The that the CPU uses for the double fault handler
+    double_fault_handler_stack: Box<[MaybeUninit<StackChunk>]>,
+    /// The stack that the CPU uses for other fault handlers
+    other_fault_handler_stack: Box<[MaybeUninit<StackChunk>]>,
+    /// The stack that the CPU uses when transitioning from user mode to kernel mode to call an interrupt handler
     priv_tss_stack: Box<[MaybeUninit<StackChunk>]>,
 }
 
@@ -72,9 +69,6 @@ pub fn init_vars_for_idt_and_gdt(rsdp_addr: RsdpAddr, hhdm_offset: HhdmOffset) {
     let acpi_tables = crate::acpi::init(rsdp_addr, hhdm_offset).unwrap();
     let local_apic_addr = map_local_xapic(&acpi_tables.lock(), hhdm_offset).unwrap();
     LOCAL_APIC_ADDR.try_init(local_apic_addr).unwrap();
-    CPU_LOCAL_STATIC_STUFF_0
-        .try_init(StoreButBorrowMut::uninit)
-        .unwrap();
     CPU_LOCAL_STATIC_STUFF_1
         .try_init(StoreButBorrowMut::uninit)
         .unwrap();
@@ -85,80 +79,85 @@ pub fn init_vars_for_idt_and_gdt(rsdp_addr: RsdpAddr, hhdm_offset: HhdmOffset) {
 }
 
 pub fn init_idt_and_gdt() {
-    let priv_tss_stack = Box::new_uninit_slice(0x200);
-    let static_stuff_0 = CPU_LOCAL_STATIC_STUFF_0
-        .try_get()
-        .unwrap()
-        .store_but_borrow_mut(StaticStuff0 {
-            double_fault_handler_stack: Box::new_uninit_slice(0x200),
-        })
-        .unwrap();
+    let idt_stack_size = 0x200;
+    let priv_tss_stack = Box::new_uninit_slice(idt_stack_size);
+    let double_fault_handler_stack = Box::new_uninit_slice(idt_stack_size);
+    let other_fault_handler_stack = Box::new_uninit_slice(idt_stack_size);
+
     let static_stuff_1 = CPU_LOCAL_STATIC_STUFF_1
         .try_get()
         .unwrap()
         .store_but_borrow_mut({
             let mut tss = TssBuilder::<IOPB_SIZE>::default();
             let mut idt_builder = IdtBuilder::default();
+            let double_fault_stack_index = tss
+                .add_interrupt_stack_table_entry(VirtAddr::from_ptr(
+                    double_fault_handler_stack.as_ptr_range().end,
+                ))
+                .unwrap();
+            let other_fault_stack_index = tss
+                .add_interrupt_stack_table_entry(VirtAddr::from_ptr(
+                    other_fault_handler_stack.as_ptr_range().end,
+                ))
+                .unwrap();
             idt_builder
-                .set_double_fault_entry(get_double_fault_entry(
-                    &mut tss,
-                    panicking_double_fault_handler,
-                    Gdt::cs(),
-                    &mut static_stuff_0.double_fault_handler_stack,
+                .set_double_fault_entry(idt::Entry::from_handler_fn(
+                    double_fault_handler,
+                    idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), double_fault_stack_index),
                 ))
                 .unwrap();
             idt_builder
                 .set_breakpoint_entry(idt::Entry::from_handler_fn(
                     logging_breakpoint_handler,
-                    idt::EntryOptions::present_with_cs(Gdt::cs()),
+                    idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
                 ))
                 .unwrap();
             idt_builder
                 .set_general_protection_fault_entry(idt::Entry::from_handler_fn(
                     gp_fault_handler,
-                    idt::EntryOptions::present_with_cs(Gdt::cs()),
+                    idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
                 ))
                 .unwrap();
             idt_builder
                 .set_page_fault_entry(idt::Entry::from_handler_fn(
                     page_fault_handler,
-                    idt::EntryOptions::present_with_cs(Gdt::cs()),
+                    idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
                 ))
                 .unwrap();
             idt_builder
                 .set_invalid_tss_fault_entry(idt::Entry::from_handler_fn(
                     panicking_invalid_tss_fault_handler,
-                    idt::EntryOptions::present_with_cs(Gdt::cs()),
+                    idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
                 ))
                 .unwrap();
             idt_builder
                 .set_security_exception_fault_entry(idt::Entry::from_handler_fn(
                     panicking_general_protection_fault_handler,
-                    idt::EntryOptions::present_with_cs(Gdt::cs()),
+                    idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
                 ))
                 .unwrap();
             idt_builder
                 .set_segment_not_present_entry(idt::Entry::from_handler_fn(
-                    panicking_segment_not_present_handler,
-                    idt::EntryOptions::present_with_cs(Gdt::cs()),
+                    segment_not_present_handler,
+                    idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
                 ))
                 .unwrap();
             idt_builder
                 .set_invalid_opcode_entry(idt::Entry::from_handler_fn(
-                    panicking_invalid_opcode_handler,
-                    idt::EntryOptions::present_with_cs(Gdt::cs()),
+                    invalid_opcode_handler,
+                    idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
                 ))
                 .unwrap();
             idt_builder
                 .set_stack_segment_fault_entry(idt::Entry::from_handler_fn(
                     panicking_stack_segment_fault_handler,
-                    idt::EntryOptions::present_with_cs(Gdt::cs()),
+                    idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
                 ))
                 .unwrap();
             let spurious_interrupt_handler_index = set_spurious_interrupt_handler(
                 &mut idt_builder,
                 panicking_spurious_interrupt_handler,
-                idt::EntryOptions::present_with_cs(Gdt::cs()),
+                idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
             )
             .unwrap();
             let timer_interrupt_index = idt_builder
@@ -170,19 +169,19 @@ pub fn init_idt_and_gdt() {
             let local_apic_error_interrupt_index = idt_builder
                 .set_flexible_entry(idt::Entry::from_handler_fn(
                     panicking_local_apic_error_interrupt_handler,
-                    idt::EntryOptions::present_with_cs(Gdt::cs()),
+                    idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
                 ))
                 .unwrap();
 
             idt_builder
                 .set_non_maskable_interrupt_entry(idt::Entry::from_handler_fn(
                     nmi_handler,
-                    idt::EntryOptions::present_with_cs(Gdt::cs()),
+                    idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
                 ))
                 .unwrap();
 
             // This is the stack that gets switched to when an interrupt handler is called while the CPU is in user mode
-            tss.add_privilege_stack_table_entry(VirtAddr::from_ptr(
+            tss.set_privilege_stack_table_entry_from_ring_3(VirtAddr::from_ptr(
                 priv_tss_stack.as_ptr_range().end,
             ))
             .unwrap();
@@ -205,6 +204,8 @@ pub fn init_idt_and_gdt() {
             StaticStuff2 {
                 gdt,
                 iopb: Spinlock::new(iopb),
+                double_fault_handler_stack,
+                other_fault_handler_stack,
                 priv_tss_stack,
             }
         })
