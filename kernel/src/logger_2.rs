@@ -1,5 +1,6 @@
 use core::{
     alloc::{AllocError, Allocator},
+    cell::SyncUnsafeCell,
     fmt::Write,
     mem::MaybeUninit,
     ptr::NonNull,
@@ -36,19 +37,19 @@ impl Log for Logger {
                 serial_logger.log(record);
             }
         }
-        LOG_MESSAGES
-            .lock()
-            .push(LogMessage::Kernel(KernelLogMessage {
-                cpu: 0,
-                message: LogMessageWithLevel {
-                    level: record.level(),
-                    message: {
-                        let mut message = string_alloc::String::new_in(&LOG_MESSAGES_ALLOCATOR);
-                        write!(message, "{}", record.args()).unwrap();
-                        message
-                    },
+        let mut messages = LOG_MESSAGES.lock();
+        let alloc = *messages.allocator();
+        messages.push(LogMessage::Kernel(KernelLogMessage {
+            cpu: 0,
+            message: LogMessageWithLevel {
+                level: record.level(),
+                message: {
+                    let mut message = string_alloc::String::new_in(alloc);
+                    write!(message, "{}", record.args()).unwrap();
+                    message
                 },
-            }));
+            },
+        }));
     }
 
     fn flush(&self) {
@@ -100,38 +101,67 @@ pub enum LogMessage<A: Allocator + Clone + Default> {
 
 static LOGGER: InitLater<LoggerWithoutInterrupts<Logger>> = InitLater::uninit();
 
-static mut LOGGER_BYTES: [MaybeUninit<u8>; LOG_BUFFER_SIZE] =
-    [MaybeUninit::uninit(); LOG_BUFFER_SIZE];
-pub static LOG_MESSAGES_ALLOCATOR: StaticLinkedListAllocator = StaticLinkedListAllocator {
-    heap: LockedHeap::empty(),
-};
+pub static LOG_MESSAGES_ALLOCATOR: StaticLinkedListAllocator<LOG_BUFFER_SIZE> =
+    StaticLinkedListAllocator::uninit();
 pub static LOG_MESSAGES: Spinlock<
-    Vec<LogMessage<&StaticLinkedListAllocator>, &StaticLinkedListAllocator>,
+    Vec<
+        LogMessage<&StaticLinkedListAllocator<LOG_BUFFER_SIZE>>,
+        &StaticLinkedListAllocator<LOG_BUFFER_SIZE>,
+    >,
 > = Spinlock::new(Vec::new_in(&LOG_MESSAGES_ALLOCATOR));
 
-pub struct StaticLinkedListAllocator {
+/// N must be a multiple of 0x1000
+#[repr(C, align(0x1000))]
+pub struct PreReservedPages<const N: usize> {
+    pub bytes: [MaybeUninit<u8>; N],
+}
+
+/// N must be a multiple of 0x1000
+pub struct StaticLinkedListAllocator<const N: usize> {
+    pub pre_reserved_pages: SyncUnsafeCell<PreReservedPages<N>>,
     pub heap: LockedHeap,
 }
 
-impl Clone for StaticLinkedListAllocator {
+impl<const N: usize> StaticLinkedListAllocator<N> {
+    pub const fn uninit() -> Self {
+        Self {
+            pre_reserved_pages: SyncUnsafeCell::new(PreReservedPages {
+                bytes: [MaybeUninit::uninit(); N],
+            }),
+            heap: LockedHeap::empty(),
+        }
+    }
+
+    /// # Safety
+    /// This function must be called exactly once.
+    pub unsafe fn init(&'static self) {
+        unsafe {
+            self.heap
+                .lock()
+                .init(self.pre_reserved_pages.get().cast(), N)
+        };
+    }
+}
+
+impl<const N: usize> Clone for StaticLinkedListAllocator<N> {
     fn clone(&self) -> Self {
         unimplemented!()
     }
 }
 
-impl Default for StaticLinkedListAllocator {
+// impl Default for StaticLinkedListAllocator {
+//     fn default() -> Self {
+//         unimplemented!()
+//     }
+// }
+
+impl<const N: usize> Default for &StaticLinkedListAllocator<N> {
     fn default() -> Self {
         unimplemented!()
     }
 }
 
-impl Default for &StaticLinkedListAllocator {
-    fn default() -> Self {
-        unimplemented!()
-    }
-}
-
-unsafe impl Allocator for StaticLinkedListAllocator {
+unsafe impl<const N: usize> Allocator for StaticLinkedListAllocator<N> {
     fn allocate(
         &self,
         layout: core::alloc::Layout,
@@ -154,10 +184,7 @@ unsafe impl Allocator for StaticLinkedListAllocator {
 }
 
 pub fn init() {
-    LOG_MESSAGES_ALLOCATOR
-        .heap
-        .lock()
-        .init_from_slice(unsafe { &mut LOGGER_BYTES });
+    unsafe { LOG_MESSAGES_ALLOCATOR.init() };
     log::set_logger(
         LOGGER
             .try_init(LoggerWithoutInterrupts::new(Logger::new()))

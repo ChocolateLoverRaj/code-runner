@@ -1,6 +1,7 @@
 use log::Log;
 use x86_64::instructions::interrupts::without_interrupts;
 
+#[derive(Debug)]
 pub struct LoggerWithoutInterrupts<T: Log> {
     pub logger: T,
 }
