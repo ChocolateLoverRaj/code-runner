@@ -25,10 +25,11 @@ pub fn run_qemu(boot_type: BootType) {
             [
                 format!("target create {kernel_binary}"),
                 // format!("target modules load --file {kernel_binary} --slide 0xffffffff80000000"),
-                "b kernel_main".into(),
+                // "b kernel_main".into(),
                 "b rust_begin_unwind".into(),
-                "b init_cpus.rs:94".into(),
-                "b logger_2.rs:26".into(),
+                // "b init_cpus.rs:94".into(),
+                // "b logger_2.rs:26".into(),
+                "b pt_allocator_2.rs:409".into(),
                 "gdb-remote localhost:1234".into(),
             ]
             .join("\n"),

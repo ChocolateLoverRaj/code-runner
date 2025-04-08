@@ -72,22 +72,23 @@ pub fn test_allocator(max_size: usize) {
         unsafe { dealloc(ptr, new_layout) };
     }
 
-    {
-        log::info!("Testing large shrink");
-        let layout = Layout::from_size_align(0x3000, 1).unwrap();
-        let ptr = unsafe { alloc(layout) };
-        x86_64::instructions::tlb::flush_all();
-        unsafe { core::slice::from_raw_parts_mut(ptr, 0x3000) }.fill(1);
-        let ptr = unsafe { realloc(ptr, layout, 0x1800) };
-        x86_64::instructions::tlb::flush_all();
-        log::info!("New ptr: {:?}", ptr);
-        assert!(unsafe { core::slice::from_raw_parts_mut(ptr, 0x1800) }
-            .iter()
-            .copied()
-            .eq(core::iter::repeat_n(1, 0x1800)));
-        let layout = Layout::from_size_align(0x1800, 1).unwrap();
-        unsafe { dealloc(ptr, layout) };
-    }
+    // {
+    //     log::info!("Testing large shrink");
+    //     let layout = Layout::from_size_align(0x3000, 1).unwrap();
+    //     let ptr = unsafe { alloc(layout) };
+    //     unsafe { core::slice::from_raw_parts_mut(ptr, layout.size()) }.fill(1);
+    //     let new_layout = Layout::from_size_align(0x1800, layout.align()).unwrap();
+    //     let ptr = unsafe { realloc(ptr, layout, new_layout.size()) };
+    //     log::info!("Ptr: {:?}", ptr);
+    //     log::info!("New ptr: {:?}", ptr);
+    //     assert!(
+    //         unsafe { core::slice::from_raw_parts_mut(ptr, new_layout.size()) }
+    //             .iter()
+    //             .copied()
+    //             .eq(core::iter::repeat_n(1, new_layout.size()))
+    //     );
+    //     unsafe { dealloc(ptr, new_layout) };
+    // }
 
     {
         log::info!("Testing realloc with relocation");

@@ -3,11 +3,12 @@ use core::{
     cell::SyncUnsafeCell,
     fmt::Write,
     mem::MaybeUninit,
+    ops::DerefMut,
     ptr::NonNull,
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use alloc::vec::Vec;
+use alloc::{alloc::Global, vec::Vec};
 use linked_list_allocator::LockedHeap;
 use log::{LevelFilter, Log};
 use spinning_top::Spinlock;
@@ -17,6 +18,7 @@ use util::init_later::InitLater;
 use crate::{
     config::{CONFIG, LOG_BUFFER_SIZE},
     logger_without_interrupts::LoggerWithoutInterrupts,
+    pt_allocator_2::pre_reserved_pages::PreReservedPages,
     write_logger::LockedWriteLogger,
 };
 
@@ -37,19 +39,46 @@ impl Log for Logger {
                 serial_logger.log(record);
             }
         }
-        let mut messages = LOG_MESSAGES.lock();
-        let alloc = *messages.allocator();
-        messages.push(LogMessage::Kernel(KernelLogMessage {
-            cpu: 0,
-            message: LogMessageWithLevel {
-                level: record.level(),
-                message: {
-                    let mut message = string_alloc::String::new_in(alloc);
-                    write!(message, "{}", record.args()).unwrap();
-                    message
-                },
-            },
-        }));
+        if let Ok(_) = TEMPORARILY_DISABLE_LOGGING.compare_exchange(
+            false,
+            true,
+            Ordering::Acquire,
+            Ordering::Relaxed,
+        ) {
+            let mut messages = LOG_MESSAGES.lock();
+            match messages.deref_mut() {
+                LogMessages::InitialAllocator(messages) => {
+                    let alloc = *messages.allocator();
+                    messages.push(LogMessage::Kernel(KernelLogMessage {
+                        cpu: 0,
+                        message: LogMessageWithLevel {
+                            level: record.level(),
+                            message: {
+                                let mut message = string_alloc::String::new_in(alloc);
+                                write!(message, "{}", record.args()).unwrap();
+                                message
+                            },
+                        },
+                    }));
+                }
+                LogMessages::GlobalAllocator(messages) => {
+                    let alloc = *messages.allocator();
+                    messages.push(LogMessage::Kernel(KernelLogMessage {
+                        cpu: 0,
+                        message: LogMessageWithLevel {
+                            level: record.level(),
+                            message: {
+                                let mut message = string_alloc::String::new_in(alloc);
+                                write!(message, "{}", record.args()).unwrap();
+                                message
+                            },
+                        },
+                    }));
+                }
+            }
+            drop(messages);
+            TEMPORARILY_DISABLE_LOGGING.store(false, Ordering::Release);
+        }
     }
 
     fn flush(&self) {
@@ -99,22 +128,61 @@ pub enum LogMessage<A: Allocator + Clone + Default> {
     UserProcess(UserProcessLogMessage<A>),
 }
 
+impl<A: Allocator + Clone + Default> LogMessage<A> {
+    pub fn clone_in<
+        NewA: Allocator + Clone + Default,
+        F: FnOnce(&LogMessageWithLevel<A>) -> LogMessageWithLevel<NewA>,
+    >(
+        &self,
+        f: F,
+    ) -> LogMessage<NewA> {
+        match self {
+            LogMessage::Kernel(message) => LogMessage::Kernel(KernelLogMessage {
+                cpu: message.cpu,
+                message: f(&message.message),
+            }),
+            LogMessage::UserProcess(message) => LogMessage::UserProcess(UserProcessLogMessage {
+                process_id: message.process_id,
+                message: f(&message.message),
+            }),
+        }
+    }
+}
+
 static LOGGER: InitLater<LoggerWithoutInterrupts<Logger>> = InitLater::uninit();
 
 pub static LOG_MESSAGES_ALLOCATOR: StaticLinkedListAllocator<LOG_BUFFER_SIZE> =
     StaticLinkedListAllocator::uninit();
-pub static LOG_MESSAGES: Spinlock<
-    Vec<
-        LogMessage<&StaticLinkedListAllocator<LOG_BUFFER_SIZE>>,
-        &StaticLinkedListAllocator<LOG_BUFFER_SIZE>,
-    >,
-> = Spinlock::new(Vec::new_in(&LOG_MESSAGES_ALLOCATOR));
 
-/// N must be a multiple of 0x1000
-#[repr(C, align(0x1000))]
-pub struct PreReservedPages<const N: usize> {
-    pub bytes: [MaybeUninit<u8>; N],
+pub enum LogMessages<A: Allocator + Clone + Default> {
+    InitialAllocator(Vec<LogMessage<A>, A>),
+    GlobalAllocator(Vec<LogMessage<Global>, Global>),
 }
+
+impl<A: Allocator + Clone + Default> LogMessages<A> {
+    pub fn clone_in_global(&self) -> Self {
+        match self {
+            Self::InitialAllocator(messages) => Self::GlobalAllocator(
+                messages
+                    .into_iter()
+                    .map(|message| {
+                        message.clone_in(|message| LogMessageWithLevel {
+                            level: message.level,
+                            message: string_alloc::String::from_str_in(&message.message, Global),
+                        })
+                    })
+                    .collect(),
+            ),
+            _ => panic!("Already backed by global allocator"),
+        }
+    }
+}
+
+pub static LOG_MESSAGES: Spinlock<LogMessages<&StaticLinkedListAllocator<LOG_BUFFER_SIZE>>> =
+    Spinlock::new(LogMessages::InitialAllocator(Vec::new_in(
+        &LOG_MESSAGES_ALLOCATOR,
+    )));
+static TEMPORARILY_DISABLE_LOGGING: AtomicBool = AtomicBool::new(false);
 
 /// N must be a multiple of 0x1000
 pub struct StaticLinkedListAllocator<const N: usize> {
@@ -148,12 +216,6 @@ impl<const N: usize> Clone for StaticLinkedListAllocator<N> {
         unimplemented!()
     }
 }
-
-// impl Default for StaticLinkedListAllocator {
-//     fn default() -> Self {
-//         unimplemented!()
-//     }
-// }
 
 impl<const N: usize> Default for &StaticLinkedListAllocator<N> {
     fn default() -> Self {
@@ -192,4 +254,12 @@ pub fn init() {
     )
     .unwrap();
     log::set_max_level(LevelFilter::Trace);
+}
+
+pub fn init_alloc() {
+    let mut log_messages = LOG_MESSAGES.lock();
+    TEMPORARILY_DISABLE_LOGGING.store(true, Ordering::Release);
+    *log_messages = log_messages.clone_in_global();
+    TEMPORARILY_DISABLE_LOGGING.store(false, Ordering::Release);
+    // LOG_MESSAGES_ALLOCATOR.pre_reserved_pages
 }

@@ -4,9 +4,11 @@ pub mod initial_meta_allocator;
 pub mod is_offset_mapped;
 pub mod memory_usage_stats;
 pub mod meta_frame_allocator;
+pub mod pre_reserved_pages;
 pub mod pt_allocator_2;
 pub mod pt_frame_allocator_2;
 pub mod pt_frame_allocator_3;
+pub mod reuse_static_pages;
 
 use alloc::vec::Vec;
 use memory_usage_stats::MemoryUsageStats;
