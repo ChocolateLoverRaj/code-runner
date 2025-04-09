@@ -52,17 +52,13 @@ impl<'a, T: Memory> Iterator for PageTablesTraverser<'a, T> {
                 // Start with the L4 pt
                 let mut pt = self
                     .memory
-                    .get_page_table(self.top_level_page_table + self.offset_mapped_start)
-                    .unwrap();
+                    .get_page_table(self.top_level_page_table + self.offset_mapped_start);
                 // Traverse the page tables until we get to the lowest level we want to process
                 for index in &self.sub_pt_stack {
-                    pt = self
-                        .memory
-                        .get_page_table(
-                            pt.get_entry(*index).unwrap().physical_frame_start
-                                + self.offset_mapped_start,
-                        )
-                        .unwrap();
+                    pt = self.memory.get_page_table(
+                        pt.get_entry(*index).unwrap().physical_frame_start
+                            + self.offset_mapped_start,
+                    );
                 }
                 pt
             };

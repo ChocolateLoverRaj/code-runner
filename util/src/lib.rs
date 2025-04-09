@@ -1,8 +1,9 @@
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![feature(allocator_api)]
 #![feature(sync_unsafe_cell)]
 #![feature(int_roundings)]
 #![feature(non_null_from_ref)]
+#![feature(box_vec_non_null)]
 
 extern crate alloc;
 
@@ -19,8 +20,10 @@ pub mod insert;
 pub mod mock_memory;
 pub mod paging_allocator;
 pub mod remove;
+pub mod static_allocator;
 pub mod stream_with_initial;
 pub mod traverse_page_tables;
 pub mod try_push;
 pub mod usable_frames_iterator;
 pub mod virtual_address_from_parts;
+pub mod x86_memory;

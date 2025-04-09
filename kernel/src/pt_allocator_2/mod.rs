@@ -1,5 +1,6 @@
 pub mod get_offset_page_table;
 pub mod init;
+pub mod init_2;
 pub mod initial_meta_allocator;
 pub mod is_offset_mapped;
 pub mod memory_usage_stats;

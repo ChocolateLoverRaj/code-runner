@@ -116,7 +116,7 @@ impl MockMemory {
             entries: Default::default(),
         };
 
-        let offset_map_start = 0;
+        let offset_map_start = 0x800000000000;
 
         // Offset map all memory
         let mut map_frame = |virtual_page_start: usize, physical_frame_start: usize| {
@@ -287,12 +287,13 @@ impl Memory for MockMemory {
         self.top_level_page_table
     }
 
-    fn get_page_table(&self, page_table_virtual_address: usize) -> Option<impl PageTable> {
-        let (frame_address, offset) =
-            self.get_frame_physical_address(page_table_virtual_address)?;
+    fn get_page_table(&self, page_table_virtual_address: usize) -> impl PageTable {
+        let (frame_address, offset) = self
+            .get_frame_physical_address(page_table_virtual_address)
+            .expect("Page table virtual address not mapped to a physical frame");
         assert_eq!(offset, 0);
-        let page_table = self.physical_frames.get(&frame_address)?;
-        Some(TestPageTable { page_table })
+        let page_table = self.physical_frames.get(&frame_address).unwrap();
+        TestPageTable { page_table }
     }
 
     fn get_bytes(&self, virtual_address_range: Range<usize>) -> impl Deref<Target = [u8]> {

@@ -3,6 +3,7 @@ pub mod get_sums;
 pub mod is_range_available;
 pub mod iter;
 pub mod new;
+pub mod replace_len_vec;
 pub mod set;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
