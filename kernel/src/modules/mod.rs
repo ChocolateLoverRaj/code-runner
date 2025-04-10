@@ -1,13 +1,11 @@
 // pub mod async_keyboard;
 // pub mod async_rtc;
-pub mod double_fault_handler_entry;
 pub mod gdt;
 pub mod get_apic;
 pub mod idt;
 pub mod logging_breakpoint_handler;
 pub mod logging_timer_interrupt_handler;
 pub mod panicking_double_fault_handler;
-pub mod panicking_general_protection_fault_handler;
 pub mod panicking_invalid_opcode_handler;
 pub mod panicking_invalid_tss_fault_handler;
 pub mod panicking_local_apic_error_interrupt_handler;

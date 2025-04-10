@@ -4,7 +4,8 @@ use util::init_later::InitLater;
 
 use crate::{acpi_handler_impl::AcpiHandlerImpl, hhdm_offset::HhdmOffset, rsdp_addr::RsdpAddr};
 
-pub static ACPI_TABLES: InitLater<Spinlock<AcpiTables<AcpiHandlerImpl>>> = InitLater::uninit();
+pub static ACPI_TABLES: InitLater<Spinlock<AcpiTables<AcpiHandlerImpl<'static>>>> =
+    InitLater::uninit();
 
 pub fn init(
     rsdp_addr: RsdpAddr,

@@ -1,25 +1,38 @@
-use core::ptr::NonNull;
+use core::{cell::RefCell, ops::DerefMut, ptr::NonNull};
 
 use acpi::AcpiHandler;
 use x86_64::{
+    registers::control::Cr3,
     structures::paging::{Mapper, Page, PageTableFlags, PhysFrame, Size4KiB},
     PhysAddr, VirtAddr,
 };
 
 use crate::{
-    hhdm_offset::HhdmOffset,
-    pt_allocator_2::{
-        get_offset_page_table::get_offset_page_table, pt_frame_allocator_3::PtFrameAllocator3,
-        KERNEL_ADDRESS_SPACE_TRACKER, MEMORY_USAGE_STATS,
-    },
+    available_physical_frame_iterator::AvailablePhysicalFrameIteratorFrameAllocator,
+    find_contiguous_unused_virtual_memory::find_contiguous_unused_virtual_memory,
+    get_offset_page_table::get_offset_page_table, hhdm_offset::HhdmOffset,
+    page_tables_recursive_iterator::PageTablesRecursiveIterator,
 };
 
 #[derive(Debug, Clone)]
-pub struct AcpiHandlerImpl {
-    pub hhdm_offset: HhdmOffset,
+pub struct AcpiHandlerImpl<'a> {
+    hhdm_offset: HhdmOffset,
+    frame_allocator: &'a RefCell<AvailablePhysicalFrameIteratorFrameAllocator>,
 }
 
-impl AcpiHandler for AcpiHandlerImpl {
+impl<'a> AcpiHandlerImpl<'a> {
+    pub const fn new(
+        hhdm_offset: HhdmOffset,
+        frame_allocator: &'a RefCell<AvailablePhysicalFrameIteratorFrameAllocator>,
+    ) -> Self {
+        Self {
+            hhdm_offset,
+            frame_allocator,
+        }
+    }
+}
+
+impl AcpiHandler for AcpiHandlerImpl<'_> {
     unsafe fn map_physical_region<T>(
         &self,
         physical_address: usize,
@@ -30,44 +43,34 @@ impl AcpiHandler for AcpiHandlerImpl {
             physical_address,
             size
         );
-        let mut virt_mem = KERNEL_ADDRESS_SPACE_TRACKER.try_get().unwrap().lock();
-        let mut mem_usage = MEMORY_USAGE_STATS.try_get().unwrap().lock();
-
         let page_count =
             (physical_address + size).div_ceil(0x1000) - physical_address.div_floor(0x1000);
-        let virt_start = virt_mem
-            .get_continuous_range_with_alignment(false, page_count * 0x1000, 0x1000)
-            .unwrap();
-        virt_mem.set(virt_start..virt_start + page_count * 0x1000, true);
+        let pages = find_contiguous_unused_virtual_memory(
+            unsafe { PageTablesRecursiveIterator::new(self.hhdm_offset, Cr3::read().0, 256) },
+            page_count as u64,
+        )
+        .unwrap();
         let first_phys_frame =
             PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(physical_address as u64));
-        let virt_start = VirtAddr::new_truncate(virt_start as u64);
-        let first_page = Page::<Size4KiB>::from_start_address(virt_start).unwrap();
         let mut offset_page_table = get_offset_page_table(self.hhdm_offset.into());
-        let mut frame_allocator = PtFrameAllocator3 {
-            f: |_| {
-                mem_usage.page_tables += 0x1000;
-            },
-        };
 
         for i in 0..page_count {
             unsafe {
                 offset_page_table.map_to(
-                    first_page + i as u64,
+                    pages.start + i as u64,
                     first_phys_frame + i as u64,
                     PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE | PageTableFlags::NO_CACHE,
-                    &mut frame_allocator,
+                    self.frame_allocator.borrow_mut().deref_mut(),
                 )
             }
             .unwrap()
             .flush();
         }
-        let mapped_length_from_start_ptr =
-            ((first_page + page_count as u64).start_address() - virt_start) as usize;
+        let mapped_length_from_start_ptr = page_count * 0x1000;
         unsafe {
             acpi::PhysicalMapping::new(
                 physical_address,
-                NonNull::new(virt_start.as_mut_ptr()).unwrap(),
+                NonNull::new(pages.start.start_address().as_mut_ptr()).unwrap(),
                 size,
                 // TODO: Actual mapped len may be more than this, could improve performance to give actual mapped len
                 mapped_length_from_start_ptr,
@@ -83,7 +86,7 @@ impl AcpiHandler for AcpiHandlerImpl {
         let end_page = Page::<Size4KiB>::containing_address(end_addr_exclusive - 1);
         let mut offset_page_table = get_offset_page_table(region.handler().hhdm_offset.into());
         for page in start_page..=end_page {
-            offset_page_table.unmap(page).unwrap().1.ignore();
+            offset_page_table.unmap(page).unwrap().1.flush();
         }
     }
 }

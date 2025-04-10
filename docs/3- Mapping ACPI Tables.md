@@ -1,0 +1,5 @@
+So we want to use the [`acpi`](https://crates.io/crates/acpi) crate to parse the ACPI tables. How do we do that? It's pretty easy. The hardest part is implementing the [`AcpiHandler`](https://docs.rs/acpi/5.2.0/acpi/handler/trait.AcpiHandler.html) trait. We need to create page table mappings to map some virtual memory to the ACPI physical memory. We can't use the offset map because Limine doesn't offset map ACPI memory.
+
+So where do we put our page table mapping? We can use any free space. But we should stick to the higher half because we're going to put user space in the lower half later. So we just need to find an empty page to map. Well, actually, it's possible that the `acpi` crate tells us to map more than one page, or map across a page boundary. In that case we need to find contiguous free pages.
+
+Then we need to map those pages to the ACPI memory. But we may need to create new page tables, which requires finding free physical frames. We will have to use Limine's memory map request to find out which physical memory regions are available for our kernel to use.

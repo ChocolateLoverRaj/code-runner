@@ -8,7 +8,7 @@ pub struct X86Memory {
 }
 
 impl X86Memory {
-    pub fn new(memory_regions: &'static MemoryMapResponse) -> Self {
+    pub const fn new(memory_regions: &'static MemoryMapResponse) -> Self {
         Self { memory_regions }
     }
 }

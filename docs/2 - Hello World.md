@@ -10,4 +10,4 @@ Making "Hello World!" show up on a *virtual machine* is very easy. But how do we
 
 On Jinlon, we have to use memory mapped I/O to read/write to the UART. It uses a 16550-compatible interface, but we have to find out where the address is. We could just hard-code it, but that would be dangerous on other devices, or possibly break after a firmware update. So the proper way is to parse the ACPI tables to find an SPCR table, which tells you how to access the UART.
 
-So right away, we will parse ACPI tables.
+So right away, we will parse ACPI tables. We will use the very useful [`acpi`](https://crates.io/crates/acpi) for this, without the `alloc` feature because we haven't set up a global allocator yet.
