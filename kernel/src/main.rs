@@ -89,6 +89,7 @@ pub mod find_contiguous_unused_virtual_memory;
 pub mod get_offset_page_table;
 pub mod page_tables_recursive_iterator;
 // pub mod tasks;
+pub mod spcr_hello_world;
 pub mod test_allocator;
 pub mod traverse_cr3;
 pub mod user_space_state;
@@ -97,7 +98,7 @@ pub mod virt_addr_to_number;
 pub mod write_logger;
 pub mod write_with_cr;
 
-use core::cell::RefCell;
+use core::{cell::RefCell, ops::DerefMut};
 
 use acpi::spcr::Spcr;
 use acpi_handler_impl::AcpiHandlerImpl;
@@ -121,6 +122,7 @@ use logger::init_logger_with_framebuffer;
 use modules::idt::disable_pic8259::disable_pic8259;
 use page_tables_recursive_iterator::PageTablesRecursiveIterator;
 use rsdp_addr::RsdpAddr;
+use spcr_hello_world::spcr_hello_world;
 use test_allocator::test_allocator;
 use util::static_allocator::StaticAllocator;
 use x86_64::registers::control::Cr3;
@@ -162,6 +164,9 @@ unsafe extern "C" fn kernel_main() -> ! {
     log::info!("Acpi tables: {:#?}", acpi_tables);
     let spcr = acpi_tables.find_table::<Spcr>();
     log::info!("SPCR: {:#?}", spcr);
+    if let Ok(spcr) = spcr {
+        spcr_hello_world(&spcr, hhdm_offset, frame_allocator.borrow_mut().deref_mut());
+    }
 
     hlt_loop();
 
