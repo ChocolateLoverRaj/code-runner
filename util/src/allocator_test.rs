@@ -1,12 +1,4 @@
-use core::{
-    alloc::Layout,
-    num::NonZeroUsize,
-    ops::{Deref, DerefMut, Range},
-};
-
-pub trait TestableAllocator {
-    fn allocate(&mut self, layout: Layout) -> Option<NonZeroUsize>;
-}
+use core::ops::{Deref, DerefMut, Range};
 
 #[derive(Debug, Clone, Copy)]
 pub struct PageTableEntry {
