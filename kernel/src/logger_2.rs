@@ -39,12 +39,13 @@ impl Log for Logger {
                 serial_logger.log(record);
             }
         }
-        if let Ok(_) = TEMPORARILY_DISABLE_LOGGING.compare_exchange(
-            false,
-            true,
-            Ordering::Acquire,
-            Ordering::Relaxed,
-        ) {
+        // if let Ok(_) = TEMPORARILY_DISABLE_LOGGING.compare_exchange(
+        //     false,
+        //     true,
+        //     Ordering::Acquire,
+        //     Ordering::Relaxed,
+        // )
+        {
             let mut messages = LOG_MESSAGES.lock();
             match messages.deref_mut() {
                 LogMessages::InitialAllocator(messages) => {
@@ -77,7 +78,7 @@ impl Log for Logger {
                 }
             }
             drop(messages);
-            TEMPORARILY_DISABLE_LOGGING.store(false, Ordering::Release);
+            // TEMPORARILY_DISABLE_LOGGING.store(false, Ordering::Release);
         }
     }
 
@@ -182,7 +183,7 @@ pub static LOG_MESSAGES: Spinlock<LogMessages<&StaticLinkedListAllocator<LOG_BUF
     Spinlock::new(LogMessages::InitialAllocator(Vec::new_in(
         &LOG_MESSAGES_ALLOCATOR,
     )));
-static TEMPORARILY_DISABLE_LOGGING: AtomicBool = AtomicBool::new(false);
+// static TEMPORARILY_DISABLE_LOGGING: AtomicBool = AtomicBool::new(false);
 
 /// N must be a multiple of 0x1000
 pub struct StaticLinkedListAllocator<const N: usize> {
@@ -258,8 +259,8 @@ pub fn init() {
 
 pub fn init_alloc() {
     let mut log_messages = LOG_MESSAGES.lock();
-    TEMPORARILY_DISABLE_LOGGING.store(true, Ordering::Release);
+    // TEMPORARILY_DISABLE_LOGGING.store(true, Ordering::Release);
     *log_messages = log_messages.clone_in_global();
-    TEMPORARILY_DISABLE_LOGGING.store(false, Ordering::Release);
+    // TEMPORARILY_DISABLE_LOGGING.store(false, Ordering::Release);
     // LOG_MESSAGES_ALLOCATOR.pre_reserved_pages
 }

@@ -146,8 +146,7 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     let memory_map_response = MEMORY_MAP_REQUEST.get_response().unwrap();
     pt_allocator_2::init_2::init_2(memory_map_response, hhdm_offset);
-    // pt_allocator_2::init::init(memory_map_response, hhdm_offset);
-    // logger_2::init_alloc();
+    logger_2::init_alloc();
     log_memory_usage(memory_map_response);
 
     // Test assuming 100MiB is available for dynamic allocation
