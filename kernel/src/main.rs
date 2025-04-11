@@ -71,6 +71,7 @@ pub mod rsdp_addr;
 pub mod set_color;
 // pub mod spawn_task;
 // pub mod spcr;
+pub mod call_stack_iterator;
 pub mod split_draw_target;
 pub mod store_but_borrow_mut;
 // pub mod terminate_current_task;
@@ -104,11 +105,8 @@ use available_physical_frame_iterator::{
     AvailablePhysicalFrameIterator, AvailablePhysicalFrameIteratorFrameAllocator,
     AvailablePhysicalRegionsIterator,
 };
-use ensure_mem_is_higher_half::ensure_mem_is_higher_half;
 use hhdm_offset::HhdmOffset;
-use hlt_loop::hlt_loop;
 // use init_cpus::init_cpus;
-use iopb_size::IOPB_SIZE;
 use limine_requests::{
     BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, KERNEL_ADDRESS_REQUEST, MEMORY_MAP_REQUEST,
     MODULE_REQUEST, MP_REQUEST, RSDP_REQUEST,
@@ -118,11 +116,7 @@ use log_boot_time::log_boot_time;
 #[allow(unused)]
 use logger::init_logger_with_framebuffer;
 use modules::idt::disable_pic8259::disable_pic8259;
-use page_tables_recursive_iterator::PageTablesRecursiveIterator;
 use rsdp_addr::RsdpAddr;
-use test_allocator::test_allocator;
-use util::static_allocator::StaticAllocator;
-use x86_64::registers::control::Cr3;
 
 #[export_name = "kernel_main"]
 unsafe extern "C" fn kernel_main() -> ! {
