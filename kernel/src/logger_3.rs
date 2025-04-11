@@ -100,10 +100,7 @@ impl Log for Logger3 {
         impl Debug for CpuIdDebug {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 if let Some(data) = cpu_local_data::get_local() {
-                    let data_ptr = data.get();
-                    // Safety: The CPU id will not be changed
-                    let cpu_id = unsafe { data_ptr.as_ref() }.unwrap().cpu_id;
-                    f.write_fmt(format_args!("CPU 0x{:02X}", cpu_id))
+                    f.write_fmt(format_args!("CPU 0x{:02X}", data.cpu_id))
                 } else {
                     f.write_str("BSP")
                 }

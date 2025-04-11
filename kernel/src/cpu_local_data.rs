@@ -1,9 +1,14 @@
-use core::{cell::SyncUnsafeCell, ptr::NonNull};
+use core::ptr::NonNull;
 
 use alloc::boxed::Box;
 use limine::{mp::Cpu, response::MpResponse};
 use util::init_later::InitLater;
 use x86_64::{registers::model_specific::GsBase, VirtAddr};
+
+use crate::{
+    init_idt_and_gdt::{StaticStuff1, StaticStuff2},
+    store_but_borrow_mut::StoreButBorrowMut,
+};
 
 /// This is what we set `GS.Base` to point to
 #[derive(Debug)]
@@ -11,25 +16,25 @@ pub struct CpuLocalData {
     // pub user_stack_pointer: u64,
     // pub kernel_stack_pointer: u64,
     pub cpu_id: u32,
+    pub static_stuff1: StoreButBorrowMut<StaticStuff1>,
+    pub static_stuff2: InitLater<StaticStuff2>,
 }
 
 impl From<&Cpu> for CpuLocalData {
     fn from(value: &Cpu) -> Self {
-        Self { cpu_id: value.id }
+        Self {
+            cpu_id: value.id,
+            static_stuff1: StoreButBorrowMut::uninit(),
+            static_stuff2: InitLater::uninit(),
+        }
     }
 }
 
-static CPU_LOCAL_DATA: InitLater<Box<[SyncUnsafeCell<CpuLocalData>]>> = InitLater::uninit();
+static CPU_LOCAL_DATA: InitLater<Box<[CpuLocalData]>> = InitLater::uninit();
 
 pub fn init_bsp(mp_response: &MpResponse) {
     CPU_LOCAL_DATA
-        .try_init(
-            mp_response
-                .cpus()
-                .iter()
-                .map(|&cpu| SyncUnsafeCell::new(cpu.into()))
-                .collect(),
-        )
+        .try_init(mp_response.cpus().iter().map(|&cpu| cpu.into()).collect())
         .unwrap();
 }
 
@@ -41,19 +46,16 @@ pub unsafe fn init_cpu(local_cpu: &limine::mp::Cpu) {
             .try_get()
             .unwrap()
             .iter()
-            .find(|cpu| {
-                // Safety: Nothing is modifying the CPU data while we are reading it.
-                unsafe { cpu.get().read() }.cpu_id == local_cpu.id
-            })
+            .find(|cpu| cpu.cpu_id == local_cpu.id)
             .unwrap(),
     ));
 }
 
-pub fn get_local() -> Option<&'static SyncUnsafeCell<CpuLocalData>> {
+pub fn get_local() -> Option<&'static CpuLocalData> {
     if CPU_LOCAL_DATA.is_initialized() {
         Some({
             let cpu_local_data_ptr =
-                NonNull::new(GsBase::read().as_mut_ptr::<SyncUnsafeCell<CpuLocalData>>()).unwrap();
+                NonNull::new(GsBase::read().as_mut_ptr::<CpuLocalData>()).unwrap();
             // Safety: The GS base register is set to the address of the CPU local data.
             let cpu_local_data = unsafe { cpu_local_data_ptr.as_ref() };
             cpu_local_data

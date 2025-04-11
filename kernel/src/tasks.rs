@@ -22,9 +22,6 @@ use crate::{
     syscall_handler_closure::syscall_handler_closure,
 };
 
-#[repr(C, align(16))]
-pub struct StackChunk([u8; 16]);
-
 #[derive(Debug)]
 pub struct UserTaskData {
     pub cr3: PhysFrame<Size4KiB>,

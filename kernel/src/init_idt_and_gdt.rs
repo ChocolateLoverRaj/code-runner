@@ -13,17 +13,16 @@ use x86_64::{
 };
 
 use crate::{
-    cpu_local::CpuLocal,
+    boxed_stack::{BoxedStack, BoxedStackExt},
+    cpu_local_data,
     fault_handlers::{
-        double_fault::double_fault_handler, gp_fault::gp_fault_handler,
-        invalid_opcode_fault::invalid_opcode_handler, page_fault::page_fault_handler,
-        segment_not_present::segment_not_present_handler,
+        breakpoint::breakpoint_handler, double_fault::double_fault_handler,
+        gp_fault::gp_fault_handler, invalid_opcode_fault::invalid_opcode_handler,
+        page_fault::page_fault_handler, segment_not_present::segment_not_present_handler,
     },
-    hhdm_offset::HhdmOffset,
-    map_local_xapic::{map_local_xapic, LocalXapicVirtAddr},
+    iopb_size::IOPB_SIZE,
     modules::{
-        gdt::Gdt, idt::IdtBuilder, logging_breakpoint_handler::logging_breakpoint_handler,
-        panicking_general_protection_fault_handler::panicking_general_protection_fault_handler,
+        gdt::Gdt, idt::IdtBuilder,
         panicking_invalid_tss_fault_handler::panicking_invalid_tss_fault_handler,
         panicking_local_apic_error_interrupt_handler::panicking_local_apic_error_interrupt_handler,
         panicking_spurious_interrupt_handler::panicking_spurious_interrupt_handler,
@@ -31,15 +30,11 @@ use crate::{
         spurious_interrupt_handler::set_spurious_interrupt_handler, tss::TssBuilder,
     },
     nmi_handler::nmi_handler,
-    rsdp_addr::RsdpAddr,
-    store_but_borrow_mut::StoreButBorrowMut,
-    tasks::StackChunk,
-    IOPB_SIZE,
 };
-static LOCAL_APIC_ADDR: InitLater<Option<LocalXapicVirtAddr>> = InitLater::uninit();
+// static LOCAL_APIC_ADDR: InitLater<Option<LocalXapicVirtAddr>> = InitLater::uninit();
 
 #[derive(Debug)]
-struct StaticStuff1 {
+pub struct StaticStuff1 {
     tss: TaskStateSegment<IOPB_SIZE>,
     idt_builder: IdtBuilder,
     spurious_interrupt_handler_index: u8,
@@ -47,46 +42,46 @@ struct StaticStuff1 {
     local_apic_error_interrupt_index: u8,
 }
 
-static CPU_LOCAL_STATIC_STUFF_1: CpuLocal<StoreButBorrowMut<StaticStuff1>> = CpuLocal::uninit();
+// static CPU_LOCAL_STATIC_STUFF_1: CpuLocal<StoreButBorrowMut<StaticStuff1>> = CpuLocal::uninit();
 
 #[derive(Debug)]
-struct StaticStuff2 {
+pub struct StaticStuff2 {
     gdt: Gdt,
     iopb: Spinlock<&'static mut [u8; IOPB_SIZE]>,
     /// The that the CPU uses for the double fault handler
-    double_fault_handler_stack: Box<[MaybeUninit<StackChunk>]>,
+    double_fault_handler_stack: BoxedStack,
     /// The stack that the CPU uses for other fault handlers
-    other_fault_handler_stack: Box<[MaybeUninit<StackChunk>]>,
+    other_fault_handler_stack: BoxedStack,
     /// The stack that the CPU uses when transitioning from user mode to kernel mode to call an interrupt handler
-    priv_tss_stack: Box<[MaybeUninit<StackChunk>]>,
+    priv_tss_stack: BoxedStack,
 }
 
-static CPU_LOCAL_STATIC_STUFF_2: CpuLocal<InitLater<StaticStuff2>> = CpuLocal::uninit();
+// static CPU_LOCAL_STATIC_STUFF_2: CpuLocal<InitLater<StaticStuff2>> = CpuLocal::uninit();
 
-pub static CPU_LOCAL_APICS: CpuLocal<InitLater<Spinlock<LocalApic>>> = CpuLocal::uninit();
+// pub static CPU_LOCAL_APICS: CpuLocal<InitLater<Spinlock<LocalApic>>> = CpuLocal::uninit();
 
-pub fn init_vars_for_idt_and_gdt(rsdp_addr: RsdpAddr, hhdm_offset: HhdmOffset) {
-    let acpi_tables = crate::acpi::init(rsdp_addr, hhdm_offset).unwrap();
-    let local_apic_addr = map_local_xapic(&acpi_tables.lock(), hhdm_offset).unwrap();
-    LOCAL_APIC_ADDR.try_init(local_apic_addr).unwrap();
-    CPU_LOCAL_STATIC_STUFF_1
-        .try_init(StoreButBorrowMut::uninit)
-        .unwrap();
-    CPU_LOCAL_STATIC_STUFF_2
-        .try_init(InitLater::uninit)
-        .unwrap();
-    CPU_LOCAL_APICS.try_init(InitLater::uninit).unwrap();
-}
+// pub fn init_vars_for_idt_and_gdt(rsdp_addr: RsdpAddr, hhdm_offset: HhdmOffset) {
+//     let acpi_tables = crate::acpi::init(rsdp_addr, hhdm_offset).unwrap();
+//     let local_apic_addr = map_local_xapic(&acpi_tables.lock(), hhdm_offset).unwrap();
+//     LOCAL_APIC_ADDR.try_init(local_apic_addr).unwrap();
+//     CPU_LOCAL_STATIC_STUFF_1
+//         .try_init(StoreButBorrowMut::uninit)
+//         .unwrap();
+//     CPU_LOCAL_STATIC_STUFF_2
+//         .try_init(InitLater::uninit)
+//         .unwrap();
+//     CPU_LOCAL_APICS.try_init(InitLater::uninit).unwrap();
+// }
 
 pub fn init_idt_and_gdt() {
-    let idt_stack_size = 0x200;
-    let priv_tss_stack = Box::new_uninit_slice(idt_stack_size);
-    let double_fault_handler_stack = Box::new_uninit_slice(idt_stack_size);
-    let other_fault_handler_stack = Box::new_uninit_slice(idt_stack_size);
+    let idt_stack_size = 0x10_000;
+    let priv_tss_stack = BoxedStack::new_uninit_stack(idt_stack_size);
+    let double_fault_handler_stack = BoxedStack::new_uninit_stack(idt_stack_size);
+    let other_fault_handler_stack = BoxedStack::new_uninit_stack(idt_stack_size);
+    let cpu_local_data = cpu_local_data::get_local().unwrap();
 
-    let static_stuff_1 = CPU_LOCAL_STATIC_STUFF_1
-        .try_get()
-        .unwrap()
+    let static_stuff_1 = cpu_local_data
+        .static_stuff1
         .store_but_borrow_mut({
             let mut tss = TssBuilder::<IOPB_SIZE>::default();
             let mut idt_builder = IdtBuilder::default();
@@ -108,7 +103,7 @@ pub fn init_idt_and_gdt() {
                 .unwrap();
             idt_builder
                 .set_breakpoint_entry(idt::Entry::from_handler_fn(
-                    logging_breakpoint_handler,
+                    breakpoint_handler,
                     idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
                 ))
                 .unwrap();
@@ -132,7 +127,7 @@ pub fn init_idt_and_gdt() {
                 .unwrap();
             idt_builder
                 .set_security_exception_fault_entry(idt::Entry::from_handler_fn(
-                    panicking_general_protection_fault_handler,
+                    gp_fault_handler,
                     idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
                 ))
                 .unwrap();
@@ -195,9 +190,8 @@ pub fn init_idt_and_gdt() {
             }
         })
         .unwrap();
-    let static_stuff_2 = CPU_LOCAL_STATIC_STUFF_2
-        .try_get()
-        .unwrap()
+    let static_stuff_2 = cpu_local_data
+        .static_stuff2
         .try_init({
             let (tss_pointer, iopb) = static_stuff_1.tss.ready_to_activate();
             let gdt = Gdt::new(tss_pointer);
@@ -212,40 +206,40 @@ pub fn init_idt_and_gdt() {
         .unwrap();
     static_stuff_2.gdt.init();
     static_stuff_1.idt_builder.init();
-    CPU_LOCAL_APICS
-        .try_get()
-        .unwrap()
-        .try_init({
-            let mut builder = LocalApicBuilder::new();
-            builder
-                .timer_vector(static_stuff_1.timer_interrupt_index as usize)
-                .spurious_vector(static_stuff_1.spurious_interrupt_handler_index as usize)
-                .error_vector(static_stuff_1.local_apic_error_interrupt_index as usize);
-            if let Some(local_xapic) = LOCAL_APIC_ADDR.try_get().unwrap() {
-                builder.set_xapic_base(VirtAddr::from(*local_xapic).as_u64());
-            }
-            let mut local_apic = builder.build().unwrap();
-            unsafe { local_apic.enable() };
-            unsafe { local_apic.disable_timer() };
-            Spinlock::new(local_apic)
-        })
-        .unwrap();
+    // CPU_LOCAL_APICS
+    //     .try_get()
+    //     .unwrap()
+    //     .try_init({
+    //         let mut builder = LocalApicBuilder::new();
+    //         builder
+    //             .timer_vector(static_stuff_1.timer_interrupt_index as usize)
+    //             .spurious_vector(static_stuff_1.spurious_interrupt_handler_index as usize)
+    //             .error_vector(static_stuff_1.local_apic_error_interrupt_index as usize);
+    //         if let Some(local_xapic) = LOCAL_APIC_ADDR.try_get().unwrap() {
+    //             builder.set_xapic_base(VirtAddr::from(*local_xapic).as_u64());
+    //         }
+    //         let mut local_apic = builder.build().unwrap();
+    //         unsafe { local_apic.enable() };
+    //         unsafe { local_apic.disable_timer() };
+    //         Spinlock::new(local_apic)
+    //     })
+    //     .unwrap();
 }
 
-pub fn get_iobp() -> &'static Spinlock<&'static mut [u8; IOPB_SIZE]> {
-    &CPU_LOCAL_STATIC_STUFF_2
-        .try_get()
-        .unwrap()
-        .try_get()
-        .unwrap()
-        .iopb
-}
+// pub fn get_iobp() -> &'static Spinlock<&'static mut [u8; IOPB_SIZE]> {
+//     &CPU_LOCAL_STATIC_STUFF_2
+//         .try_get()
+//         .unwrap()
+//         .try_get()
+//         .unwrap()
+//         .iopb
+// }
 
-pub fn get_priv_stack() -> &'static Box<[MaybeUninit<StackChunk>]> {
-    &CPU_LOCAL_STATIC_STUFF_2
-        .try_get()
-        .unwrap()
-        .try_get()
-        .unwrap()
-        .priv_tss_stack
-}
+// pub fn get_priv_stack() -> &'static Box<[MaybeUninit<StackChunk>]> {
+//     &CPU_LOCAL_STATIC_STUFF_2
+//         .try_get()
+//         .unwrap()
+//         .try_get()
+//         .unwrap()
+//         .priv_tss_stack
+// }

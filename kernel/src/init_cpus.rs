@@ -1,7 +1,7 @@
 use common::ram_disk::RamDisk;
 use util::init_later::InitLater;
 
-use crate::{cpu_local_data, hlt_loop::hlt_loop, limine_requests::MP_REQUEST};
+use crate::{cpu_local_data, hlt_loop::hlt_loop, init_idt_and_gdt, limine_requests::MP_REQUEST};
 
 static RAM_DISK: InitLater<RamDisk<'static>> = InitLater::uninit();
 
@@ -27,6 +27,13 @@ pub unsafe fn init_cpus() -> ! {
 unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     // Safety: We are only using GS.Base for CPU local data
     unsafe { cpu_local_data::init_cpu(cpu) };
-    log::info!("Hello from CPU 0x{:02X}", cpu.id);
+    log::info!(
+        "Hello from CPU 0x{:02X}. Local APIC ID: 0x{:02X}",
+        cpu.id,
+        cpu.lapic_id
+    );
+    init_idt_and_gdt::init_idt_and_gdt();
+    log::info!("Set up idt and gdt!");
+    x86_64::instructions::interrupts::int3();
     hlt_loop()
 }
