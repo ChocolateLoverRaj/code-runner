@@ -27,6 +27,6 @@ pub unsafe fn init_cpus() -> ! {
 unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     // Safety: We are only using GS.Base for CPU local data
     unsafe { cpu_local_data::init_cpu(cpu) };
-    log::info!("Hello from CPU {}", cpu.id);
+    log::info!("Hello from CPU 0x{:02X}", cpu.id);
     hlt_loop()
 }

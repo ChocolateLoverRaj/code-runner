@@ -103,7 +103,7 @@ impl Log for Logger3 {
                     let data_ptr = data.get();
                     // Safety: The CPU id will not be changed
                     let cpu_id = unsafe { data_ptr.as_ref() }.unwrap().cpu_id;
-                    f.write_fmt(format_args!("CPU {}", cpu_id))
+                    f.write_fmt(format_args!("CPU 0x{:02X}", cpu_id))
                 } else {
                     f.write_str("BSP")
                 }
