@@ -1,4 +1,4 @@
-use embedded_graphics::mono_font::{self, MonoFont};
+use embedded_graphics::mono_font::MonoFont;
 use log::LevelFilter;
 
 /// Maybe we will take config through a config file or options passed by the bootloader in the future
@@ -15,7 +15,8 @@ pub struct Config {
 
 pub const CONFIG: Config = Config {
     kernel_log_com1: true,
-    kernel_log_screen: Some(mono_font::iso_8859_16::FONT_10X20),
+    // kernel_log_screen: Some(embedded_graphics::mono_font::iso_8859_16::FONT_10X20),
+    kernel_log_screen: None,
     kernel_log_spcr: true,
     kernel_log_serial_colors: true,
     kernel_log_serial_level_filter: LevelFilter::Info,
@@ -23,3 +24,4 @@ pub const CONFIG: Config = Config {
 
 /// The size in bytes of the `static` buffer used to store log messages before the global allocator is initialized.
 pub const LOG_BUFFER_SIZE: usize = 0x100_000;
+pub const GLOBAL_ALLOCATOR_SIZE: usize = 0x100_000;

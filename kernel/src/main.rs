@@ -19,12 +19,9 @@
 
 extern crate alloc;
 
-// basically a todo!() allocator
-#[global_allocator]
-static ALLOCATOR: StaticAllocator = StaticAllocator;
-
 // pub mod acpi;
 pub mod acpi_handler_impl;
+pub mod allocator;
 pub mod apic;
 pub mod colorful_logger;
 pub mod combined_logger;
@@ -136,6 +133,7 @@ unsafe extern "C" fn kernel_main() -> ! {
     let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response();
     let hhdm_offset = HhdmOffset::try_from(&HHDM_REQUEST).unwrap();
     logger_3::init(frame_buffer_response, hhdm_offset);
+    log::info!("Initialized logger to log on COM1 and the screen (if applicable)");
 
     let rsdp_addr = RsdpAddr::try_from(&RSDP_REQUEST).unwrap();
 
@@ -157,18 +155,11 @@ unsafe extern "C" fn kernel_main() -> ! {
     if let Ok(spcr) = spcr {
         logger_3::init_spcr(&spcr, hhdm_offset, frame_allocator.borrow_mut().deref_mut());
     }
-    log::info!("Even if u have SPCR, you should see this message");
-    log::info!(
-        "A really loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong message"
-    );
-    log::warn!("Message\nwith\nnew\nlines");
-    for i in 0..60 {
-        log::info!("Test message {}", i);
-    }
-
+    log::info!("Initialized logger to log on SPCR instead of COM1 (if applicable)");
     disable_pic8259();
 
     log_bootloader_info::log_bootloader_info();
+    log::info!("HHDM offset: {:?}", hhdm_offset);
     log_phys_mem_regions::log_phys_mem_regions();
     log_rsdp_addr::log_rsdp_addr(rsdp_addr);
     log_frame_buffer_info::log_frame_buffer_info(frame_buffer_response);
@@ -183,24 +174,18 @@ unsafe extern "C" fn kernel_main() -> ! {
     let module_response = MODULE_REQUEST.get_response();
     log_ram_disk::log_ram_disk(module_response);
 
-    log::info!("HHDM offset: {:?}", hhdm_offset);
-
     let kernel_address_response = KERNEL_ADDRESS_REQUEST.get_response().unwrap();
     log_kernel_address::log_kernel_address(kernel_address_response);
 
     log_boot_time();
 
+    // Safety: it has not been called before
+    unsafe { allocator::init() };
+
+    // Test assuming 400KiB is available for global allocation
+    // test_allocator(0x100_000);
+
     hlt_loop();
-
-    ensure_mem_is_higher_half(hhdm_offset);
-
-    // pt_allocator_2::init_2::init_2(memory_map_response, hhdm_offset);
-    // logger_2::init_alloc();
-    // log_memory_usage(memory_map_response);
-
-    // Test assuming 100MiB is available for dynamic allocation
-    // test_allocator(0x6400000);
-    test_allocator(0x2000);
 
     // init_cpus(mp_response, rsdp_addr, hhdm_offset, module_response)
 }
