@@ -59,7 +59,7 @@ pub mod log_sample_messages;
 pub mod logger;
 // pub mod logger_2;
 pub mod logger_without_interrupts;
-// pub mod map_local_xapic;
+pub mod map_local_xapic;
 pub mod memory;
 pub mod modules;
 pub mod nmi_handler;
@@ -106,6 +106,4 @@ pub mod write_with_cr;
 unsafe extern "C" fn kernel_main() -> ! {
     // Safety: Only being called once as the first thing in the kernel.
     unsafe { bsp_init::init() };
-    // Safety: Only being called once, after BSP init
-    unsafe { init_cpus() }
 }

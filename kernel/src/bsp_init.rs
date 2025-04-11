@@ -14,6 +14,8 @@ use crate::{
     },
     config::CONFIG,
     hhdm_offset::HhdmOffset,
+    init_cpus::init_cpus,
+    init_idt_and_gdt,
     limine_requests::{
         BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, KERNEL_ADDRESS_REQUEST,
         MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST, RSDP_REQUEST,
@@ -36,7 +38,7 @@ use crate::{
 ///
 /// # Safety
 /// This function must be called exactly once as the first thing in the kernel
-pub unsafe fn init() {
+pub unsafe fn init() -> ! {
     // This kernel should not be called on an unsupported version, but we stop just in case it is.
     assert!(BASE_REVISION.is_supported());
 
@@ -54,14 +56,14 @@ pub unsafe fn init() {
         );
         unsafe { AvailablePhysicalFrameIteratorFrameAllocator::new(iterator) }
     });
+    let acpi_tables = unsafe {
+        acpi::AcpiTables::from_rsdp(
+            AcpiHandlerImpl::new(hhdm_offset, &frame_allocator),
+            u64::from(rsdp_addr) as usize,
+        )
+    }
+    .unwrap();
     if let Some(log_serial_config) = &CONFIG.kernel_log_serial {
-        let acpi_tables = unsafe {
-            acpi::AcpiTables::from_rsdp(
-                AcpiHandlerImpl::new(hhdm_offset, &frame_allocator),
-                u64::from(rsdp_addr) as usize,
-            )
-        }
-        .unwrap();
         let spcr = acpi_tables.find_table::<Spcr>().ok();
         logger_3::init_spcr(
             spcr.as_ref().map(|spcr| spcr.deref()),
@@ -103,4 +105,9 @@ pub unsafe fn init() {
 
     // Test assuming 400KiB is available for global allocation
     // test_allocator(0x100_000);
+
+    init_idt_and_gdt::init_bsp(&acpi_tables, hhdm_offset, &frame_allocator);
+
+    // Safety: Only being called once, after BSP init
+    unsafe { init_cpus() }
 }

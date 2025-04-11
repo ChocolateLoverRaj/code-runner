@@ -1,8 +1,7 @@
 use crate::{
-    call_stack_iterator::CallStackIterator, hlt_loop::hlt_loop,
+    call_stack_iterator::CallStackIterator, cpu_local_data::get_local, hlt_loop::hlt_loop,
     limine_requests::EXECUTABLE_FILE_REQUEST, logger_3,
 };
-// use crate::init_idt_and_gdt::CPU_LOCAL_APICS;
 use core::{
     fmt::{Debug, Display},
     panic::PanicInfo,
@@ -11,27 +10,28 @@ use core::{
 use elf::{endian::NativeEndian, ElfBytes};
 use rustc_demangle::demangle;
 use thiserror::Error;
-// use x2apic::lapic::IpiAllShorthand;
+use x2apic::lapic::IpiAllShorthand;
 use x86_64::instructions::interrupts;
 
 // #[cfg(not(test))]
 #[panic_handler]
 fn kernel_panic_handler(info: &PanicInfo) -> ! {
     // If we don't disable interrupts, code could run while we are in an invalid state. We are in an invalid state from now until reboot because of the panic.
-
     interrupts::disable();
 
-    // if let Ok(local_apics) = CPU_LOCAL_APICS.try_get() {
-    //     if let Ok(local_apic) = local_apics.try_get() {
-    //         unsafe { local_apic.force_unlock() };
-    //         unsafe {
-    //             local_apic
-    //                 .lock()
-    //                 .send_nmi_all(IpiAllShorthand::AllExcludingSelf)
-    //         };
-    //     }
-    // }
-    // // TODO: If the other CPUs have started initializing but did not set the NMI handler yet, we might triple fault. Idk if this is worth fixing though cuz we will only panic if there is a bug in the kernel and the chances of there being a bug that happens right during this timing is very low.
+    if let Some(cpu_local_data) = get_local() {
+        if let Ok(local_apic) = cpu_local_data.local_apic.try_get() {
+            // Safety: We need to send an NMI, regardless of whatever is holding the lock to the Local APIC
+            unsafe { local_apic.force_unlock() };
+            // Safety: The NMI handlers will halt the other CPUs
+            // TODO: If the other CPUs have started initializing but did not set the NMI handler yet, we might triple fault. Idk if this is worth fixing though cuz we will only panic if there is a bug in the kernel and the chances of there being a bug that happens right during this timing is very low.
+            unsafe {
+                local_apic
+                    .lock()
+                    .send_nmi_all(IpiAllShorthand::AllExcludingSelf)
+            };
+        }
+    }
 
     // Safety: We are already in an undefined state and we just need to simply log the panic information. We will not be logging any more messages.
     unsafe {

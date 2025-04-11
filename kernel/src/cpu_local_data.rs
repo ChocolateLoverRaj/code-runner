@@ -2,7 +2,9 @@ use core::ptr::NonNull;
 
 use alloc::boxed::Box;
 use limine::{mp::Cpu, response::MpResponse};
+use spinning_top::Spinlock;
 use util::init_later::InitLater;
+use x2apic::lapic::LocalApic;
 use x86_64::{registers::model_specific::GsBase, VirtAddr};
 
 use crate::{
@@ -18,6 +20,7 @@ pub struct CpuLocalData {
     pub cpu_id: u32,
     pub static_stuff1: StoreButBorrowMut<StaticStuff1>,
     pub static_stuff2: InitLater<StaticStuff2>,
+    pub local_apic: InitLater<Spinlock<LocalApic>>,
 }
 
 impl From<&Cpu> for CpuLocalData {
@@ -26,6 +29,7 @@ impl From<&Cpu> for CpuLocalData {
             cpu_id: value.id,
             static_stuff1: StoreButBorrowMut::uninit(),
             static_stuff2: InitLater::uninit(),
+            local_apic: InitLater::uninit(),
         }
     }
 }

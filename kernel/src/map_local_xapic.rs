@@ -1,17 +1,20 @@
-use acpi::AcpiTables;
+use core::{cell::RefCell, ops::DerefMut};
+
+use acpi::{AcpiHandler, AcpiTables};
 use thiserror::Error;
 use x2apic::lapic::cpu_has_x2apic;
 use x86_64::{
-    structures::paging::{mapper::MapToError, Mapper, Page, PageTableFlags, PhysFrame, Size4KiB},
+    registers::control::Cr3,
+    structures::paging::{
+        mapper::MapToError, FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB,
+    },
     PhysAddr, VirtAddr,
 };
 
 use crate::{
-    hhdm_offset::HhdmOffset,
-    pt_allocator_2::{
-        get_offset_page_table::get_offset_page_table, pt_frame_allocator_2::PtFrameAllocator2,
-        KERNEL_ADDRESS_SPACE_TRACKER, PHYS_MEM_TRACKER,
-    },
+    find_contiguous_unused_virtual_memory::find_contiguous_unused_virtual_memory,
+    get_offset_page_table::get_offset_page_table, hhdm_offset::HhdmOffset,
+    page_tables_recursive_iterator::PageTablesRecursiveIterator,
 };
 
 #[derive(Debug, Error)]
@@ -25,9 +28,10 @@ pub enum MapLocalXapicError {
 }
 
 /// If the CPU does not have x2apic, maps the local apic in memory
-pub fn map_local_xapic<H: acpi::AcpiHandler>(
-    acpi_tables: &AcpiTables<H>,
+pub fn map_local_xapic(
+    acpi_tables: &AcpiTables<impl AcpiHandler>,
     hhdm_offset: HhdmOffset,
+    frame_allocator: &RefCell<impl FrameAllocator<Size4KiB>>,
 ) -> Result<Option<LocalXapicVirtAddr>, MapLocalXapicError> {
     if cpu_has_x2apic() {
         Ok(None)
@@ -38,21 +42,15 @@ pub fn map_local_xapic<H: acpi::AcpiHandler>(
         }?;
         // The local apic base address is guaranteed to be aligned to a 4KiB page
         // And we need to map exactly 1 4KiB page
-        let phys_frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(xapic_base_addr));
-        let mut virt_mem = KERNEL_ADDRESS_SPACE_TRACKER.try_get().unwrap().lock();
-        let virt_start_number = virt_mem
-            .get_continuous_range_with_alignment(false, 0x1000, 0x1000)
-            .ok_or(MapLocalXapicError::VirtualMemoryAllocationFailed)?;
-        virt_mem.set(virt_start_number..virt_start_number + 0x1000, true);
-        let virt_start = VirtAddr::new_truncate(virt_start_number as u64);
-        let page = Page::<Size4KiB>::from_start_address(virt_start).unwrap();
+        let phys_frame =
+            PhysFrame::<Size4KiB>::from_start_address(PhysAddr::new(xapic_base_addr)).unwrap();
+        let page = find_contiguous_unused_virtual_memory(
+            unsafe { PageTablesRecursiveIterator::new(hhdm_offset, Cr3::read().0, 256) },
+            1,
+        )
+        .unwrap()
+        .start;
         let mut offset_page_table = get_offset_page_table(hhdm_offset);
-        let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
-        let mut used_bytes = 0;
-        let mut frame_allocator = PtFrameAllocator2 {
-            phys_mem: &mut phys_mem,
-            used_bytes: &mut used_bytes,
-        };
         unsafe {
             offset_page_table.map_to(
                 page,
@@ -61,12 +59,12 @@ pub fn map_local_xapic<H: acpi::AcpiHandler>(
                     | PageTableFlags::WRITABLE
                     | PageTableFlags::NO_CACHE
                     | PageTableFlags::NO_EXECUTE,
-                &mut frame_allocator,
+                frame_allocator.borrow_mut().deref_mut(),
             )
         }
-        .map_err(|e| MapLocalXapicError::MapError(e))?
+        .unwrap()
         .flush();
-        Ok(Some(LocalXapicVirtAddr(virt_start)))
+        Ok(Some(LocalXapicVirtAddr(page.start_address())))
     }
 }
 

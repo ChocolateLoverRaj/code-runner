@@ -1,5 +1,6 @@
-use core::mem::MaybeUninit;
+use core::{cell::RefCell, mem::MaybeUninit};
 
+use acpi::{AcpiHandler, AcpiTables};
 use alloc::boxed::Box;
 use spinning_top::Spinlock;
 use util::init_later::InitLater;
@@ -7,6 +8,7 @@ use x2apic::lapic::{LocalApic, LocalApicBuilder};
 use x86_64::{
     structures::{
         idt::{self},
+        paging::{FrameAllocator, Size4KiB},
         tss::TaskStateSegment,
     },
     VirtAddr,
@@ -20,7 +22,9 @@ use crate::{
         gp_fault::gp_fault_handler, invalid_opcode_fault::invalid_opcode_handler,
         page_fault::page_fault_handler, segment_not_present::segment_not_present_handler,
     },
+    hhdm_offset::HhdmOffset,
     iopb_size::IOPB_SIZE,
+    map_local_xapic::{map_local_xapic, LocalXapicVirtAddr},
     modules::{
         gdt::Gdt, idt::IdtBuilder,
         panicking_invalid_tss_fault_handler::panicking_invalid_tss_fault_handler,
@@ -31,7 +35,7 @@ use crate::{
     },
     nmi_handler::nmi_handler,
 };
-// static LOCAL_APIC_ADDR: InitLater<Option<LocalXapicVirtAddr>> = InitLater::uninit();
+static LOCAL_APIC_ADDR: InitLater<Option<LocalXapicVirtAddr>> = InitLater::uninit();
 
 #[derive(Debug)]
 pub struct StaticStuff1 {
@@ -60,20 +64,16 @@ pub struct StaticStuff2 {
 
 // pub static CPU_LOCAL_APICS: CpuLocal<InitLater<Spinlock<LocalApic>>> = CpuLocal::uninit();
 
-// pub fn init_vars_for_idt_and_gdt(rsdp_addr: RsdpAddr, hhdm_offset: HhdmOffset) {
-//     let acpi_tables = crate::acpi::init(rsdp_addr, hhdm_offset).unwrap();
-//     let local_apic_addr = map_local_xapic(&acpi_tables.lock(), hhdm_offset).unwrap();
-//     LOCAL_APIC_ADDR.try_init(local_apic_addr).unwrap();
-//     CPU_LOCAL_STATIC_STUFF_1
-//         .try_init(StoreButBorrowMut::uninit)
-//         .unwrap();
-//     CPU_LOCAL_STATIC_STUFF_2
-//         .try_init(InitLater::uninit)
-//         .unwrap();
-//     CPU_LOCAL_APICS.try_init(InitLater::uninit).unwrap();
-// }
+pub fn init_bsp(
+    acpi_tables: &AcpiTables<impl AcpiHandler>,
+    hhdm_offset: HhdmOffset,
+    frame_allocator: &RefCell<impl FrameAllocator<Size4KiB>>,
+) {
+    let local_apic_addr = map_local_xapic(acpi_tables, hhdm_offset, frame_allocator).unwrap();
+    LOCAL_APIC_ADDR.try_init(local_apic_addr).unwrap();
+}
 
-pub fn init_idt_and_gdt() {
+pub fn init_cpu() {
     let idt_stack_size = 0x10_000;
     let priv_tss_stack = BoxedStack::new_uninit_stack(idt_stack_size);
     let double_fault_handler_stack = BoxedStack::new_uninit_stack(idt_stack_size);
@@ -206,24 +206,23 @@ pub fn init_idt_and_gdt() {
         .unwrap();
     static_stuff_2.gdt.init();
     static_stuff_1.idt_builder.init();
-    // CPU_LOCAL_APICS
-    //     .try_get()
-    //     .unwrap()
-    //     .try_init({
-    //         let mut builder = LocalApicBuilder::new();
-    //         builder
-    //             .timer_vector(static_stuff_1.timer_interrupt_index as usize)
-    //             .spurious_vector(static_stuff_1.spurious_interrupt_handler_index as usize)
-    //             .error_vector(static_stuff_1.local_apic_error_interrupt_index as usize);
-    //         if let Some(local_xapic) = LOCAL_APIC_ADDR.try_get().unwrap() {
-    //             builder.set_xapic_base(VirtAddr::from(*local_xapic).as_u64());
-    //         }
-    //         let mut local_apic = builder.build().unwrap();
-    //         unsafe { local_apic.enable() };
-    //         unsafe { local_apic.disable_timer() };
-    //         Spinlock::new(local_apic)
-    //     })
-    //     .unwrap();
+    cpu_local_data
+        .local_apic
+        .try_init({
+            let mut builder = LocalApicBuilder::new();
+            builder
+                .timer_vector(static_stuff_1.timer_interrupt_index as usize)
+                .spurious_vector(static_stuff_1.spurious_interrupt_handler_index as usize)
+                .error_vector(static_stuff_1.local_apic_error_interrupt_index as usize);
+            if let Some(local_xapic) = LOCAL_APIC_ADDR.try_get().unwrap() {
+                builder.set_xapic_base(VirtAddr::from(*local_xapic).as_u64());
+            }
+            let mut local_apic = builder.build().unwrap();
+            unsafe { local_apic.enable() };
+            unsafe { local_apic.disable_timer() };
+            Spinlock::new(local_apic)
+        })
+        .unwrap();
 }
 
 // pub fn get_iobp() -> &'static Spinlock<&'static mut [u8; IOPB_SIZE]> {
