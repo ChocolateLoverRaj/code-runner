@@ -117,11 +117,14 @@ fn main() {
         .unwrap();
     assert!(status.success());
 
+    let chain_loader_efi_path = env::var("CARGO_BIN_FILE_CHAIN_LOADER").unwrap();
+
     // pass the disk image paths via environment variables
     println!("cargo:rustc-env=OUT_DIR={}", out_dir.display());
     println!("cargo:rustc-env=ISO={}", output_iso.display());
     println!("cargo:rustc-env=CARGO_BIN_FILE_KERNEL={}", kernel_src);
     println!("cargo:rustc-env=USER_SPACE={}", user_space_elf_path);
+    println!("cargo:rustc-env=CHAIN_LOADER={}", chain_loader_efi_path);
 }
 
 pub fn ensure_symlink<P: AsRef<Path>, Q: AsRef<Path>>(original: P, link: Q) -> io::Result<()> {

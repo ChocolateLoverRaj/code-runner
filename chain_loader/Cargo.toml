@@ -1,0 +1,12 @@
+[package]
+name = "chain_loader"
+edition = "2024"
+
+[dependencies]
+log = "0.4.27"
+uefi = { version = "0.34.1", features = [
+    "logger",
+    "panic_handler",
+    "alloc",
+    "global_allocator",
+] }

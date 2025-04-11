@@ -12,3 +12,6 @@ http_boot.ipxe
 
 # Where Nix Limine build output is saved
 /limine
+
+# Testing UEFI on QEMU
+/esp

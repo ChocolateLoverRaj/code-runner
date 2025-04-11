@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["kernel", "util", "user_space", "common", "runner"]
+members = ["kernel", "util", "user_space", "common", "runner", "chain_loader"]
 
 [patch.crates-io]
 x86_rtc = { path = "./x86_rtc" }
