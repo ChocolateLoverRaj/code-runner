@@ -185,7 +185,7 @@ unsafe extern "C" fn kernel_main() -> ! {
     // Test assuming 400KiB is available for global allocation
     // test_allocator(0x100_000);
 
-    hlt_loop();
+    todo!("Init CPUs");
 
     // init_cpus(mp_response, rsdp_addr, hhdm_offset, module_response)
 }

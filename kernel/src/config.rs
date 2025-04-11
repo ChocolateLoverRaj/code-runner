@@ -15,8 +15,8 @@ pub struct Config {
 
 pub const CONFIG: Config = Config {
     kernel_log_com1: true,
-    // kernel_log_screen: Some(embedded_graphics::mono_font::iso_8859_16::FONT_10X20),
-    kernel_log_screen: None,
+    kernel_log_screen: Some(embedded_graphics::mono_font::iso_8859_16::FONT_10X20),
+    // kernel_log_screen: None,
     kernel_log_spcr: true,
     kernel_log_serial_colors: true,
     kernel_log_serial_level_filter: LevelFilter::Info,

@@ -1,8 +1,6 @@
 use core::{
     fmt::{Display, Write},
-    ops::DerefMut,
     ptr::NonNull,
-    slice,
 };
 
 use acpi::{
@@ -10,13 +8,13 @@ use acpi::{
     spcr::{Spcr, SpcrInterfaceType},
 };
 use embedded_graphics::{
-    mono_font::{MonoFont, MonoTextStyle, MonoTextStyleBuilder},
+    mono_font::{MonoFont, MonoTextStyleBuilder},
     pixelcolor::Rgb888,
     prelude::*,
-    primitives::{PrimitiveStyleBuilder, Rectangle, Styled, StyledDrawable},
+    primitives::{PrimitiveStyleBuilder, Rectangle},
     text::{Baseline, Text},
 };
-use limine::{framebuffer::Framebuffer, response::FramebufferResponse};
+use limine::response::FramebufferResponse;
 use log::{Level, Log};
 use owo_colors::{AnsiColors, OwoColorize};
 use spinning_top::Spinlock;
@@ -288,4 +286,10 @@ pub fn init_spcr(
             None
         };
     };
+}
+
+/// # Safety
+/// This function is always unsafe. Only call it during a panic handler.
+pub unsafe fn force_unlock() {
+    unsafe { LOGGER.data.force_unlock() };
 }
