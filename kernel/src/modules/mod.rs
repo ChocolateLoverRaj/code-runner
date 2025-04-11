@@ -3,7 +3,6 @@
 pub mod gdt;
 pub mod get_apic;
 pub mod idt;
-pub mod logging_breakpoint_handler;
 pub mod logging_timer_interrupt_handler;
 pub mod panicking_double_fault_handler;
 pub mod panicking_invalid_opcode_handler;

@@ -61,4 +61,8 @@ impl<T> InitLater<T> {
             Err(TryGetError::NotInitialized)
         }
     }
+
+    pub fn is_initialized(&self) -> bool {
+        self.state.load(Ordering::Acquire) == State::Initialized
+    }
 }
