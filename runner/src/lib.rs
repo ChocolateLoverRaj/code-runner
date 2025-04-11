@@ -29,7 +29,7 @@ pub fn run_qemu(boot_type: BootType) {
                 "b rust_begin_unwind".into(),
                 // "b init_cpus.rs:94".into(),
                 // "b logger_2.rs:26".into(),
-                "b pt_allocator_2.rs:409".into(),
+                "b logger_3.rs:131".into(),
                 "gdb-remote localhost:1234".into(),
             ]
             .join("\n"),

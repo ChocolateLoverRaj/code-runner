@@ -38,11 +38,11 @@ impl AcpiHandler for AcpiHandlerImpl<'_> {
         physical_address: usize,
         size: usize,
     ) -> acpi::PhysicalMapping<Self, T> {
-        log::info!(
-            "Mapping phys: 0x{:X} with len 0x{:X}",
-            physical_address,
-            size
-        );
+        // log::debug!(
+        //     "Mapping phys: 0x{:X} with len 0x{:X}",
+        //     physical_address,
+        //     size
+        // );
         let page_count =
             (physical_address + size).div_ceil(0x1000) - physical_address.div_floor(0x1000);
         let pages = find_contiguous_unused_virtual_memory(

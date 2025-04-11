@@ -89,7 +89,8 @@ pub mod find_contiguous_unused_virtual_memory;
 pub mod get_offset_page_table;
 pub mod page_tables_recursive_iterator;
 // pub mod tasks;
-pub mod spcr_hello_world;
+pub mod limine_frame_buffer_embedded_graphics;
+pub mod logger_3;
 pub mod test_allocator;
 pub mod traverse_cr3;
 pub mod user_space_state;
@@ -112,8 +113,8 @@ use hlt_loop::hlt_loop;
 // use init_cpus::init_cpus;
 use iopb_size::IOPB_SIZE;
 use limine_requests::{
-    BASE_REVISION, HHDM_REQUEST, KERNEL_ADDRESS_REQUEST, MEMORY_MAP_REQUEST, MODULE_REQUEST,
-    MP_REQUEST, RSDP_REQUEST,
+    BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, KERNEL_ADDRESS_REQUEST, MEMORY_MAP_REQUEST,
+    MODULE_REQUEST, MP_REQUEST, RSDP_REQUEST,
 };
 use log_boot_time::log_boot_time;
 // use log_memory_usage::log_memory_usage;
@@ -122,7 +123,6 @@ use logger::init_logger_with_framebuffer;
 use modules::idt::disable_pic8259::disable_pic8259;
 use page_tables_recursive_iterator::PageTablesRecursiveIterator;
 use rsdp_addr::RsdpAddr;
-use spcr_hello_world::spcr_hello_world;
 use test_allocator::test_allocator;
 use util::static_allocator::StaticAllocator;
 use x86_64::registers::control::Cr3;
@@ -133,19 +133,11 @@ unsafe extern "C" fn kernel_main() -> ! {
 
     // init_logger_with_framebuffer(None);
     // log_sample_messages::log_sample_messages();
-    logger::init_logger_with_framebuffer(None);
+    let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response();
+    let hhdm_offset = HhdmOffset::try_from(&HHDM_REQUEST).unwrap();
+    logger_3::init(frame_buffer_response, hhdm_offset);
 
     let rsdp_addr = RsdpAddr::try_from(&RSDP_REQUEST).unwrap();
-    let hhdm_offset = HhdmOffset::try_from(&HHDM_REQUEST).unwrap();
-
-    unsafe { PageTablesRecursiveIterator::new(hhdm_offset, Cr3::read().0, Default::default()) }
-        .for_each(|page_table_entry| {
-            log::debug!(
-                "Page table entry: {:?}. Len: 0x{:X}",
-                page_table_entry,
-                page_table_entry.page_table_index_stack.n_4kib_pages()
-            );
-        });
 
     let memory_map_response = MEMORY_MAP_REQUEST.get_response().unwrap();
     let frame_allocator = RefCell::new({
@@ -161,21 +153,25 @@ unsafe extern "C" fn kernel_main() -> ! {
         )
     }
     .unwrap();
-    log::info!("Acpi tables: {:#?}", acpi_tables);
     let spcr = acpi_tables.find_table::<Spcr>();
-    log::info!("SPCR: {:#?}", spcr);
     if let Ok(spcr) = spcr {
-        spcr_hello_world(&spcr, hhdm_offset, frame_allocator.borrow_mut().deref_mut());
+        logger_3::init_spcr(&spcr, hhdm_offset, frame_allocator.borrow_mut().deref_mut());
     }
-
-    hlt_loop();
+    log::info!("Even if u have SPCR, you should see this message");
+    log::info!(
+        "A really loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong message"
+    );
+    log::warn!("Message\nwith\nnew\nlines");
+    for i in 0..60 {
+        log::info!("Test message {}", i);
+    }
 
     disable_pic8259();
 
     log_bootloader_info::log_bootloader_info();
     log_phys_mem_regions::log_phys_mem_regions();
     log_rsdp_addr::log_rsdp_addr(rsdp_addr);
-    log_frame_buffer_info::log_frame_buffer_info();
+    log_frame_buffer_info::log_frame_buffer_info(frame_buffer_response);
 
     let mp_response = unsafe {
         #[allow(static_mut_refs)]
@@ -193,6 +189,8 @@ unsafe extern "C" fn kernel_main() -> ! {
     log_kernel_address::log_kernel_address(kernel_address_response);
 
     log_boot_time();
+
+    hlt_loop();
 
     ensure_mem_is_higher_half(hhdm_offset);
 
