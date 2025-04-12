@@ -2,13 +2,16 @@ use crate::{
     call_stack_iterator::CallStackIterator, cpu_local_data::get_local, hlt_loop::hlt_loop,
     limine_requests::EXECUTABLE_FILE_REQUEST, logger_3,
 };
+use addr2line::{
+    gimli::{Dwarf, DwarfFileType, EndianSlice, LittleEndian},
+    Location,
+};
 use core::{
     fmt::{Debug, Display},
     panic::PanicInfo,
     slice,
 };
-use elf::{endian::NativeEndian, ElfBytes};
-use rustc_demangle::demangle;
+use elf::{endian::NativeEndian, ElfBytes, ParseError};
 use thiserror::Error;
 use x2apic::lapic::IpiAllShorthand;
 use x86_64::instructions::interrupts;
@@ -47,13 +50,13 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
         NoExecutableFileResponse,
         #[error("Error parsing kernel's ELF file")]
         ParseElfError(elf::ParseError),
-        #[error("No symbol table found in ELF")]
-        NoSymbolTable,
+        #[error("Error constructing addr2line Context")]
+        Addr2LineError(addr2line::gimli::Error),
     }
-    let executable_file_response = EXECUTABLE_FILE_REQUEST
+
+    let context = EXECUTABLE_FILE_REQUEST
         .get_response()
-        .ok_or(GetLineError::NoExecutableFileResponse);
-    let tables = executable_file_response
+        .ok_or(GetLineError::NoExecutableFileResponse)
         .map(|executable_file_response| {
             ElfBytes::<NativeEndian>::minimal_parse({
                 let file = executable_file_response.file();
@@ -64,11 +67,24 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
         })
         .and_then(|result| result.map_err(|e| GetLineError::ParseElfError(e)))
         .and_then(|elf| {
-            elf.symbol_table()
-                .map_err(|e| GetLineError::ParseElfError(e))
-                .and_then(|option| option.ok_or(GetLineError::NoSymbolTable))
+            Dwarf::load(|section| {
+                Ok::<_, ParseError>(EndianSlice::new(
+                    {
+                        match elf.section_header_by_name(section.name())? {
+                            Some(h) => elf.section_data(&h)?.0,
+                            None => &[],
+                        }
+                    },
+                    LittleEndian,
+                ))
+            })
+            .map_err(|e| GetLineError::ParseElfError(e))
+        })
+        .and_then(|mut dwarf| {
+            dwarf.file_type = DwarfFileType::Main;
+            addr2line::Context::from_dwarf(dwarf).map_err(|e| GetLineError::Addr2LineError(e))
         });
-    if let Err(e) = &tables {
+    if let Err(e) = &context {
         log::error!("Error getting function lines: {:?}", e);
     }
 
@@ -78,39 +94,42 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
     // Safety: We are assuming that the stack is not corrupted
     let call_stack_iterator = unsafe { CallStackIterator::new() };
     for (index, instruction_pointer) in call_stack_iterator.enumerate() {
-        let location = tables.as_ref().ok().map(|(symbol_table, string_table)| {
-            symbol_table
-                .iter()
-                .find(|symbol| {
-                    (symbol.st_value..symbol.st_value + symbol.st_size)
-                        .contains(&instruction_pointer.into())
-                })
-                .map(|symbol| string_table.get(symbol.st_name as usize).map(demangle))
+        let location = context.as_ref().map(|context| {
+            context.find_location({
+                // Get the previous instruction, which is what we care about
+                // https://stackoverflow.com/a/59014431/11145447
+                instruction_pointer.get() - 1
+            })
         });
-        struct DisplayableLocation<T: Display, E: Debug> {
-            location: Option<Option<Result<T, E>>>,
+        struct DisplayableLocation<'a, E: Debug, E1: Debug> {
+            location: Result<Result<Option<Location<'a>>, E>, E1>,
         }
-        impl<T: Display, E: Debug> Display for DisplayableLocation<T, E> {
+        impl<E: Debug, E1: Debug> Display for DisplayableLocation<'_, E, E1> {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 match &self.location {
-                    Some(location) => {
+                    Ok(location) => {
                         write!(f, " @ ")?;
                         match location {
-                            Some(name) => match name {
-                                Ok(name) => {
-                                    write!(f, "{}", name)
+                            Ok(name) => match name {
+                                Some(location) => {
+                                    if let Some(file) = location.file {
+                                        write!(f, "{}", file)?;
+                                        if let Some(line) = location.line {
+                                            write!(f, ":{}", line)?;
+                                            if let Some(column) = location.column {
+                                                write!(f, ":{}", column)?;
+                                            }
+                                        }
+                                    }
                                 }
-                                Err(e) => {
-                                    write!(f, "<error getting name: {:?}>", e)
-                                }
+                                None => write!(f, "<unknown>")?,
                             },
-                            None => {
-                                write!(f, "<no symbol>")
-                            }
+                            Err(e) => write!(f, "<error getting location: {:?}>", e)?,
                         }
                     }
-                    None => Ok(()),
+                    Err(_) => {}
                 }
+                Ok(())
             }
         }
 

@@ -36,4 +36,4 @@ pub const CONFIG: Config = Config {
 
 /// The size in bytes of the `static` buffer used to store log messages before the global allocator is initialized.
 pub const LOG_BUFFER_SIZE: usize = 0x100_000;
-pub const GLOBAL_ALLOCATOR_SIZE: usize = 0x100_000;
+pub const GLOBAL_ALLOCATOR_SIZE: usize = 0x800_000;

@@ -1072,6 +1072,7 @@ name = "kernel"
 version = "0.1.0"
 dependencies = [
  "acpi",
+ "addr2line",
  "anyhow",
  "bitfield",
  "bootloader-x86_64-common",
