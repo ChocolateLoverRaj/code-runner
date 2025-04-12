@@ -1,7 +1,5 @@
 use limine::{framebuffer::MemoryModel, response::FramebufferResponse};
 
-use crate::limine_requests::FRAME_BUFFER_REQUEST;
-
 pub fn log_frame_buffer_info(frame_buffer_response: Option<&FramebufferResponse>) {
     if let Some(frame_buffer_response) = frame_buffer_response {
         frame_buffer_response

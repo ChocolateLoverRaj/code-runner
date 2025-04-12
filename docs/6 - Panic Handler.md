@@ -15,7 +15,7 @@ Another solution is to force-unlock the logger before logging the panic message.
 I'm going to use the force-unlock method because it's simpler to implement. It's pretty hacky, but we can change it later.
 
 ## Printing backtraces
-The `PanicInfo` that we receive from Rust just contains the message the the code that panicked. It doesn't contain the call stack. But the call stack is very useful for debugging. [This awesome example](https://github.com/phil-opp/blog_os/discussions/1394#discussioncomment-12733677) shows how to get the backtrace from the `rbp`s, and parse the ELF to get human-readable locations of the call stack. This does make the panic handler more simple, but it's definitely worth it.
+The `PanicInfo` that we receive from Rust just contains the message the the code that panicked. It doesn't contain the call stack. But the call stack is very useful for debugging. [This awesome example](https://github.com/phil-opp/blog_os/discussions/1394#discussioncomment-12733677) shows how to get the backtrace from the `rbp`s, and parse the ELF to get human-readable locations of the call stack. This does make the panic handler more complex, but it's definitely worth it.
 
 ## Make it Fancy?
 What if we drew a blue screen with a frowny face and a QR code like on Windows 11? This would be cool, but I'm not going to do it. Because the system is an undefined state, doing fancy stuff like that might cause even more issues. Also, I would rather spend time making sure the kernel *doesn't* panic in the first place rather than making the panic handler fancy.

@@ -14,7 +14,7 @@ use x86_64::{
 };
 
 use crate::{
-    boxed_stack::{BoxedStack, BoxedStackExt},
+    boxed_stack::BoxedStack,
     cpu_local_data,
     fault_handlers::{
         breakpoint::breakpoint_handler, double_fault::double_fault_handler,
@@ -68,9 +68,9 @@ pub fn init_bsp(
 
 pub fn init_cpu() {
     let idt_stack_size = 0x10_000;
-    let priv_tss_stack = BoxedStack::new_uninit_stack(idt_stack_size);
-    let double_fault_handler_stack = BoxedStack::new_uninit_stack(idt_stack_size);
-    let other_fault_handler_stack = BoxedStack::new_uninit_stack(idt_stack_size);
+    let priv_tss_stack = BoxedStack::new_uninit(idt_stack_size);
+    let double_fault_handler_stack = BoxedStack::new_uninit(idt_stack_size);
+    let other_fault_handler_stack = BoxedStack::new_uninit(idt_stack_size);
     let cpu_local_data = cpu_local_data::get_local().unwrap();
 
     let static_stuff_1 = cpu_local_data
@@ -79,14 +79,10 @@ pub fn init_cpu() {
             let mut tss = TssBuilder::<IOPB_SIZE>::default();
             let mut idt_builder = IdtBuilder::default();
             let double_fault_stack_index = tss
-                .add_interrupt_stack_table_entry(VirtAddr::from_ptr(
-                    double_fault_handler_stack.as_ptr_range().end,
-                ))
+                .add_interrupt_stack_table_entry(double_fault_handler_stack.top())
                 .unwrap();
             let other_fault_stack_index = tss
-                .add_interrupt_stack_table_entry(VirtAddr::from_ptr(
-                    other_fault_handler_stack.as_ptr_range().end,
-                ))
+                .add_interrupt_stack_table_entry(other_fault_handler_stack.top())
                 .unwrap();
             idt_builder
                 .set_double_fault_entry(idt::Entry::from_handler_fn(
@@ -169,10 +165,8 @@ pub fn init_cpu() {
                 .unwrap();
 
             // This is the stack that gets switched to when an interrupt handler is called while the CPU is in user mode
-            tss.set_privilege_stack_table_entry_from_ring_3(VirtAddr::from_ptr(
-                priv_tss_stack.as_ptr_range().end,
-            ))
-            .unwrap();
+            tss.set_privilege_stack_table_entry_from_ring_3(priv_tss_stack.top())
+                .unwrap();
             let tss = tss.get_tss();
             StaticStuff1 {
                 tss,

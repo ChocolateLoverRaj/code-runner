@@ -31,7 +31,11 @@ use crate::{
     log_sample_messages::log_sample_messages,
     logger_3,
     modules::idt::disable_pic8259::disable_pic8259,
+    parse_ram_disk::parse_ram_disk,
+    physical_memory::{self},
     rsdp_addr::RsdpAddr,
+    spawn_task::spawn_task,
+    tasks::{try_init_tasks, TASKS},
 };
 
 /// The initialization of things that just need to be run on one CPU (the BSP) before running the every-CPU init
@@ -107,6 +111,19 @@ pub unsafe fn init() -> ! {
     // test_allocator(0x100_000);
 
     init_idt_and_gdt::init_bsp(&acpi_tables, hhdm_offset, &frame_allocator);
+
+    drop(acpi_tables);
+
+    physical_memory::init(frame_allocator.into_inner().into(), memory_map_response).unwrap();
+
+    log::info!("Spawning task");
+    try_init_tasks().unwrap();
+    let ram_disk = parse_ram_disk(module_response.unwrap()).unwrap();
+    spawn_task(&ram_disk, hhdm_offset).unwrap();
+    {
+        let tasks = TASKS.try_get().unwrap().lock();
+        log::info!("Spawned task. {:#?}", tasks.tasks.first().unwrap());
+    }
 
     // Safety: Only being called once, after BSP init
     unsafe { init_cpus() }

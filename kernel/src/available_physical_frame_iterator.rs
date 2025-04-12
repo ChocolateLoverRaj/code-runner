@@ -96,6 +96,12 @@ impl AvailablePhysicalFrameIteratorFrameAllocator {
     }
 }
 
+impl From<AvailablePhysicalFrameIteratorFrameAllocator> for AvailablePhysicalFrameIterator {
+    fn from(value: AvailablePhysicalFrameIteratorFrameAllocator) -> Self {
+        value.iterator
+    }
+}
+
 unsafe impl FrameAllocator<Size4KiB> for AvailablePhysicalFrameIteratorFrameAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
         self.iterator.next()

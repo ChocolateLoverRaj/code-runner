@@ -1,7 +1,7 @@
 use core::ptr::NonNull;
 
 use alloc::boxed::Box;
-use limine::{mp::Cpu, response::MpResponse};
+use limine::response::MpResponse;
 use spinning_top::Spinlock;
 use util::init_later::InitLater;
 use x2apic::lapic::LocalApic;
@@ -10,6 +10,7 @@ use x86_64::{registers::model_specific::GsBase, VirtAddr};
 use crate::{
     init_idt_and_gdt::{StaticStuff1, StaticStuff2},
     store_but_borrow_mut::StoreButBorrowMut,
+    tasks::CpuTaskData,
 };
 
 /// This is what we set `GS.Base` to point to
@@ -21,6 +22,7 @@ pub struct CpuLocalData {
     pub static_stuff1: StoreButBorrowMut<StaticStuff1>,
     pub static_stuff2: InitLater<StaticStuff2>,
     pub local_apic: InitLater<Spinlock<LocalApic>>,
+    pub task_data: Spinlock<CpuTaskData>,
 }
 
 static CPU_LOCAL_DATA: InitLater<Box<[CpuLocalData]>> = InitLater::uninit();
@@ -36,6 +38,7 @@ pub fn init_bsp(mp_response: &MpResponse) {
                     static_stuff1: StoreButBorrowMut::uninit(),
                     static_stuff2: InitLater::uninit(),
                     local_apic: InitLater::uninit(),
+                    task_data: Default::default(),
                 })
                 .collect(),
         )

@@ -1,26 +1,24 @@
 use core::{slice, sync::atomic::Ordering};
 
-use alloc::{boxed::Box, vec::Vec};
 use common::ram_disk::RamDisk;
 use elf::{endian::NativeEndian, ElfBytes};
 use thiserror::Error;
-use util::continuous_bool_vec::ContinuousBoolVec;
 use x86_64::{
     structures::paging::{
-        mapper::MapToError, FrameAllocator, Mapper, Page, PageSize, PageTableFlags, PhysFrame,
-        Size4KiB,
+        mapper::MapToError, FrameAllocator, Mapper, Page, PageSize, PageTableFlags, Size4KiB,
     },
     VirtAddr,
 };
 
 use crate::{
+    boxed_stack::BoxedStack,
+    get_offset_page_table::get_offset_page_table_with_new_l4,
     hhdm_offset::HhdmOffset,
-    iopb_size::IOPB_SIZE,
-    pt_allocator_2::{
-        get_offset_page_table::get_offset_page_table_with_new_l4,
-        pt_frame_allocator_3::PtFrameAllocator3,
+    physical_memory::{PhysicalMemoryFrameAllocator, UsedBy, PHYSICAL_MEMORY},
+    tasks::{
+        IoPermissionBitmap, ReadyToStartState, Task, TaskState, TaskType, UserTaskData,
+        NEXT_TASK_ID, TASKS,
     },
-    tasks::{ReadyToStartState, Task, TaskState, TaskType, UserTaskData, NEXT_TASK_ID, TASKS},
 };
 
 /// Only specifies `WRITABLE` and `NO_EXECUTE` if needed. Other flags such as `PRESENT` and `USER_ACCESSIBLE` must be added.
@@ -55,8 +53,6 @@ pub fn spawn_task(
     program: &RamDisk<'static>,
     hhdm_offset: HhdmOffset,
 ) -> Result<(), SpawnTaskError> {
-    let mut task_phys_mem = ContinuousBoolVec::<Vec<_>>::new(usize::MAX, false);
-
     let elf = ElfBytes::<NativeEndian>::minimal_parse(&program.elf)
         .map_err(|e| SpawnTaskError::ElfParseError(e))?;
     let loadable_segments = elf
@@ -85,17 +81,10 @@ pub fn spawn_task(
             .map_err(|e| SpawnTaskError::ElfParseError(e))?
     };
     let mut elf_end = Page::<Size4KiB>::from_start_address(VirtAddr::zero()).unwrap();
-    let mut frame_allocator = PtFrameAllocator3 {
-        f: |frame: PhysFrame<Size4KiB>| {
-            task_phys_mem.set(
-                {
-                    let start = frame.start_address().as_u64() as usize;
-                    start..start + 0x1000
-                },
-                true,
-            );
-        },
-    };
+    let id = NEXT_TASK_ID.fetch_add(1, Ordering::Relaxed);
+    let mut physical_memory_lock = PHYSICAL_MEMORY.try_get().unwrap().lock();
+    let mut frame_allocator =
+        PhysicalMemoryFrameAllocator::new(&mut physical_memory_lock, UsedBy::UserSpace(id));
     // Because the task will have a different Cr3 value, we create a new L4 page table
     let l4 = frame_allocator
         .allocate_frame()
@@ -234,14 +223,14 @@ pub fn spawn_task(
     let start_addr = VirtAddr::new(start_symbol.st_value);
 
     let task = Task {
-        id: NEXT_TASK_ID.fetch_add(1, Ordering::Relaxed),
+        id,
         task_type: TaskType::User(UserTaskData {
             cr3: l4,
-            kernel_stack: Box::new_uninit_slice(0x200),
+            kernel_stack: BoxedStack::new_uninit(0x2000),
             iopb: {
                 // Even if a program is allowed to use COM1, it must "take ownership" of it so that a program and another program or the kernel doesn't try to use it at the same time
                 // So set to all 1s to deny all ports
-                [u8::MAX; IOPB_SIZE]
+                IoPermissionBitmap::new_deny_all()
             },
             log_stream: None,
         }),
@@ -249,7 +238,6 @@ pub fn spawn_task(
             instruction_pointer: start_addr,
             stack_pointer: stack_end.start_address(),
         }),
-        owned_phys_mem: task_phys_mem,
     };
     TASKS.try_get().unwrap().lock().tasks.push(task);
 
