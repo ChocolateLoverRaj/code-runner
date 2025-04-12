@@ -3,8 +3,9 @@ use crate::{
     limine_requests::EXECUTABLE_FILE_REQUEST, logger_3,
 };
 use addr2line::{
-    gimli::{Dwarf, DwarfFileType, EndianSlice, LittleEndian},
-    Location,
+    fallible_iterator::FallibleIterator,
+    gimli::{self, Dwarf, DwarfFileType, EndianSlice, LittleEndian, Reader},
+    Frame,
 };
 use core::{
     fmt::{Debug, Display},
@@ -95,25 +96,47 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
     let call_stack_iterator = unsafe { CallStackIterator::new() };
     for (index, instruction_pointer) in call_stack_iterator.enumerate() {
         let location = context.as_ref().map(|context| {
-            context.find_location({
-                // Get the previous instruction, which is what we care about
-                // https://stackoverflow.com/a/59014431/11145447
-                instruction_pointer.get() - 1
-            })
+            Ok::<_, gimli::Error>(
+                context
+                    .find_frames(instruction_pointer.get() - 1)
+                    .skip_all_loads()?
+                    .last()?,
+            )
         });
-        struct DisplayableLocation<'a, E: Debug, E1: Debug> {
-            location: Result<Result<Option<Location<'a>>, E>, E1>,
+        // let location = context.as_ref().and_then(|context| {
+        //     context
+        //         .find_frames({
+        //             // Get the previous instruction, which is what we care about
+        //             // https://stackoverflow.com/a/59014431/11145447
+        //             instruction_pointer.get() - 1
+        //         })
+        //         .skip_all_loads()
+        //         .and_then(|result| result.last())
+        // });
+        struct DisplayableLocation<'a, E: Debug, E1, R: Reader> {
+            location: Result<Result<Option<Frame<'a, R>>, E>, E1>,
         }
-        impl<E: Debug, E1: Debug> Display for DisplayableLocation<'_, E, E1> {
+        impl<E: Debug, E1, R: Reader> Display for DisplayableLocation<'_, E, E1, R> {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 match &self.location {
-                    Ok(location) => {
-                        write!(f, " @ ")?;
-                        match location {
-                            Ok(name) => match name {
-                                Some(location) => {
+                    Ok(frame) => match frame {
+                        Ok(frame) => match frame {
+                            Some(frame) => {
+                                if let Some(function) = &frame.function {
+                                    match function.demangle() {
+                                        Ok(function) => {
+                                            write!(f, "{}", function)?;
+                                        }
+                                        Err(e) => {
+                                            write!(f, "<error: {:?}>", e)?;
+                                        }
+                                    }
+                                } else {
+                                    write!(f, "<unknown>")?;
+                                }
+                                if let Some(location) = &frame.location {
                                     if let Some(file) = location.file {
-                                        write!(f, "{}", file)?;
+                                        write!(f, " @ \n    {}", file)?;
                                         if let Some(line) = location.line {
                                             write!(f, ":{}", line)?;
                                             if let Some(column) = location.column {
@@ -122,11 +145,11 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
                                         }
                                     }
                                 }
-                                None => write!(f, "<unknown>")?,
-                            },
-                            Err(e) => write!(f, "<error getting location: {:?}>", e)?,
-                        }
-                    }
+                            }
+                            None => write!(f, "<unknown>")?,
+                        },
+                        Err(e) => write!(f, "<error getting frame: {:?}>", e)?,
+                    },
                     Err(_) => {}
                 }
                 Ok(())
@@ -134,12 +157,7 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
         }
 
         let displayable_location = DisplayableLocation { location };
-        log::error!(
-            "  {}: {:#x}{}",
-            index,
-            instruction_pointer,
-            displayable_location
-        );
+        log::error!("  {}: {}", index, displayable_location);
     }
 
     hlt_loop()
