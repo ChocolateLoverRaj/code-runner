@@ -53,6 +53,7 @@ extern "C" fn _start() -> ! {
     //     asm!("ud2");
     // }
     // unsafe { (1 as *const u8).read_volatile() };
+    syscall_exit();
     let can_exit = syscall_exists(SYSCALL_EXIT);
     let should_be_false = syscall_exists(Uuid::default());
     let mut count = 0;

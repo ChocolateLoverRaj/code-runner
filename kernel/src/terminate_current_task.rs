@@ -5,16 +5,17 @@ use x86_64::registers::{
 
 use crate::{
     context::{Context, FullContext},
+    cpu_local_data::get_local,
     init_idt_and_gdt::get_priv_stack,
-    pt_allocator_2::PHYS_MEM_TRACKER,
+    physical_memory::{PhysicalMemoryState, UsedBy, PHYSICAL_MEMORY},
     run_tasks::run_tasks,
-    tasks::{try_get_cpu_task_data, TaskType, TASKS},
+    tasks::{TaskType, TASKS},
 };
 
 /// Terminate the current task, switches to a different stack, and then runs other tasks
 pub fn terminate_current_task() -> ! {
     {
-        let mut cpu_task_data = try_get_cpu_task_data().unwrap().lock();
+        let mut cpu_task_data = get_local().unwrap().task_data.lock();
         let process_id = cpu_task_data.current_task.unwrap();
         // Switch Cr3 back to the kernel's Cr3 cuz we will be "deleting" the process's Cr3
         let mut tasks = TASKS.try_get().unwrap().lock();
@@ -29,15 +30,20 @@ pub fn terminate_current_task() -> ! {
             .find(|(_index, task)| task.id == process_id)
             .unwrap();
         // Clean up all phys frames
-        {
-            let mut phys_mem = PHYS_MEM_TRACKER.try_get().unwrap().lock();
-            task.owned_phys_mem
-                .iter()
-                .filter(|segment| segment.value)
-                .for_each(|segment| {
-                    phys_mem.set(segment.position..segment.position + segment.len, false);
-                });
-        }
+        // TODO: Maybe find out how to do this without cloning
+        let mut physical_memory = PHYSICAL_MEMORY.try_get().unwrap().lock();
+        physical_memory
+            .clone()
+            .into_iter()
+            .for_each(|(range, state)| match state {
+                PhysicalMemoryState::Used(UsedBy::UserSpace(task_id)) => {
+                    if task.id == task_id {
+                        physical_memory.insert(range, PhysicalMemoryState::Available);
+                    }
+                }
+                _ => {}
+            });
+
         match tasks.tasks.remove(task_index).task_type {
             TaskType::User(user_task_data) => {
                 cpu_task_data.stack_to_delete = Some(user_task_data.kernel_stack);
@@ -45,7 +51,7 @@ pub fn terminate_current_task() -> ! {
         }
     }
     let context = FullContext {
-        rsp: get_priv_stack().as_ptr_range().end as u64,
+        rsp: get_priv_stack().top().as_u64(),
         rip: run_tasks as *const () as u64,
         cs: CS::get_reg().0 as u64,
         ..Default::default()

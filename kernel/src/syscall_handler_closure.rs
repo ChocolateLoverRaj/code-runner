@@ -7,6 +7,7 @@ use crate::{
     context::{Context, SyscallContext},
     cpu_local_data::get_local,
     syscall_handler::{PushedRegisters, SyscallHandlerClosure},
+    terminate_current_task::terminate_current_task,
 };
 
 pub trait Includes<K> {
@@ -25,13 +26,13 @@ pub type SyscallHandler =
 pub fn get_syscall_handler_closure() -> SyscallHandlerClosure {
     let syscall_handlers = {
         let mut syscall_handlers = BTreeMap::<Uuid, Box<SyscallHandler>>::new();
-        // syscall_handlers.insert(
-        //     SYSCALL_EXIT,
-        //     Box::new(|_inputs, _pushed_registers, _| {
-        //         log::info!("Syscall exit called");
-        //         terminate_current_task()
-        //     }),
-        // );
+        syscall_handlers.insert(
+            SYSCALL_EXIT,
+            Box::new(|_inputs, _pushed_registers, _| {
+                log::info!("Syscall exit called");
+                terminate_current_task()
+            }),
+        );
         // syscall_handlers.insert(
         //     SYSCALL_EXISTS,
         //     Box::new(|inputs, pushed_registers, syscalls| {
@@ -78,8 +79,7 @@ pub fn get_syscall_handler_closure() -> SyscallHandlerClosure {
             match syscall_handlers.get(&syscall_uuid) {
                 None => {
                     log::warn!("Invalid syscall {:?}. Terminating process.", syscall_uuid);
-                    // terminate_current_task()
-                    todo!("Terminate current task")
+                    terminate_current_task()
                 }
                 Some(syscall_handler) => syscall_handler(
                     [input2, input3, input4, input5, input6],

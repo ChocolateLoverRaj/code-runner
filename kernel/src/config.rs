@@ -27,11 +27,11 @@ pub const CONFIG: Config = Config {
         colors: true,
         level_filter: LevelFilter::Debug,
     }),
-    // kernel_log_screen: Some(LogScreenConfig {
-    //     font: embedded_graphics::mono_font::iso_8859_16::FONT_10X20,
-    //     level_filter: LevelFilter::Warn,
-    // }),
-    kernel_log_screen: None,
+    kernel_log_screen: Some(LogScreenConfig {
+        font: embedded_graphics::mono_font::iso_8859_16::FONT_10X20,
+        level_filter: LevelFilter::Warn,
+    }),
+    // kernel_log_screen: None,
     kernel_log_sample_messages: true,
 };
 

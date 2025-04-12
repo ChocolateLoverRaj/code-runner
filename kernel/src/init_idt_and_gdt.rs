@@ -216,11 +216,11 @@ pub fn get_iobp() -> &'static Spinlock<&'static mut [u8; IOPB_SIZE]> {
     &get_local().unwrap().static_stuff2.try_get().unwrap().iopb
 }
 
-// pub fn get_priv_stack() -> &'static Box<[MaybeUninit<StackChunk>]> {
-//     &CPU_LOCAL_STATIC_STUFF_2
-//         .try_get()
-//         .unwrap()
-//         .try_get()
-//         .unwrap()
-//         .priv_tss_stack
-// }
+pub fn get_priv_stack() -> &'static BoxedStack {
+    &get_local()
+        .unwrap()
+        .static_stuff2
+        .try_get()
+        .unwrap()
+        .priv_tss_stack
+}

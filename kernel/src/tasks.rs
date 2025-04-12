@@ -1,6 +1,6 @@
 use core::{
     fmt::Debug,
-    ops::{Deref, DerefMut, Range},
+    ops::{Deref, Range},
     sync::atomic::AtomicUsize,
 };
 
@@ -13,10 +13,7 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-use crate::{
-    boxed_stack::BoxedStack, iopb_size::IOPB_SIZE,
-    modules::syscall::init_syscalls::InitializedSyscalls,
-};
+use crate::{boxed_stack::BoxedStack, iopb_size::IOPB_SIZE};
 
 #[derive(PartialEq, Eq)]
 pub struct IoPermissionBitmap<const N: usize> {

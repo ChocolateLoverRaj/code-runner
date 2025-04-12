@@ -77,7 +77,7 @@ pub mod call_stack_iterator;
 pub mod split_draw_target;
 pub mod store_but_borrow_mut;
 pub mod syscall_handler;
-// pub mod terminate_current_task;
+pub mod terminate_current_task;
 // pub mod syscall_enable_hpet;
 // pub mod syscall_get_hpet_main_counter_period;
 pub mod syscall_handler_closure;
