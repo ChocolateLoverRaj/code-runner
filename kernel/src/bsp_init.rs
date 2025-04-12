@@ -43,8 +43,7 @@ pub unsafe fn init() -> ! {
     assert!(BASE_REVISION.is_supported());
 
     let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response();
-    let hhdm_offset = HhdmOffset::try_from(&HHDM_REQUEST).unwrap();
-    logger_3::init(frame_buffer_response, hhdm_offset);
+    logger_3::init(frame_buffer_response);
     log::info!("Initialized logger to log on COM1 and the screen (if applicable)");
 
     let rsdp_addr = RsdpAddr::try_from(&RSDP_REQUEST).unwrap();
@@ -56,6 +55,7 @@ pub unsafe fn init() -> ! {
         );
         unsafe { AvailablePhysicalFrameIteratorFrameAllocator::new(iterator) }
     });
+    let hhdm_offset = HhdmOffset::try_from(&HHDM_REQUEST).unwrap();
     let acpi_tables = unsafe {
         acpi::AcpiTables::from_rsdp(
             AcpiHandlerImpl::new(hhdm_offset, &frame_allocator),

@@ -42,7 +42,7 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
         logger_3::force_unlock();
     }
     // To make sure there is a new line before the panic message
-    log::error!("Kernel panicked");
+    let _ = logger_3::write_all(format_args!("\n"));
 
     // Print the backtrace
     #[derive(Debug, Error)]
@@ -97,7 +97,11 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
                 let frame = context.as_ref().ok().and_then(|context| {
                     Some(
                         context
-                            .find_frames(instruction_pointer.get() - 1)
+                            .find_frames({
+                                // To get the `call` instruction
+                                // https://stackoverflow.com/a/59014431/11145447
+                                instruction_pointer.get() - 1
+                            })
                             .skip_all_loads()
                             .ok()?
                             .last()
