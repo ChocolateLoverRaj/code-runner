@@ -12,6 +12,7 @@ use x86_64::{
 
 use crate::{
     boxed_stack::BoxedStack,
+    config::SYSCALL_HANDLER_STACK_SIZE,
     get_offset_page_table::get_offset_page_table_with_new_l4,
     hhdm_offset::HhdmOffset,
     physical_memory::{PhysicalMemoryFrameAllocator, UsedBy, PHYSICAL_MEMORY},
@@ -226,7 +227,7 @@ pub fn spawn_task(
         id,
         task_type: TaskType::User(UserTaskData {
             cr3: l4,
-            kernel_stack: BoxedStack::new_uninit(0x2000),
+            kernel_stack: BoxedStack::new_uninit(SYSCALL_HANDLER_STACK_SIZE),
             iopb: {
                 // Even if a program is allowed to use COM1, it must "take ownership" of it so that a program and another program or the kernel doesn't try to use it at the same time
                 // So set to all 1s to deny all ports

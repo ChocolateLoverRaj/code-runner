@@ -15,5 +15,5 @@ static GLOBAL_ALLOCATOR: LockedHeap = LockedHeap::empty();
 pub unsafe fn init() {
     GLOBAL_ALLOCATOR
         .lock()
-        .init_from_slice(unsafe { &mut GLOBAL_ALLOCATOR_BYTES });
+        .init_from_slice(unsafe { (&raw mut GLOBAL_ALLOCATOR_BYTES).as_mut() }.unwrap());
 }

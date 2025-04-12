@@ -3,7 +3,7 @@ use crate::{
     call_stack_iterator::CallStackIterator,
     cpu_local_data::get_local,
     hlt_loop::hlt_loop,
-    limine_requests::EXECUTABLE_FILE_REQUEST,
+    limine_requests::{EXECUTABLE_FILE_REQUEST, HHDM_REQUEST},
     logger_3,
 };
 use addr2line::{
@@ -92,7 +92,7 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
     // Print after possible error getting backtrace so the error gets lost instead of actual panic message
     let back_trace = BacktraceDisplay::new({
         // Safety: We are assuming that the stack is not corrupted
-        unsafe { CallStackIterator::new() }
+        unsafe { CallStackIterator::new((&HHDM_REQUEST).try_into().unwrap()) }
             .map(|instruction_pointer| {
                 let frame = context.as_ref().ok().and_then(|context| {
                     Some(

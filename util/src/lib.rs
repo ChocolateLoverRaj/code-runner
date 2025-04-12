@@ -22,6 +22,7 @@ pub mod paging_allocator;
 pub mod remove;
 pub mod static_allocator;
 pub mod stream_with_initial;
+pub mod sync_wrapper;
 pub mod testable_allocator;
 pub mod traverse_page_tables;
 pub mod try_push;

@@ -1,11 +1,11 @@
-use core::{arch::naked_asm, mem::offset_of};
+use core::{arch::naked_asm, fmt::Debug, mem::offset_of};
 
 use alloc::boxed::Box;
-use util::init_later::InitLater;
 
-use crate::{cpu_local::CpuLocal, cpu_local_data::CpuLocalData};
-
-use super::syscall_handler::SyscallHandler;
+use crate::{
+    cpu_local_data::{get_local, CpuLocalData},
+    modules::syscall::syscall_handler::SyscallHandler,
+};
 
 // save the registers, handle the syscall and return to user mode
 #[naked]
@@ -68,14 +68,26 @@ pub struct PushedRegisters {
     pub rcx: u64,
 }
 
-static CLOSURE: CpuLocal<
-    InitLater<
+pub struct SyscallHandlerClosure {
+    closure:
         Box<dyn Fn(u64, u64, u64, u64, u64, u64, u64, &mut PushedRegisters) -> ! + Send + Sync>,
-    >,
-> = CpuLocal::uninit();
+}
 
-pub fn init() {
-    CLOSURE.try_init(InitLater::uninit).unwrap()
+impl SyscallHandlerClosure {
+    /// You must set `GS.Base` to the syscall handler's stack before the first syscall. You must do `swapgs` before entering user mode.
+    pub const unsafe fn new(
+        closure: Box<
+            dyn Fn(u64, u64, u64, u64, u64, u64, u64, &mut PushedRegisters) -> ! + Send + Sync,
+        >,
+    ) -> Self {
+        Self { closure }
+    }
+}
+
+impl Debug for SyscallHandlerClosure {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct(core::any::type_name::<Self>()).finish()
+    }
 }
 
 extern "sysv64" fn syscall_handler(
@@ -89,7 +101,12 @@ extern "sysv64" fn syscall_handler(
     rsp: u64,
 ) -> ! {
     let pushed_registers = unsafe { &mut *(rsp as *mut PushedRegisters) };
-    CLOSURE.try_get().unwrap().try_get().unwrap()(
+    (get_local()
+        .unwrap()
+        .syscall_handler_closure
+        .try_get()
+        .unwrap()
+        .closure)(
         input0,
         input1,
         input2,
@@ -124,11 +141,11 @@ extern "sysv64" fn syscall_handler(
     // unsafe { s.restore() }
 }
 
-/// You must set `GS.Base` to the syscall handler's stack before the first syscall. You must do `swapgs` before entering user mode.
-pub fn set_syscall_handler_closure<C>(closure: Box<C>) -> SyscallHandler
-where
-    C: Fn(u64, u64, u64, u64, u64, u64, u64, &mut PushedRegisters) -> ! + Send + Sync + 'static,
-{
-    CLOSURE.try_get().unwrap().try_init(closure).unwrap();
+pub fn set_syscall_handler_closure(closure: SyscallHandlerClosure) -> SyscallHandler {
+    get_local()
+        .unwrap()
+        .syscall_handler_closure
+        .try_init(closure)
+        .unwrap();
     unsafe { SyscallHandler::new_unchecked(raw_syscall_handler) }
 }

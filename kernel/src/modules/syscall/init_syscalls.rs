@@ -1,3 +1,5 @@
+use core::marker::PhantomData;
+
 use x86_64::{
     registers::{
         control::{Efer, EferFlags},
@@ -11,7 +13,9 @@ use super::syscall_handler::SyscallHandler;
 
 /// A marker struct that indicates that the system calls have been initialized
 #[derive(Debug, Clone, Copy)]
-pub struct InitializedSyscalls;
+pub struct InitializedSyscalls {
+    not_send_marker: PhantomData<*const ()>,
+}
 
 pub fn init_syscalls(syscall_handler: SyscallHandler) -> InitializedSyscalls {
     // Enable syscall in IA32_EFER
@@ -31,5 +35,7 @@ pub fn init_syscalls(syscall_handler: SyscallHandler) -> InitializedSyscalls {
     // write handler address to AMD's MSR_LSTAR register
     LStar::write(VirtAddr::from_ptr(syscall_handler.as_ptr()));
 
-    InitializedSyscalls
+    InitializedSyscalls {
+        not_send_marker: PhantomData,
+    }
 }

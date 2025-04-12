@@ -14,6 +14,7 @@
 #![feature(vec_into_raw_parts)]
 #![feature(box_vec_non_null)]
 #![feature(iter_collect_into)]
+#![feature(sync_unsafe_cell)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
@@ -27,6 +28,7 @@ pub mod combined_logger;
 pub mod config;
 pub mod context;
 // pub mod cpu_local;
+pub mod check_pointer;
 pub mod cpu_local_data;
 pub mod draw_rust;
 pub mod dynamic_combined_logger;
@@ -67,17 +69,18 @@ pub mod pic8259_interrupts;
 // pub mod pt_allocator_2;
 pub mod physical_memory;
 pub mod rsdp_addr;
-// pub mod run_tasks;
+pub mod run_tasks;
 pub mod set_color;
 pub mod spawn_task;
 // pub mod spcr;
 pub mod call_stack_iterator;
 pub mod split_draw_target;
 pub mod store_but_borrow_mut;
+pub mod syscall_handler;
 // pub mod terminate_current_task;
 // pub mod syscall_enable_hpet;
 // pub mod syscall_get_hpet_main_counter_period;
-// pub mod syscall_handler_closure;
+pub mod syscall_handler_closure;
 // pub mod syscall_handler_make_me_logger;
 // pub mod syscall_hpet_read_main_counter_value;
 // pub mod syscall_print_handler;

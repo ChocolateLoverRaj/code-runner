@@ -1,7 +1,16 @@
 use common::ram_disk::RamDisk;
 use util::init_later::InitLater;
 
-use crate::{cpu_local_data, hlt_loop::hlt_loop, init_idt_and_gdt, limine_requests::MP_REQUEST};
+use crate::{
+    cpu_local_data::{self, get_local},
+    hlt_loop::hlt_loop,
+    init_idt_and_gdt,
+    limine_requests::MP_REQUEST,
+    modules::syscall::init_syscalls::init_syscalls,
+    run_tasks::run_tasks,
+    syscall_handler::set_syscall_handler_closure,
+    syscall_handler_closure::get_syscall_handler_closure,
+};
 
 static RAM_DISK: InitLater<RamDisk<'static>> = InitLater::uninit();
 
@@ -35,5 +44,13 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     init_idt_and_gdt::init_cpu();
     log::info!("Set up idt and gdt!");
     x86_64::instructions::interrupts::int3();
-    hlt_loop()
+    get_local()
+        .unwrap()
+        .initialized_syscalls
+        .try_init(init_syscalls(set_syscall_handler_closure(
+            get_syscall_handler_closure(),
+        )))
+        .unwrap();
+    run_tasks()
+    // hlt_loop()
 }

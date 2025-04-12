@@ -15,7 +15,7 @@ use x86_64::{
 
 use crate::{
     boxed_stack::BoxedStack,
-    cpu_local_data,
+    cpu_local_data::{self, get_local},
     fault_handlers::{
         breakpoint::breakpoint_handler, double_fault::double_fault_handler,
         gp_fault::gp_fault_handler, invalid_opcode_fault::invalid_opcode_handler,
@@ -212,14 +212,9 @@ pub fn init_cpu() {
         .unwrap();
 }
 
-// pub fn get_iobp() -> &'static Spinlock<&'static mut [u8; IOPB_SIZE]> {
-//     &CPU_LOCAL_STATIC_STUFF_2
-//         .try_get()
-//         .unwrap()
-//         .try_get()
-//         .unwrap()
-//         .iopb
-// }
+pub fn get_iobp() -> &'static Spinlock<&'static mut [u8; IOPB_SIZE]> {
+    &get_local().unwrap().static_stuff2.try_get().unwrap().iopb
+}
 
 // pub fn get_priv_stack() -> &'static Box<[MaybeUninit<StackChunk>]> {
 //     &CPU_LOCAL_STATIC_STUFF_2

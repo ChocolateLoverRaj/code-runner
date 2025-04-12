@@ -1,31 +1,35 @@
-use core::ptr::NonNull;
+use core::{cell::UnsafeCell, ptr::NonNull};
 
 use alloc::boxed::Box;
 use limine::response::MpResponse;
 use spinning_top::Spinlock;
-use util::init_later::InitLater;
+use util::{init_later::InitLater, sync_wrapper::SyncWrapper};
 use x2apic::lapic::LocalApic;
 use x86_64::{registers::model_specific::GsBase, VirtAddr};
 
 use crate::{
     init_idt_and_gdt::{StaticStuff1, StaticStuff2},
+    modules::syscall::init_syscalls::InitializedSyscalls,
     store_but_borrow_mut::StoreButBorrowMut,
+    syscall_handler::SyscallHandlerClosure,
     tasks::CpuTaskData,
 };
 
 /// This is what we set `GS.Base` to point to
 #[derive(Debug)]
 pub struct CpuLocalData {
-    // pub user_stack_pointer: u64,
-    // pub kernel_stack_pointer: u64,
+    pub user_stack_pointer: UnsafeCell<u64>,
+    pub kernel_stack_pointer: UnsafeCell<u64>,
     pub cpu_id: u32,
     pub static_stuff1: StoreButBorrowMut<StaticStuff1>,
     pub static_stuff2: InitLater<StaticStuff2>,
     pub local_apic: InitLater<Spinlock<LocalApic>>,
+    pub initialized_syscalls: InitLater<InitializedSyscalls>,
     pub task_data: Spinlock<CpuTaskData>,
+    pub syscall_handler_closure: InitLater<SyscallHandlerClosure>,
 }
 
-static CPU_LOCAL_DATA: InitLater<Box<[CpuLocalData]>> = InitLater::uninit();
+static CPU_LOCAL_DATA: InitLater<Box<[SyncWrapper<CpuLocalData>]>> = InitLater::uninit();
 
 pub fn init_bsp(mp_response: &MpResponse) {
     CPU_LOCAL_DATA
@@ -33,12 +37,18 @@ pub fn init_bsp(mp_response: &MpResponse) {
             mp_response
                 .cpus()
                 .iter()
-                .map(|&cpu| CpuLocalData {
-                    cpu_id: cpu.id,
-                    static_stuff1: StoreButBorrowMut::uninit(),
-                    static_stuff2: InitLater::uninit(),
-                    local_apic: InitLater::uninit(),
-                    task_data: Default::default(),
+                .map(|&cpu| {
+                    SyncWrapper::new(CpuLocalData {
+                        kernel_stack_pointer: UnsafeCell::new(0),
+                        user_stack_pointer: UnsafeCell::new(0),
+                        cpu_id: cpu.id,
+                        static_stuff1: StoreButBorrowMut::uninit(),
+                        static_stuff2: InitLater::uninit(),
+                        local_apic: InitLater::uninit(),
+                        initialized_syscalls: InitLater::uninit(),
+                        task_data: Default::default(),
+                        syscall_handler_closure: InitLater::uninit(),
+                    })
                 })
                 .collect(),
         )
@@ -53,7 +63,10 @@ pub unsafe fn init_cpu(local_cpu: &limine::mp::Cpu) {
             .try_get()
             .unwrap()
             .iter()
-            .find(|cpu| cpu.cpu_id == local_cpu.id)
+            .find(|cpu| {
+                // Safety: We are only checkint the CPU id, which will never change and is `Sync`
+                unsafe { cpu.get() }.cpu_id == local_cpu.id
+            })
             .unwrap(),
     ));
 }

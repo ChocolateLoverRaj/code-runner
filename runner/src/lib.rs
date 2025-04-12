@@ -27,6 +27,8 @@ pub fn run_qemu(boot_type: BootType) {
                 // format!("target modules load --file {kernel_binary} --slide 0xffffffff80000000"),
                 // "b kernel_main".into(),
                 "b rust_begin_unwind".into(),
+                "b call_stack_iterator.rs:35".into(),
+                "b call_stack_iterator.rs:39".into(),
                 "gdb-remote localhost:1234".into(),
             ]
             .join("\n"),

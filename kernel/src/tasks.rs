@@ -1,4 +1,8 @@
-use core::{fmt::Debug, ops::Range, sync::atomic::AtomicUsize};
+use core::{
+    fmt::Debug,
+    ops::{Deref, DerefMut, Range},
+    sync::atomic::AtomicUsize,
+};
 
 use alloc::vec::Vec;
 use spinning_top::Spinlock;
@@ -34,6 +38,14 @@ impl<const N: usize> Debug for IoPermissionBitmap<N> {
         } else {
             write!(f, "IoPermissionBitmap (Some Ports Allowed)")
         }
+    }
+}
+
+impl<const N: usize> Deref for IoPermissionBitmap<N> {
+    type Target = [u8; N];
+
+    fn deref(&self) -> &Self::Target {
+        &self.bitmap
     }
 }
 
@@ -104,7 +116,6 @@ pub fn try_init_tasks() -> Result<&'static Spinlock<Tasks>, TryInitError> {
 
 #[derive(Debug, Default)]
 pub struct CpuTaskData {
-    pub initialized_syscalls: Option<InitializedSyscalls>,
     pub current_task: Option<usize>,
     pub stack_to_delete: Option<BoxedStack>,
 }
