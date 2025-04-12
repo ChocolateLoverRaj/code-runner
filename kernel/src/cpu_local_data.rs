@@ -23,22 +23,22 @@ pub struct CpuLocalData {
     pub local_apic: InitLater<Spinlock<LocalApic>>,
 }
 
-impl From<&Cpu> for CpuLocalData {
-    fn from(value: &Cpu) -> Self {
-        Self {
-            cpu_id: value.id,
-            static_stuff1: StoreButBorrowMut::uninit(),
-            static_stuff2: InitLater::uninit(),
-            local_apic: InitLater::uninit(),
-        }
-    }
-}
-
 static CPU_LOCAL_DATA: InitLater<Box<[CpuLocalData]>> = InitLater::uninit();
 
 pub fn init_bsp(mp_response: &MpResponse) {
     CPU_LOCAL_DATA
-        .try_init(mp_response.cpus().iter().map(|&cpu| cpu.into()).collect())
+        .try_init(
+            mp_response
+                .cpus()
+                .iter()
+                .map(|&cpu| CpuLocalData {
+                    cpu_id: cpu.id,
+                    static_stuff1: StoreButBorrowMut::uninit(),
+                    static_stuff2: InitLater::uninit(),
+                    local_apic: InitLater::uninit(),
+                })
+                .collect(),
+        )
         .unwrap();
 }
 

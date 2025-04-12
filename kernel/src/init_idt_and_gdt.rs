@@ -1,10 +1,9 @@
-use core::{cell::RefCell, mem::MaybeUninit};
+use core::cell::RefCell;
 
 use acpi::{AcpiHandler, AcpiTables};
-use alloc::boxed::Box;
 use spinning_top::Spinlock;
 use util::init_later::InitLater;
-use x2apic::lapic::{LocalApic, LocalApicBuilder};
+use x2apic::lapic::LocalApicBuilder;
 use x86_64::{
     structures::{
         idt::{self},
@@ -46,8 +45,6 @@ pub struct StaticStuff1 {
     local_apic_error_interrupt_index: u8,
 }
 
-// static CPU_LOCAL_STATIC_STUFF_1: CpuLocal<StoreButBorrowMut<StaticStuff1>> = CpuLocal::uninit();
-
 #[derive(Debug)]
 pub struct StaticStuff2 {
     gdt: Gdt,
@@ -59,10 +56,6 @@ pub struct StaticStuff2 {
     /// The stack that the CPU uses when transitioning from user mode to kernel mode to call an interrupt handler
     priv_tss_stack: BoxedStack,
 }
-
-// static CPU_LOCAL_STATIC_STUFF_2: CpuLocal<InitLater<StaticStuff2>> = CpuLocal::uninit();
-
-// pub static CPU_LOCAL_APICS: CpuLocal<InitLater<Spinlock<LocalApic>>> = CpuLocal::uninit();
 
 pub fn init_bsp(
     acpi_tables: &AcpiTables<impl AcpiHandler>,

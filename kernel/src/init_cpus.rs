@@ -35,6 +35,5 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
     init_idt_and_gdt::init_cpu();
     log::info!("Set up idt and gdt!");
     x86_64::instructions::interrupts::int3();
-    todo!("Stuff");
     hlt_loop()
 }

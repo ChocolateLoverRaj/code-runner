@@ -14,7 +14,6 @@
 #![feature(vec_into_raw_parts)]
 #![feature(box_vec_non_null)]
 #![feature(iter_collect_into)]
-#![feature(sync_unsafe_cell)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
