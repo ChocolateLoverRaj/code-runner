@@ -17,8 +17,6 @@
 #![feature(sync_unsafe_cell)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use init_cpus::init_cpus;
-
 extern crate alloc;
 
 // pub mod acpi;
@@ -89,6 +87,7 @@ pub mod find_contiguous_unused_virtual_memory;
 pub mod get_offset_page_table;
 pub mod page_tables_recursive_iterator;
 // pub mod tasks;
+pub mod backtrace_display;
 pub mod boxed_stack;
 pub mod bsp_init;
 pub mod init_idt_and_gdt;

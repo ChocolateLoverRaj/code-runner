@@ -1,17 +1,17 @@
 use crate::{
-    call_stack_iterator::CallStackIterator, cpu_local_data::get_local, hlt_loop::hlt_loop,
-    limine_requests::EXECUTABLE_FILE_REQUEST, logger_3,
+    backtrace_display::{AtLeastLineNumber, BacktraceDisplay, BacktraceEntry, FileInfo},
+    call_stack_iterator::CallStackIterator,
+    cpu_local_data::get_local,
+    hlt_loop::hlt_loop,
+    limine_requests::EXECUTABLE_FILE_REQUEST,
+    logger_3,
 };
 use addr2line::{
     fallible_iterator::FallibleIterator,
-    gimli::{self, Dwarf, DwarfFileType, EndianSlice, LittleEndian, Reader},
-    Frame,
+    gimli::{Dwarf, DwarfFileType, EndianSlice, LittleEndian},
 };
-use core::{
-    fmt::{Debug, Display},
-    panic::PanicInfo,
-    slice,
-};
+use alloc::borrow::ToOwned;
+use core::{panic::PanicInfo, slice};
 use elf::{endian::NativeEndian, ElfBytes, ParseError};
 use thiserror::Error;
 use x2apic::lapic::IpiAllShorthand;
@@ -90,75 +90,42 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
     }
 
     // Print after possible error getting backtrace so the error gets lost instead of actual panic message
-    log::error!("{}", info);
-
-    // Safety: We are assuming that the stack is not corrupted
-    let call_stack_iterator = unsafe { CallStackIterator::new() };
-    for (index, instruction_pointer) in call_stack_iterator.enumerate() {
-        let location = context.as_ref().map(|context| {
-            Ok::<_, gimli::Error>(
-                context
-                    .find_frames(instruction_pointer.get() - 1)
-                    .skip_all_loads()?
-                    .last()?,
-            )
-        });
-        // let location = context.as_ref().and_then(|context| {
-        //     context
-        //         .find_frames({
-        //             // Get the previous instruction, which is what we care about
-        //             // https://stackoverflow.com/a/59014431/11145447
-        //             instruction_pointer.get() - 1
-        //         })
-        //         .skip_all_loads()
-        //         .and_then(|result| result.last())
-        // });
-        struct DisplayableLocation<'a, E: Debug, E1, R: Reader> {
-            location: Result<Result<Option<Frame<'a, R>>, E>, E1>,
-        }
-        impl<E: Debug, E1, R: Reader> Display for DisplayableLocation<'_, E, E1, R> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                match &self.location {
-                    Ok(frame) => match frame {
-                        Ok(frame) => match frame {
-                            Some(frame) => {
-                                if let Some(function) = &frame.function {
-                                    match function.demangle() {
-                                        Ok(function) => {
-                                            write!(f, "{}", function)?;
-                                        }
-                                        Err(e) => {
-                                            write!(f, "<error: {:?}>", e)?;
-                                        }
-                                    }
-                                } else {
-                                    write!(f, "<unknown>")?;
-                                }
-                                if let Some(location) = &frame.location {
-                                    if let Some(file) = location.file {
-                                        write!(f, " @ \n    {}", file)?;
-                                        if let Some(line) = location.line {
-                                            write!(f, ":{}", line)?;
-                                            if let Some(column) = location.column {
-                                                write!(f, ":{}", column)?;
-                                            }
-                                        }
-                                    }
-                                }
+    let back_trace = BacktraceDisplay::new({
+        // Safety: We are assuming that the stack is not corrupted
+        unsafe { CallStackIterator::new() }
+            .map(|instruction_pointer| {
+                let frame = context.as_ref().ok().and_then(|context| {
+                    Some(
+                        context
+                            .find_frames(instruction_pointer.get() - 1)
+                            .skip_all_loads()
+                            .ok()?
+                            .last()
+                            .ok()??,
+                    )
+                });
+                BacktraceEntry {
+                    address: instruction_pointer.get(),
+                    function_name: frame.as_ref().and_then(|frame| {
+                        Some(frame.function.as_ref()?.demangle().ok()?.into_owned())
+                    }),
+                    file: frame.as_ref().and_then(|frame| {
+                        Some({
+                            let location = frame.location.as_ref()?;
+                            FileInfo {
+                                name: location.file?.to_owned(),
+                                line_number: location.line.map(|line| AtLeastLineNumber {
+                                    line_number: line,
+                                    column_number: location.column,
+                                }),
                             }
-                            None => write!(f, "<unknown>")?,
-                        },
-                        Err(e) => write!(f, "<error getting frame: {:?}>", e)?,
-                    },
-                    Err(_) => {}
+                        })
+                    }),
                 }
-                Ok(())
-            }
-        }
-
-        let displayable_location = DisplayableLocation { location };
-        log::error!("  {}: {}", index, displayable_location);
-    }
+            })
+            .collect()
+    });
+    log::error!("{}\n{}", info, back_trace);
 
     hlt_loop()
 }
