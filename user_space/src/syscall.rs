@@ -1,6 +1,10 @@
 use core::arch::asm;
 
-use common::syscall_uuids::{Syscall, SyscallExists, SyscallExit, SyscallLog, SyscallTest};
+use common::syscall_uuids::{
+    deserialize_output, serialize_to_input_with_uuid, Syscall, SyscallExists, SyscallExit,
+    SyscallListenForKeyboardInterrupts, SyscallLog, SyscallTakeIoPort, SyscallTest,
+    SyscallWaitUntilEvent,
+};
 use uuid::Uuid;
 
 /// # Safety
@@ -52,9 +56,9 @@ pub unsafe fn raw_syscall(inputs_and_ouputs: &mut [u64; 7]) {
 
 /// # Safety: Inputs must be correct
 unsafe fn syscall<T: Syscall>(input: &T::Input) -> T::Output {
-    let mut input_and_output = T::serialize_to_input_with_uuid(input).unwrap();
+    let mut input_and_output = serialize_to_input_with_uuid::<T>(input).unwrap();
     unsafe { raw_syscall(&mut input_and_output) };
-    let output = T::deserialize_output(&input_and_output).unwrap();
+    let output = deserialize_output::<T>(&input_and_output).unwrap();
     output
 }
 
@@ -75,4 +79,17 @@ pub fn syscall_exists(uuid: &Uuid) -> bool {
 pub fn syscall_print(message: &str) {
     // Safety: safety rules for the &str are met
     unsafe { syscall::<SyscallLog>(&message.as_bytes().into()) }
+}
+
+pub fn syscall_take_io_port(port: u16) -> <SyscallTakeIoPort as Syscall>::Output {
+    unsafe { syscall::<SyscallTakeIoPort>(&port) }
+}
+
+pub fn syscall_listen_for_keyboard_interrupts(
+) -> <SyscallListenForKeyboardInterrupts as Syscall>::Output {
+    unsafe { syscall::<SyscallListenForKeyboardInterrupts>(&()) }
+}
+
+pub fn syscall_wait_until_event() -> <SyscallWaitUntilEvent as Syscall>::Output {
+    unsafe { syscall::<SyscallWaitUntilEvent>(&()) }
 }

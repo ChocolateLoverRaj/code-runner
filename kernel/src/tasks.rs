@@ -1,58 +1,22 @@
-use core::{
-    fmt::Debug,
-    ops::{Deref, Range},
-    sync::atomic::AtomicUsize,
-};
+use core::sync::atomic::AtomicUsize;
 
 use alloc::vec::Vec;
+use common::permissions::Permissions;
 use spinning_top::Spinlock;
 use util::init_later::{InitLater, TryInitError};
 use x86_64::{
     registers::control::Cr3,
     structures::paging::{PhysFrame, Size4KiB},
-    PhysAddr, VirtAddr,
+    VirtAddr,
 };
 
-use crate::{boxed_stack::BoxedStack, iopb_size::IOPB_SIZE};
-
-#[derive(PartialEq, Eq)]
-pub struct IoPermissionBitmap<const N: usize> {
-    bitmap: [u8; N],
-}
-
-impl<const N: usize> IoPermissionBitmap<N> {
-    pub const fn new_deny_all() -> Self {
-        Self {
-            bitmap: [u8::MAX; N],
-        }
-    }
-}
-
-impl<const N: usize> Debug for IoPermissionBitmap<N> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        if self == &Self::new_deny_all() {
-            write!(f, "IoPermissionBitmap (All Ports Denied)")
-        } else {
-            write!(f, "IoPermissionBitmap (Some Ports Allowed)")
-        }
-    }
-}
-
-impl<const N: usize> Deref for IoPermissionBitmap<N> {
-    type Target = [u8; N];
-
-    fn deref(&self) -> &Self::Target {
-        &self.bitmap
-    }
-}
+use crate::{boxed_stack::BoxedStack, syscall_handler::PushedRegisters};
 
 #[derive(Debug)]
 pub struct UserTaskData {
     pub cr3: PhysFrame<Size4KiB>,
     pub kernel_stack: BoxedStack,
-    /// The IO Bitmap
-    pub iopb: IoPermissionBitmap<IOPB_SIZE>,
-    pub log_stream: Option<Range<PhysAddr>>,
+    pub permissions: Permissions<'static>,
 }
 
 /// Kernel tasks will be added later
@@ -71,6 +35,7 @@ pub struct ReadyToStartState {
 pub enum TaskState {
     ReadyToStart(ReadyToStartState),
     Running,
+    WaitingUntilEvent(PushedRegisters),
 }
 
 #[derive(Debug)]
@@ -78,6 +43,7 @@ pub struct Task {
     pub task_type: TaskType,
     pub state: TaskState,
     pub id: usize,
+    pub listening_for_keyboard_interrupts: bool,
 }
 
 #[derive(Debug)]
@@ -116,17 +82,3 @@ pub struct CpuTaskData {
     pub current_task: Option<usize>,
     pub stack_to_delete: Option<BoxedStack>,
 }
-
-// pub fn try_init_cpu_task_data() -> Result<(), TryInitError> {
-//     CPU_TASK_DATA.try_init(Default::default)
-// }
-
-// pub fn try_get_cpu_task_data() -> Result<&'static Spinlock<CpuTaskData>, TryGetError> {
-//     CPU_TASK_DATA.try_get()
-// }
-
-// pub fn init_cpu_local_task_data() {
-//     try_get_cpu_task_data().unwrap().lock().initialized_syscalls = Some(init_syscalls(
-//         set_syscall_handler_closure(Box::new(syscall_handler_closure())),
-//     ));
-// }

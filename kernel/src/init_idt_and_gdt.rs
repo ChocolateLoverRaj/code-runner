@@ -22,6 +22,7 @@ use crate::{
         page_fault::page_fault_handler, segment_not_present::segment_not_present_handler,
     },
     hhdm_offset::HhdmOffset,
+    io_permission_bitmap::IoPermissionBitmap,
     iopb_size::IOPB_SIZE,
     map_local_xapic::{map_local_xapic, LocalXapicVirtAddr},
     modules::{
@@ -212,8 +213,8 @@ pub fn init_cpu() {
         .unwrap();
 }
 
-pub fn get_iobp() -> &'static Spinlock<&'static mut [u8; IOPB_SIZE]> {
-    &get_local().unwrap().static_stuff2.try_get().unwrap().iopb
+pub fn get_iobp() -> &'static Spinlock<&'static mut IoPermissionBitmap<IOPB_SIZE>> {
+    unsafe { core::mem::transmute(&get_local().unwrap().static_stuff2.try_get().unwrap().iopb) }
 }
 
 pub fn get_priv_stack() -> &'static BoxedStack {

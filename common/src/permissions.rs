@@ -10,9 +10,10 @@ pub struct MetaData<'a> {
     pub permissions: Permissions<'a>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Permissions<'a> {
     /// A list of allowed x86 I/O ports
     #[serde(borrow)]
     pub ports: Cow<'a, [u16]>,
+    pub keyboard_interrupts: bool,
 }

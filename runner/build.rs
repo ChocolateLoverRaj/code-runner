@@ -60,14 +60,19 @@ fn main() {
         meta_data: MetaData {
             stack_size: 0x4000,
             permissions: Permissions {
-                ports: Cow::Owned(
-                    {
-                        let com1 = 0x3F8;
-                        com1..com1 + 8
-                    }
-                    .into_iter()
-                    .collect(),
-                ),
+                ports: Cow::Owned({
+                    let mut allowed_ports = Vec::default();
+                    // allowed_ports.extend(
+                    //     {
+                    //         let com1 = 0x3F8;
+                    //         com1..com1 + 8
+                    //     }
+                    //     .into_iter(),
+                    // );
+                    allowed_ports.push(0x60);
+                    allowed_ports
+                }),
+                keyboard_interrupts: true,
             },
         },
         elf: Cow::Owned(fs::read(&user_space_elf_path).unwrap()),

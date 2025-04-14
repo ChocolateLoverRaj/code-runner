@@ -2,15 +2,21 @@ use core::fmt::Debug;
 
 use alloc::{boxed::Box, collections::btree_map::BTreeMap};
 use common::syscall_uuids::{
-    get_uuid, Syscall, SyscallExists, SyscallExit, SyscallLog, SyscallTest,
+    from_input_without_uuid, get_uuid, serialize_output, Syscall, SyscallExists, SyscallExit,
+    SyscallListenForKeyboardInterrupts, SyscallLog, SyscallTakeIoPort,
+    SyscallTakeIoPortOutputError, SyscallTest, SyscallWaitUntilEvent,
 };
+use spinning_top::Spinlock;
 use uuid::Uuid;
 use x86_64::registers::segmentation::GS;
 
 use crate::{
     context::{Context, SyscallContext},
     cpu_local_data::get_local,
+    init_idt_and_gdt::get_iobp,
+    run_tasks::run_tasks,
     syscall_handler::{PushedRegisters, SyscallHandlerClosure},
+    tasks::{TaskState, TaskType, TASKS},
     terminate_current_task::terminate_current_task,
 };
 
@@ -31,9 +37,9 @@ fn make_syscall_handler<T: Syscall>(
     f: impl Fn(T::Input, &PushedRegisters, &dyn Includes<Uuid>) -> T::Output + Send + Sync,
 ) -> impl Fn(&[u64; 5], &mut PushedRegisters, &dyn Includes<Uuid>) -> [u64; 7] + Send + Sync {
     move |input, pushed_registers, syscalls| {
-        let input = T::from_input_without_uuid(input).unwrap();
+        let input = from_input_without_uuid::<T>(input).unwrap();
         let output = f(input, pushed_registers, syscalls);
-        T::serialize_output(&output).unwrap()
+        serialize_output::<T>(&output).unwrap()
     }
 }
 
@@ -129,6 +135,104 @@ pub fn get_syscall_handlers() -> impl SyscallHandlerClosure {
         // FIXME: Check pointer
         let message = core::str::from_utf8(unsafe { message.to_slice() }).unwrap();
         log::info!("User space says {:?}", message);
+    });
+    // TODO: We are going to run into lock problems later
+    static IO_PORT_USAGE: Spinlock<BTreeMap<u16, usize>> = Spinlock::new(BTreeMap::new());
+    syscall_handlers.insert::<SyscallTakeIoPort>(|port, _, _| {
+        enum Action {
+            Return(<SyscallTakeIoPort as Syscall>::Output),
+            Terminate,
+        }
+        let action = {
+            let tasks = TASKS.try_get().unwrap().lock();
+            let current_task_id = get_local().unwrap().task_data.lock().current_task.unwrap();
+            let current_task = tasks
+                .tasks
+                .iter()
+                .find(|task| task.id == current_task_id)
+                .unwrap();
+            match &current_task.task_type {
+                TaskType::User(task_data) => {
+                    let mut iopb = get_iobp().lock();
+                    if iopb.contains_port_permission(port) {
+                        if task_data.permissions.ports.contains(&port) {
+                            let mut m = IO_PORT_USAGE.lock();
+                            if !m.contains_key(&port) {
+                                m.insert(port, current_task_id);
+                                iopb.set_port_allowed(port, true);
+                                Action::Return(Ok(()))
+                            } else {
+                                Action::Return(Err(SyscallTakeIoPortOutputError::InUse))
+                            }
+                        } else {
+                            log::warn!("Process {} tried to access a io port it doesn't have permission for. Terminating.", current_task_id);
+                            Action::Terminate
+                        }
+                    } else {
+                        Action::Return(Err(SyscallTakeIoPortOutputError::OutOfIopb))
+                    }
+                }
+            }
+        };
+        match action {
+            Action::Return(r) => r,
+            Action::Terminate => terminate_current_task(),
+        }
+    });
+    syscall_handlers.insert::<SyscallListenForKeyboardInterrupts>(|_, _, _| {
+        enum Action {
+            Return(<SyscallListenForKeyboardInterrupts as Syscall>::Output),
+            Terminate,
+        }
+        let action = {
+            let mut tasks = TASKS.try_get().unwrap().lock();
+            let current_task_id = get_local().unwrap().task_data.lock().current_task.unwrap();
+            let current_task = tasks
+                .tasks
+                .iter_mut()
+                .find(|task| task.id == current_task_id)
+                .unwrap();
+            match &current_task.task_type {
+                TaskType::User(data) => {
+                    if data.permissions.keyboard_interrupts {
+                        current_task.listening_for_keyboard_interrupts = true;
+                        Action::Return(())
+                    } else {
+                        log::warn!("Task {} tried to listen for keyboard interrupts when it is not allowed to. Terminating.", current_task_id);
+                        Action::Terminate
+                    }
+                }
+            }
+        };
+        match action {
+            Action::Return(r) => r,
+            Action::Terminate => terminate_current_task(),
+        }
+    });
+    syscall_handlers.insert::<SyscallWaitUntilEvent>(|_, pushed_registers, _| {
+        enum Action {
+            Return(<SyscallWaitUntilEvent as Syscall>::Output),
+            RunTasks,
+        }
+        let action = {
+            let mut tasks = TASKS.try_get().unwrap().lock();
+            let current_task_id = get_local().unwrap().task_data.lock().current_task.unwrap();
+            let current_task = tasks
+                .tasks
+                .iter_mut()
+                .find(|task| task.id == current_task_id)
+                .unwrap();
+            if !current_task.listening_for_keyboard_interrupts {
+                Action::Return(())
+            } else {
+                current_task.state = TaskState::WaitingUntilEvent(*pushed_registers);
+                Action::RunTasks
+            }
+        };
+        match action {
+            Action::Return(r) => r,
+            Action::RunTasks => run_tasks(),
+        }
     });
     syscall_handlers
 }

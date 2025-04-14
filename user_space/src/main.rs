@@ -16,9 +16,15 @@ pub mod syscall;
 // pub mod test_disable_interrupts;
 
 use common::syscall_uuids::{Syscall, SyscallExit};
-use syscall::{syscall_exists, syscall_exit, syscall_print, syscall_test};
+use heapless::String;
+use syscall::{
+    syscall_exists, syscall_listen_for_keyboard_interrupts, syscall_print, syscall_take_io_port,
+    syscall_test, syscall_wait_until_event,
+};
 use uuid::Uuid;
+use x86_64::instructions::port::Port;
 
+use core::fmt::Write;
 // /// Blocks until the given amount of femtoseconds have passed
 // pub fn spin_fs(duration_fs: u128) {
 //     // Doesn't hurt to enable if it's already enabled
@@ -46,7 +52,20 @@ extern "C" fn _start() -> ! {
     assert_eq!(can_exit, true);
     let should_be_false = syscall_exists(&Uuid::default());
     assert_eq!(should_be_false, false);
-    syscall_exit();
+
+    syscall_take_io_port(0x60).unwrap();
+    syscall_listen_for_keyboard_interrupts();
+    let mut port = Port::<u8>::new(0x60);
+    loop {
+        syscall_wait_until_event();
+        let data = unsafe { port.read() };
+        if data != 250 {
+            let mut message = String::<128>::new();
+            write!(message, "Received data: {}", data);
+            syscall_print(&message);
+        }
+    }
+    // syscall_exit();
 
     // allocator::init();
 

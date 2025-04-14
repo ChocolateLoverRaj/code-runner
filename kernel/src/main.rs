@@ -37,6 +37,7 @@ pub mod hlt_loop;
 pub mod hpet_memory;
 pub mod init_cpus;
 // pub mod init_idt_and_gdt;
+pub mod io_permission_bitmap;
 pub mod iopb_size;
 pub mod limine_requests;
 pub mod log_boot_time;

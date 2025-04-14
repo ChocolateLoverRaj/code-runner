@@ -16,10 +16,7 @@ use crate::{
     get_offset_page_table::get_offset_page_table_with_new_l4,
     hhdm_offset::HhdmOffset,
     physical_memory::{PhysicalMemoryFrameAllocator, UsedBy, PHYSICAL_MEMORY},
-    tasks::{
-        IoPermissionBitmap, ReadyToStartState, Task, TaskState, TaskType, UserTaskData,
-        NEXT_TASK_ID, TASKS,
-    },
+    tasks::{ReadyToStartState, Task, TaskState, TaskType, UserTaskData, NEXT_TASK_ID, TASKS},
 };
 
 /// Only specifies `WRITABLE` and `NO_EXECUTE` if needed. Other flags such as `PRESENT` and `USER_ACCESSIBLE` must be added.
@@ -228,17 +225,13 @@ pub fn spawn_task(
         task_type: TaskType::User(UserTaskData {
             cr3: l4,
             kernel_stack: BoxedStack::new_uninit(SYSCALL_HANDLER_STACK_SIZE),
-            iopb: {
-                // Even if a program is allowed to use COM1, it must "take ownership" of it so that a program and another program or the kernel doesn't try to use it at the same time
-                // So set to all 1s to deny all ports
-                IoPermissionBitmap::new_deny_all()
-            },
-            log_stream: None,
+            permissions: program.meta_data.permissions.clone(),
         }),
         state: TaskState::ReadyToStart(ReadyToStartState {
             instruction_pointer: start_addr,
             stack_pointer: stack_end.start_address(),
         }),
+        listening_for_keyboard_interrupts: false,
     };
     TASKS.try_get().unwrap().lock().tasks.push(task);
 

@@ -8,31 +8,6 @@ pub trait Syscall {
 
     type Input: Serialize + DeserializeOwned;
     type Output: Serialize + DeserializeOwned;
-
-    fn serialize_to_input_with_uuid(input: &Self::Input) -> postcard::Result<[u64; 7]> {
-        let mut arr: [u64; 7] = Default::default();
-        let (a, b) = Self::UUID.as_u64_pair();
-        arr[0] = a;
-        arr[1] = b;
-        postcard::to_slice(input, bytemuck::cast_slice_mut(&mut arr[2..])).unwrap();
-        Ok(arr)
-    }
-
-    fn from_input_without_uuid(input: &[u64; 5]) -> postcard::Result<Self::Input> {
-        let (syscall, _) = postcard::take_from_bytes(bytemuck::cast_slice(input))?;
-        Ok(syscall)
-    }
-
-    fn serialize_output(output: &Self::Output) -> postcard::Result<[u64; 7]> {
-        let mut arr: [u64; 7] = Default::default();
-        postcard::to_slice(output, bytemuck::cast_slice_mut(&mut arr)).unwrap();
-        Ok(arr)
-    }
-
-    fn deserialize_output(output: &[u64; 7]) -> postcard::Result<Self::Output> {
-        let output = postcard::from_bytes(bytemuck::cast_slice(output))?;
-        Ok(output)
-    }
 }
 
 pub fn get_uuid(input: [u64; 7]) -> postcard::Result<(Uuid, [u64; 5])> {
@@ -42,8 +17,32 @@ pub fn get_uuid(input: [u64; 7]) -> postcard::Result<(Uuid, [u64; 5])> {
     ))
 }
 
+pub fn serialize_to_input_with_uuid<T: Syscall>(input: &T::Input) -> postcard::Result<[u64; 7]> {
+    let mut arr: [u64; 7] = Default::default();
+    let (a, b) = T::UUID.as_u64_pair();
+    arr[0] = a;
+    arr[1] = b;
+    postcard::to_slice(input, bytemuck::cast_slice_mut(&mut arr[2..])).unwrap();
+    Ok(arr)
+}
+
+pub fn from_input_without_uuid<T: Syscall>(input: &[u64; 5]) -> postcard::Result<T::Input> {
+    let (syscall, _) = postcard::take_from_bytes(bytemuck::cast_slice(input))?;
+    Ok(syscall)
+}
+
+pub fn serialize_output<T: Syscall>(output: &T::Output) -> postcard::Result<[u64; 7]> {
+    let mut arr: [u64; 7] = Default::default();
+    postcard::to_slice(output, bytemuck::cast_slice_mut(&mut arr)).unwrap();
+    Ok(arr)
+}
+
+pub fn deserialize_output<T: Syscall>(output: &[u64; 7]) -> postcard::Result<T::Output> {
+    let output = postcard::from_bytes(bytemuck::cast_slice(output))?;
+    Ok(output)
+}
+
 // For making sure syscalls are working
-#[derive(Debug, Serialize, Deserialize)]
 pub struct SyscallTest;
 impl Syscall for SyscallTest {
     const UUID: Uuid = uuid!("e38968bd-e8f7-4261-9628-3a9c365d1166");
@@ -56,7 +55,6 @@ impl SyscallTest {
 }
 
 // Core
-#[derive(Debug, Serialize, Deserialize)]
 pub struct SyscallExit;
 impl Syscall for SyscallExit {
     const UUID: Uuid = uuid!("2cc55571-1c2e-4830-bff2-696eaf01ab50");
@@ -65,10 +63,7 @@ impl Syscall for SyscallExit {
 }
 
 // Core, but I'm not sure if we really need this
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SyscallExists {
-    pub uuid_of_syscall_to_check_if_it_exists: Uuid,
-}
+pub struct SyscallExists;
 impl Syscall for SyscallExists {
     const UUID: Uuid = uuid!("72ebbc54-e8d8-4608-88d2-3366ef474723");
     type Input = Uuid;
@@ -76,12 +71,38 @@ impl Syscall for SyscallExists {
 }
 
 // Logging
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SyscallLog {
-    pub message: SyscallSlice,
-}
+pub struct SyscallLog;
 impl Syscall for SyscallLog {
     const UUID: Uuid = uuid!("64dcdda1-f673-43b9-97c2-5048cde056b0");
     type Input = SyscallSlice;
+    type Output = ();
+}
+
+// Keyboard
+#[derive(Debug, Serialize, Deserialize)]
+pub enum SyscallTakeIoPortOutputError {
+    /// The kernel is unable to give the user mode process access to the port because the I/O permission bitmap does not contain the port number
+    OutOfIopb,
+    /// The port is being used by another process
+    InUse,
+}
+pub struct SyscallTakeIoPort;
+impl Syscall for SyscallTakeIoPort {
+    const UUID: Uuid = uuid!("c22449e1-4d8f-44d5-909e-e8dda2e27f8d");
+    type Input = u16;
+    type Output = Result<(), SyscallTakeIoPortOutputError>;
+}
+
+pub struct SyscallListenForKeyboardInterrupts;
+impl Syscall for SyscallListenForKeyboardInterrupts {
+    const UUID: Uuid = uuid!("4e1a4a2d-1b44-4374-9531-5ccf00f5c782");
+    type Input = ();
+    type Output = ();
+}
+
+pub struct SyscallWaitUntilEvent;
+impl Syscall for SyscallWaitUntilEvent {
+    const UUID: Uuid = uuid!("0018ef0c-e6fc-4531-991e-bc32dee29631");
+    type Input = ();
     type Output = ();
 }
