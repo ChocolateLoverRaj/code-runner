@@ -26,7 +26,7 @@ pub struct CpuLocalData {
     pub local_apic: InitLater<Spinlock<LocalApic>>,
     pub initialized_syscalls: InitLater<InitializedSyscalls>,
     pub task_data: Spinlock<CpuTaskData>,
-    pub syscall_handler_closure: InitLater<SyscallHandlerClosure>,
+    pub syscall_handler_closure: InitLater<Box<dyn SyscallHandlerClosure>>,
 }
 
 static CPU_LOCAL_DATA: InitLater<Box<[SyncWrapper<CpuLocalData>]>> = InitLater::uninit();

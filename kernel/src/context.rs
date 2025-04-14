@@ -81,6 +81,12 @@ pub struct SyscallContext {
     pub r11: u64,
     pub rcx: u64,
     pub rax: u64,
+    pub r9: u64,
+    pub r8: u64,
+    pub r10: u64,
+    pub rdx: u64,
+    pub rsi: u64,
+    pub rdi: u64,
     pub rsp: u64,
 }
 
@@ -98,6 +104,12 @@ impl Context for SyscallContext {
                 pop r11
                 pop rcx
                 pop rax
+                pop r9
+                pop r8
+                pop r10
+                pop rdx
+                pop rsi
+                pop rdi
                 pop rsp
                 sysretq
                 ",

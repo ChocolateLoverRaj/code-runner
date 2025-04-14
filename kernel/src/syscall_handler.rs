@@ -68,26 +68,19 @@ pub struct PushedRegisters {
     pub rcx: u64,
 }
 
-pub struct SyscallHandlerClosure {
-    closure:
-        Box<dyn Fn(u64, u64, u64, u64, u64, u64, u64, &mut PushedRegisters) -> ! + Send + Sync>,
-}
-
-impl SyscallHandlerClosure {
-    /// You must set `GS.Base` to the syscall handler's stack before the first syscall. You must do `swapgs` before entering user mode.
-    pub const unsafe fn new(
-        closure: Box<
-            dyn Fn(u64, u64, u64, u64, u64, u64, u64, &mut PushedRegisters) -> ! + Send + Sync,
-        >,
-    ) -> Self {
-        Self { closure }
-    }
-}
-
-impl Debug for SyscallHandlerClosure {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct(core::any::type_name::<Self>()).finish()
-    }
+/// You must set `GS.Base` to the syscall handler's stack before the first syscall. You must do `swapgs` before entering user mode.
+pub unsafe trait SyscallHandlerClosure: Send + Sync + Debug {
+    fn handle_syscall(
+        &self,
+        input0: u64,
+        input1: u64,
+        input2: u64,
+        input3: u64,
+        input4: u64,
+        input5: u64,
+        input6: u64,
+        pushed_registers: &mut PushedRegisters,
+    ) -> !;
 }
 
 extern "sysv64" fn syscall_handler(
@@ -105,8 +98,8 @@ extern "sysv64" fn syscall_handler(
         .unwrap()
         .syscall_handler_closure
         .try_get()
-        .unwrap()
-        .closure)(
+        .unwrap())
+    .handle_syscall(
         input0,
         input1,
         input2,
@@ -141,7 +134,7 @@ extern "sysv64" fn syscall_handler(
     // unsafe { s.restore() }
 }
 
-pub fn set_syscall_handler_closure(closure: SyscallHandlerClosure) -> SyscallHandler {
+pub fn set_syscall_handler_closure(closure: Box<dyn SyscallHandlerClosure>) -> SyscallHandler {
     get_local()
         .unwrap()
         .syscall_handler_closure

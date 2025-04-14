@@ -1,17 +1,7 @@
-use core::{arch::asm, mem::MaybeUninit};
+use core::arch::asm;
 
-use common::{
-    syscall::Syscall,
-    syscall_output::SyscallOutput,
-    syscall_print::{SyscallPrintError, SyscallPrintOutput},
-    syscall_start_recording_keyboard::SyscallStartRecordingKeyboardInput,
-    syscall_take_frame_buffer::{
-        TakeFrameBufferError, TakeFrameBufferOutput, TakeFrameBufferOutputData,
-    },
-    syscall_uuids::{SYSCALL_EXISTS, SYSCALL_EXIT},
-};
+use common::syscall_uuids::{Syscall, SyscallExists, SyscallExit, SyscallLog, SyscallTest};
 use uuid::Uuid;
-use x86_64::VirtAddr;
 
 /// # Safety
 /// The inputs must be valid. Invalid inputs can lead to undefined behavior or the program being terminated.
@@ -44,103 +34,45 @@ pub unsafe fn syscall_internal(
 
 /// # Safety
 /// The inputs must be valid. Invalid inputs can lead to undefined behavior or the program being terminated.
-pub unsafe fn syscall_uuid(uuid: Uuid, inputs: [u64; 5]) -> u64 {
-    let (input0, input1) = uuid.as_u64_pair();
+pub unsafe fn raw_syscall(inputs_and_ouputs: &mut [u64; 7]) {
     unsafe {
-        syscall_internal(
-            input0, input1, inputs[0], inputs[1], inputs[2], inputs[3], inputs[4],
-        )
+        asm!("\
+            syscall
+            ",
+            inlateout("rdi") inputs_and_ouputs[0],
+            inlateout("rsi") inputs_and_ouputs[1],
+            inlateout("rdx") inputs_and_ouputs[2],
+            inlateout("r10") inputs_and_ouputs[3],
+            inlateout("r8") inputs_and_ouputs[4],
+            inlateout("r9") inputs_and_ouputs[5],
+            inlateout("rax") inputs_and_ouputs[6],
+        );
     }
 }
 
-pub fn syscall_exists(uuid: Uuid) -> bool {
-    let (input0, input1) = uuid.as_u64_pair();
-    let return_value = unsafe { syscall_uuid(SYSCALL_EXISTS, [input0, input1, 0, 0, 0]) };
-    match return_value {
-        1 => true,
-        0 => false,
-        _ => unreachable!(),
-    }
+/// # Safety: Inputs must be correct
+unsafe fn syscall<T: Syscall>(input: &T::Input) -> T::Output {
+    let mut input_and_output = T::serialize_to_input_with_uuid(input).unwrap();
+    unsafe { raw_syscall(&mut input_and_output) };
+    let output = T::deserialize_output(&input_and_output).unwrap();
+    output
 }
 
-fn syscall(syscall: &Syscall) -> u64 {
-    let [input0, input1, input2, input3, input4, input5, input6] =
-        syscall.serialize_to_input().unwrap();
-    // We know the inputs are valid
-    unsafe { syscall_internal(input0, input1, input2, input3, input4, input5, input6) }
-}
-
-pub fn syscall_take_frame_buffer() -> Result<TakeFrameBufferOutputData, TakeFrameBufferError> {
-    let mut output = MaybeUninit::<TakeFrameBufferOutputData>::uninit();
-    TakeFrameBufferOutput::from_syscall_output(syscall(&Syscall::TakeFrameBuffer(
-        output.as_mut_ptr().into(),
-    )))
-    .unwrap()
-    .0?;
-    // Because the kernel returned `Ok` we can trust the kernel to have initialized the pointer
-    let dest = unsafe { output.assume_init() };
-    Ok(dest)
-}
-
-pub fn syscall_print(string: &str) -> Result<(), SyscallPrintError> {
-    SyscallPrintOutput::from_syscall_output(syscall(&Syscall::Print(string.as_bytes().into())))
-        .unwrap()
-        .0
+pub fn syscall_test() {
+    let output = unsafe { syscall::<SyscallTest>(&SyscallTest::TEST_INPUT) };
+    assert_eq!(output, SyscallTest::TEST_OUTPUT);
 }
 
 pub fn syscall_exit() -> ! {
-    unsafe { syscall_uuid(SYSCALL_EXIT, Default::default()) };
+    unsafe { syscall::<SyscallExit>(&()) };
     unreachable!()
 }
 
-pub fn syscall_start_recording_keyboard(input: SyscallStartRecordingKeyboardInput) {
-    syscall(&Syscall::StartRecordingKeyboard(input));
+pub fn syscall_exists(uuid: &Uuid) -> bool {
+    unsafe { syscall::<SyscallExists>(uuid) }
 }
 
-pub fn syscall_poll_keyboard(buffer: &mut [MaybeUninit<u8>]) -> &mut [u8] {
-    let count = syscall(&Syscall::PollKeyboard(buffer.into())) as usize;
-    unsafe { buffer[..count].assume_init_mut() }
-}
-
-pub fn syscall_allocate_pages(total_pages: u64) -> VirtAddr {
-    VirtAddr::new(syscall(&Syscall::AllocatePages(total_pages)))
-}
-
-/// Set your handler to `unsafe` to avoid accidentally calling it in your code.
-/// Call [`syscall_done_with_interrupt_handler`](syscall_done_with_interrupt_handler) at the end of your handler.
-pub type KeyboardInterruptHandler = unsafe extern "sysv64" fn() -> !;
-
-pub fn syscall_set_keyboard_interrupt_handler(handler: Option<KeyboardInterruptHandler>) {
-    syscall(&Syscall::SetKeyboardInterruptHandler(
-        handler.map(|handler| (handler as *const ()).into()),
-    ));
-}
-
-pub fn syscall_done_with_interrupt_handler() -> ! {
-    syscall(&Syscall::DoneWithInterruptHandler);
-    unreachable!()
-}
-
-pub fn syscall_disable_and_defer_my_interrupts() {
-    syscall(&Syscall::DisableAndDeferMyInterrupts);
-}
-
-pub fn syscall_enable_and_catch_up_on_my_interrupts() {
-    syscall(&Syscall::EnableAndCatchUpOnMyInterrupts);
-}
-
-pub fn syscall_enable_my_interrupts_and_wait_until_one_happens() {
-    syscall(&Syscall::EnableMyInterruptsAndWaitUntilOneHappens);
-}
-
-pub fn syscall_enable_hpet() {
-    syscall(&Syscall::EnableHpet);
-}
-
-pub fn syscall_hpet_read_main_counter_value() -> u64 {
-    syscall(&Syscall::HpetReadMainCounterValue)
-}
-
-pub fn syscall_get_hpet_main_counter_period() -> u32 {
-    syscall(&Syscall::GetHpetMainCounterPeriod) as u32
+pub fn syscall_print(message: &str) {
+    // Safety: safety rules for the &str are met
+    unsafe { syscall::<SyscallLog>(&message.as_bytes().into()) }
 }

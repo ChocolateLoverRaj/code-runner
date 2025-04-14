@@ -8,6 +8,6 @@ fn panic(panic_info: &PanicInfo) -> ! {
     // TODO: Nicer error display
     let mut message = heapless::String::<100>::new();
     message.write_fmt(format_args!("{}", panic_info)).unwrap();
-    syscall_print(&message).unwrap();
+    syscall_print(&message);
     syscall_exit();
 }
