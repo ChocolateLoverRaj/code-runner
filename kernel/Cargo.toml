@@ -5,18 +5,12 @@ edition = "2021"
 
 [dependencies]
 embedded-graphics = "0.8.1"
-tinytga = "0.5.0"
 x86_64 = { path = "../x86_64" }
-pic8259 = "0.11.0"
-spin = "0.9.8"
 acpi = { version = "5.2.0" }
-pc-keyboard = "0.8.0"
 heapless = "0.8.0"
 linked_list_allocator = "0.10.5"
 x2apic = { path = "../x2apic-rs" }
 unicode-segmentation = "1.12.0"
-bootloader_api = "0.11.10"
-bootloader-x86_64-common = "0.11.10"
 x86_rtc = "0.1.1"
 elf = { version = "0.7.4", default-features = false, features = ["nightly"] }
 util = { path = "../util", default-features = false, features = ["log"] }
@@ -35,7 +29,10 @@ rand = { version = "0.9.0", default-features = false, features = ["small_rng"] }
 thiserror = { version = "2.0.12", default-features = false }
 string-alloc = "0.0.3"
 rustc-demangle = "0.1.24"
-addr2line = { version = "0.24.2", default-features = false, features = ["fallible-iterator", "rustc-demangle"] }
+addr2line = { version = "0.24.2", default-features = false, features = [
+    "fallible-iterator",
+    "rustc-demangle",
+] }
 rangemap = { version = "1.5.1", features = ["const_fn", "nightly"] }
 
 [dependencies.crossbeam-queue]
@@ -52,10 +49,6 @@ features = ["alloc", "async-await", "async-await-macro"]
 version = "0.4.39"
 default-features = false
 features = ["alloc"]
-
-[dependencies.anyhow]
-version = "1.0.95"
-default-features = false
 
 [dependencies.log]
 version = "0.4.25"

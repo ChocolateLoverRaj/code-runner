@@ -15,7 +15,7 @@ chain http://{host}/chain_loader.efi
 
 pub async fn run_server() {
     let out_dir = env!("OUT_DIR");
-    let chain_loader = env!("CHAIN_LOADER");
+    // let chain_loader = env!("CHAIN_LOADER");
 
     rocket::custom(Config {
         port: PORT,
@@ -29,10 +29,10 @@ pub async fn run_server() {
         ..Default::default()
     })
     .mount("/", routes![index])
-    .mount(
-        "/chain_loader.efi",
-        FileServer::new(chain_loader, rocket::fs::Options::IndexFile),
-    )
+    // .mount(
+    //     "/chain_loader.efi",
+    //     FileServer::new(chain_loader, rocket::fs::Options::IndexFile),
+    // )
     // .mount("/", FileServer::from(out_dir))
     .launch()
     .await

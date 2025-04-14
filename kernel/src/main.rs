@@ -19,24 +19,18 @@
 
 extern crate alloc;
 
-// pub mod acpi;
 pub mod acpi_handler_impl;
 pub mod allocator;
 pub mod apic;
-pub mod colorful_logger;
 pub mod combined_logger;
 pub mod config;
 pub mod context;
 // pub mod cpu_local;
 pub mod check_pointer;
 pub mod cpu_local_data;
-pub mod draw_rust;
 pub mod dynamic_combined_logger;
-pub mod embedded_graphics_writer;
 pub mod ensure_mem_is_higher_half;
 // pub mod execute_future;
-pub mod frame_buffer;
-pub mod get_rgb_color;
 // pub mod get_total_memory;
 pub mod hhdm_offset;
 pub mod hlt_loop;
@@ -55,11 +49,9 @@ pub mod log_phys_mem_regions;
 pub mod log_ram_disk;
 pub mod log_rsdp_addr;
 pub mod log_sample_messages;
-pub mod logger;
 // pub mod logger_2;
 pub mod logger_without_interrupts;
 pub mod map_local_xapic;
-pub mod memory;
 pub mod modules;
 pub mod nmi_handler;
 pub mod not_const_allocator;

@@ -1,5 +1,3 @@
-pub mod disable_pic8259;
-
 use x86_64::structures::idt::{
     self, DivergingHandlerFuncWithErrCode, HandlerFunc, HandlerFuncWithErrCode,
     InterruptDescriptorTable, PageFaultHandlerFunc,

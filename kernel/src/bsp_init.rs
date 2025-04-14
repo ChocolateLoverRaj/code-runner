@@ -30,7 +30,6 @@ use crate::{
     log_rsdp_addr::{self},
     log_sample_messages::log_sample_messages,
     logger_3,
-    modules::idt::disable_pic8259::disable_pic8259,
     parse_ram_disk::parse_ram_disk,
     physical_memory::{self},
     rsdp_addr::RsdpAddr,
@@ -80,8 +79,6 @@ pub unsafe fn init() -> ! {
     if CONFIG.kernel_log_sample_messages {
         log_sample_messages();
     }
-
-    disable_pic8259();
 
     log_bootloader_info::log_bootloader_info();
     log::info!("HHDM offset: {:?}", hhdm_offset);

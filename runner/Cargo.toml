@@ -6,14 +6,13 @@ default-run = "qemu-uefi"
 
 [dependencies]
 gethostname = "1.0.0"
-rcgen = { version = "0.13.2", features = ["aws_lc_rs"] }
-rocket = { version = "0.5.1", features = ["tls"] }
+# rcgen = { version = "0.13.2", features = ["aws_lc_rs"] }
+rocket = { version = "0.5.1" }
 serialport = { version = "=4.6.1", features = ["usbportinfo-interface"] }
 
 [build-dependencies]
 kernel = { path = "../kernel", artifact = "bin", target = "x86_64-unknown-none" }
 user_space = { path = "../user_space", artifact = "bin", target = "x86_64-unknown-none" }
-chain_loader = { path = "../chain_loader", artifact = "bin", target = "x86_64-unknown-uefi" }
-bootloader = "0.11.10"
+# chain_loader = { path = "../chain_loader", artifact = "bin", target = "x86_64-unknown-uefi" }
 common = { version = "0.1.0", path = "../common" }
 postcard = { version = "1.1.1", features = ["use-std"] }

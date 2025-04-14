@@ -1,9 +1,8 @@
 // pub mod async_keyboard;
 // pub mod async_rtc;
 pub mod gdt;
-pub mod get_apic;
 pub mod idt;
-pub mod logging_timer_interrupt_handler;
+// pub mod logging_timer_interrupt_handler;
 pub mod panicking_double_fault_handler;
 pub mod panicking_invalid_opcode_handler;
 pub mod panicking_invalid_tss_fault_handler;
@@ -14,7 +13,6 @@ pub mod panicking_segment_not_present_handler;
 pub mod panicking_spurious_interrupt_handler;
 pub mod panicking_stack_segment_fault_handler;
 pub mod spurious_interrupt_handler;
-pub mod static_local_apic;
 pub mod syscall;
 pub mod tss;
 pub mod unsafe_local_apic;
