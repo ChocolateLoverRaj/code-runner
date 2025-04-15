@@ -25,6 +25,7 @@ use uart_16550::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use x86_64::{
+    instructions::interrupts::without_interrupts,
     registers::control::Cr3,
     structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB},
     PhysAddr,
@@ -228,19 +229,21 @@ impl Log for Logger3 {
     }
 
     fn log(&self, record: &log::Record) {
-        let mut data = self.data.lock();
-        if let Some(serial_port) = &mut data.serial_port {
-            let log_serial_config = CONFIG.kernel_log_serial.unwrap();
-            if record.level() <= log_serial_config.level_filter {
-                log_record(serial_port, record).unwrap();
+        without_interrupts(|| {
+            let mut data = self.data.lock();
+            if let Some(serial_port) = &mut data.serial_port {
+                let log_serial_config = CONFIG.kernel_log_serial.unwrap();
+                if record.level() <= log_serial_config.level_filter {
+                    log_record(serial_port, record).unwrap();
+                }
             }
-        }
-        if let Some(frame_buffer_data) = &mut data.frame_buffer {
-            let log_screen_config = CONFIG.kernel_log_screen.unwrap();
-            if record.level() <= log_screen_config.level_filter {
-                log_record(frame_buffer_data, record).unwrap();
+            if let Some(frame_buffer_data) = &mut data.frame_buffer {
+                let log_screen_config = CONFIG.kernel_log_screen.unwrap();
+                if record.level() <= log_screen_config.level_filter {
+                    log_record(frame_buffer_data, record).unwrap();
+                }
             }
-        }
+        });
     }
 
     fn flush(&self) {

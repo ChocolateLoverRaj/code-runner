@@ -51,5 +51,8 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
             get_syscall_handlers(),
         ))))
         .unwrap();
+    if cpu.id == 0 {
+        // for i in 0..100000000 {}
+    }
     run_tasks()
 }

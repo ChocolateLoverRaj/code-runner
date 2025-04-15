@@ -17,6 +17,7 @@ pub mod syscall;
 
 use common::syscall_uuids::{Syscall, SyscallExit};
 use heapless::String;
+use pc_keyboard::{layouts::Us104Key, HandleControl, ScancodeSet1};
 use syscall::{
     syscall_exists, syscall_listen_for_keyboard_interrupts, syscall_print, syscall_take_io_port,
     syscall_test, syscall_wait_until_event,
@@ -56,13 +57,18 @@ extern "C" fn _start() -> ! {
     syscall_take_io_port(0x60).unwrap();
     syscall_listen_for_keyboard_interrupts();
     let mut port = Port::<u8>::new(0x60);
+    let mut keyboard =
+        pc_keyboard::Keyboard::new(ScancodeSet1::new(), Us104Key, HandleControl::Ignore);
     loop {
         syscall_wait_until_event();
         let data = unsafe { port.read() };
-        if data != 250 {
-            let mut message = String::<128>::new();
-            write!(message, "Received data: {}", data);
-            syscall_print(&message);
+        let event = keyboard.add_byte(data).unwrap();
+        if let Some(event) = event {
+            if let Some(d) = keyboard.process_keyevent(event) {
+                let mut message = String::<128>::new();
+                write!(message, "Key: {:?}", d);
+                syscall_print(&message);
+            }
         }
     }
     // syscall_exit();

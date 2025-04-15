@@ -8,15 +8,17 @@ use common::syscall_uuids::{
 };
 use spinning_top::Spinlock;
 use uuid::Uuid;
+use x2apic::ioapic::{IrqMode, RedirectionTableEntry};
 use x86_64::registers::segmentation::GS;
 
 use crate::{
     context::{Context, SyscallContext},
     cpu_local_data::get_local,
-    init_idt_and_gdt::get_iobp,
+    init_idt_and_gdt::{get_iobp, MAPPED_APICS},
+    pic8259_interrupts::Pic8259Interrupts,
     run_tasks::run_tasks,
     syscall_handler::{PushedRegisters, SyscallHandlerClosure},
-    tasks::{TaskState, TaskType, TASKS},
+    tasks::{KeyboardEventListener, TaskState, TaskType, TASKS},
     terminate_current_task::terminate_current_task,
 };
 
@@ -90,24 +92,7 @@ unsafe impl SyscallHandlerClosure for SyscallHandlers {
             }
             Some(syscall_handler) => {
                 let output = syscall_handler(&input, pushed_registers, &self.handlers);
-                let s = SyscallContext {
-                    r15: pushed_registers.r15,
-                    r14: pushed_registers.r14,
-                    r13: pushed_registers.r13,
-                    r12: pushed_registers.r12,
-                    rbx: pushed_registers.rbx,
-                    rbp: pushed_registers.rbp,
-                    r11: pushed_registers.r11,
-                    rcx: pushed_registers.rcx,
-                    rdi: output[0],
-                    rsi: output[1],
-                    rdx: output[2],
-                    r10: output[3],
-                    r8: output[4],
-                    r9: output[5],
-                    rax: output[6],
-                    rsp: unsafe { get_local().unwrap().user_stack_pointer.get().read() },
-                };
+                let s = SyscallContext::from_syscall_output(pushed_registers, output);
                 unsafe { GS::swap() };
                 unsafe { s.restore() }
             }
@@ -195,7 +180,19 @@ pub fn get_syscall_handlers() -> impl SyscallHandlerClosure {
             match &current_task.task_type {
                 TaskType::User(data) => {
                     if data.permissions.keyboard_interrupts {
-                        current_task.listening_for_keyboard_interrupts = true;
+                        tasks.keyboard_listener = Some(KeyboardEventListener {
+                            task_id: current_task_id,
+                            pending_interrupt_received: false
+                        });
+                        let cpu_local_data = get_local().unwrap();
+                        let mut entry = RedirectionTableEntry::default();
+                        entry.set_vector(cpu_local_data.static_stuff2.try_get().unwrap().keyboard_interrupt_index);
+                        entry.set_mode(IrqMode::Fixed);
+                        entry.set_dest(cpu_local_data.lapic_id.try_into().unwrap());
+                        let mut io_apic = MAPPED_APICS.try_get().unwrap().io_apic.lock();
+                        log::info!("Enabled interrupts and set IO APIC entry: {:?}", entry);
+                        unsafe {  io_apic.set_table_entry(Pic8259Interrupts::Keyboard.into(), entry) };
+                        unsafe { io_apic.enable_irq(Pic8259Interrupts::Keyboard.into()) };
                         Action::Return(())
                     } else {
                         log::warn!("Task {} tried to listen for keyboard interrupts when it is not allowed to. Terminating.", current_task_id);
@@ -217,16 +214,26 @@ pub fn get_syscall_handlers() -> impl SyscallHandlerClosure {
         let action = {
             let mut tasks = TASKS.try_get().unwrap().lock();
             let current_task_id = get_local().unwrap().task_data.lock().current_task.unwrap();
-            let current_task = tasks
-                .tasks
-                .iter_mut()
-                .find(|task| task.id == current_task_id)
-                .unwrap();
-            if !current_task.listening_for_keyboard_interrupts {
-                Action::Return(())
-            } else {
-                current_task.state = TaskState::WaitingUntilEvent(*pushed_registers);
-                Action::RunTasks
+            match &mut tasks.keyboard_listener {
+                Some(keyboard_event_listener) => {
+                    if keyboard_event_listener.task_id == current_task_id {
+                        if keyboard_event_listener.pending_interrupt_received {
+                            keyboard_event_listener.pending_interrupt_received = false;
+                            Action::Return(())
+                        } else {
+                            let current_task = tasks
+                                .tasks
+                                .iter_mut()
+                                .find(|task| task.id == current_task_id)
+                                .unwrap();
+                            current_task.state = TaskState::WaitingUntilEvent(*pushed_registers);
+                            Action::RunTasks
+                        }
+                    } else {
+                        Action::Return(())
+                    }
+                }
+                None => Action::Return(()),
             }
         };
         match action {

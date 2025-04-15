@@ -231,7 +231,6 @@ pub fn spawn_task(
             instruction_pointer: start_addr,
             stack_pointer: stack_end.start_address(),
         }),
-        listening_for_keyboard_interrupts: false,
     };
     TASKS.try_get().unwrap().lock().tasks.push(task);
 

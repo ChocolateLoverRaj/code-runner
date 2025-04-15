@@ -1,6 +1,6 @@
 use x86_64::structures::idt::InterruptStackFrame;
 
-use crate::fault_handlers::handle_user_mode_fault::handle_user_mode_fault;
+use super::handle_user_mode_fault::handle_user_mode_fault;
 
 pub extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,

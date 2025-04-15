@@ -7,7 +7,7 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::fault_handlers::handle_user_mode_fault::handle_user_mode_fault;
+use super::handle_user_mode_fault::handle_user_mode_fault;
 
 #[derive(Debug)]
 #[allow(unused)]

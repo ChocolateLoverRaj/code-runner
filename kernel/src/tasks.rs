@@ -39,17 +39,23 @@ pub enum TaskState {
 }
 
 #[derive(Debug)]
+pub struct KeyboardEventListener {
+    pub task_id: usize,
+    pub pending_interrupt_received: bool,
+}
+
+#[derive(Debug)]
 pub struct Task {
     pub task_type: TaskType,
     pub state: TaskState,
     pub id: usize,
-    pub listening_for_keyboard_interrupts: bool,
 }
 
 #[derive(Debug)]
 pub struct Tasks {
     pub kernel_cr3: PhysFrame<Size4KiB>,
     pub tasks: Vec<Task>,
+    pub keyboard_listener: Option<KeyboardEventListener>,
 }
 
 impl Tasks {
@@ -57,6 +63,7 @@ impl Tasks {
         Self {
             kernel_cr3: Cr3::read().0,
             tasks: Default::default(),
+            keyboard_listener: None,
         }
     }
 }

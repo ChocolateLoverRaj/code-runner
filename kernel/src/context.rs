@@ -2,6 +2,8 @@ use core::arch::asm;
 
 use x86_64::{structures::gdt::SegmentSelector, PrivilegeLevel};
 
+use crate::{cpu_local_data::get_local, syscall_handler::PushedRegisters};
+
 pub trait Context {
     /// # Safety
     /// Completely changes context
@@ -88,6 +90,30 @@ pub struct SyscallContext {
     pub rsi: u64,
     pub rdi: u64,
     pub rsp: u64,
+}
+
+impl SyscallContext {
+    // Must be called while CPU local data's user stack pointer is valid
+    pub fn from_syscall_output(pushed_registers: &PushedRegisters, output: [u64; 7]) -> Self {
+        Self {
+            r15: pushed_registers.r15,
+            r14: pushed_registers.r14,
+            r13: pushed_registers.r13,
+            r12: pushed_registers.r12,
+            rbx: pushed_registers.rbx,
+            rbp: pushed_registers.rbp,
+            r11: pushed_registers.r11,
+            rcx: pushed_registers.rcx,
+            rdi: output[0],
+            rsi: output[1],
+            rdx: output[2],
+            r10: output[3],
+            r8: output[4],
+            r9: output[5],
+            rax: output[6],
+            rsp: unsafe { get_local().unwrap().user_stack_pointer.get().read() },
+        }
+    }
 }
 
 impl Context for SyscallContext {

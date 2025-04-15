@@ -83,7 +83,7 @@ pub extern "sysv64" fn run_tasks() -> ! {
     match action {
         Action::EnterUserMode(input) => unsafe { enter_user_mode(input) },
         Action::Halt => {
-            log::warn!("No tasks to run. Halting.");
+            log::info!("No tasks to run. Halting.");
             hlt_loop();
         }
     }
