@@ -171,38 +171,38 @@ pub fn get_syscall_handlers() -> impl SyscallHandlerClosure {
         }
         let action = {
             let mut tasks = TASKS.try_get().unwrap().lock();
-            if tasks.keyboard_listener.is_some() {
-            let current_task_id = get_local().unwrap().task_data.lock().current_task.unwrap();
-            let current_task = tasks
-                .tasks
-                .iter_mut()
-                .find(|task| task.id == current_task_id)
-                .unwrap();
-            match &current_task.task_type {
-                TaskType::User(data) => {
-                    if data.permissions.keyboard_interrupts {
-                        tasks.keyboard_listener = Some(KeyboardEventListener {
-                            task_id: current_task_id,
-                            pending_interrupt_received: false
-                        });
-                        let cpu_local_data = get_local().unwrap();
-                        let mut entry = RedirectionTableEntry::default();
-                        entry.set_vector(cpu_local_data.static_stuff2.try_get().unwrap().keyboard_interrupt_index);
-                        entry.set_mode(IrqMode::Fixed);
-                        entry.set_dest(cpu_local_data.lapic_id.try_into().unwrap());
-                        let mut io_apic = MAPPED_APICS.try_get().unwrap().io_apic.lock();
-                        log::info!("Enabled interrupts and set IO APIC entry: {:?}", entry);
-                        unsafe {  io_apic.set_table_entry(Pic8259Interrupts::Keyboard.into(), entry) };
-                        unsafe { io_apic.enable_irq(Pic8259Interrupts::Keyboard.into()) };
-                        Action::Return(Ok(()))
-                    } else {
-                        log::warn!("Task {} tried to listen for keyboard interrupts when it is not allowed to. Terminating.", current_task_id);
-                        Action::Terminate
+            if tasks.keyboard_listener.is_none() {
+                let current_task_id = get_local().unwrap().task_data.lock().current_task.unwrap();
+                let current_task = tasks
+                    .tasks
+                    .iter_mut()
+                    .find(|task| task.id == current_task_id)
+                    .unwrap();
+                match &current_task.task_type {
+                    TaskType::User(data) => {
+                        if data.permissions.keyboard_interrupts {
+                            tasks.keyboard_listener = Some(KeyboardEventListener {
+                                task_id: current_task_id,
+                                pending_interrupt_received: false
+                            });
+                            let cpu_local_data = get_local().unwrap();
+                            let mut entry = RedirectionTableEntry::default();
+                            entry.set_vector(cpu_local_data.static_stuff2.try_get().unwrap().keyboard_interrupt_index);
+                            entry.set_mode(IrqMode::Fixed);
+                            entry.set_dest(cpu_local_data.lapic_id.try_into().unwrap());
+                            let mut io_apic = MAPPED_APICS.try_get().unwrap().io_apic.lock();
+                            log::info!("Enabled interrupts and set IO APIC entry: {:?}", entry);
+                            unsafe {  io_apic.set_table_entry(Pic8259Interrupts::Keyboard.into(), entry) };
+                            unsafe { io_apic.enable_irq(Pic8259Interrupts::Keyboard.into()) };
+                            Action::Return(Ok(()))
+                        } else {
+                            log::warn!("Task {} tried to listen for keyboard interrupts when it is not allowed to. Terminating.", current_task_id);
+                            Action::Terminate
+                        }
                     }
                 }
-            }
             } else {
-Action::Return(Err(SyscallListenForKeyboardInterruptsOutputError::InUse))
+                Action::Return(Err(SyscallListenForKeyboardInterruptsOutputError::InUse))
             }
         };
         match action {
