@@ -3,6 +3,7 @@ use core::{slice, sync::atomic::Ordering};
 use common::ram_disk::RamDisk;
 use elf::{endian::NativeEndian, ElfBytes};
 use thiserror::Error;
+use util::aligned_chunks::AlignedChunks;
 use x86_64::{
     structures::paging::{
         mapper::MapToError, FrameAllocator, Mapper, Page, PageSize, PageTableFlags, Size4KiB,
@@ -92,21 +93,12 @@ pub fn spawn_task(
         let segment_data = elf
             .segment_data(&segment)
             .map_err(|e| SpawnTaskError::ElfParseError(e))?;
-        // log::info!("Must map segment accessible to the kernel at {:p} to virtual address 0x{:x} with size 0x{:x} and copy 0x{:x} bytes, with alignment down 0x{:x} with flags 0b{:b}", segment_data, segment.p_vaddr, segment.p_memsz, segment.p_filesz, segment.p_align, segment.p_flags);
-        let page_range = {
-            let start = Page::<Size4KiB>::from_start_address(
-                VirtAddr::new(segment.p_vaddr).align_down(Size4KiB::SIZE),
-            )
-            .unwrap();
-            let end = Page::from_start_address(
-                (VirtAddr::new(segment.p_vaddr) + segment.p_memsz).align_up(Size4KiB::SIZE),
-            )
-            .unwrap();
-            start..end
-        };
 
-        for (page_index, page) in page_range.clone().enumerate() {
-            // Map the page
+        let virtual_range =
+            segment.p_vaddr as usize..segment.p_vaddr as usize + segment.p_memsz as usize;
+        for virtual_chunk in virtual_range.clone().aligned_chunks(0x1000) {
+            let page =
+                Page::<Size4KiB>::containing_address(VirtAddr::new(virtual_chunk.start as u64));
             let phys_frame = frame_allocator
                 .allocate_frame()
                 .ok_or(SpawnTaskError::OutOfPhysMem)?;
@@ -126,36 +118,27 @@ pub fn spawn_task(
             let offset_mapped_addr =
                 (phys_frame.start_address().as_u64() + u64::from(hhdm_offset)) as *mut u8;
             let slice = unsafe { core::slice::from_raw_parts_mut(offset_mapped_addr, 0x1000) };
-            // Zero the phys frame to be secure
-            slice.fill(Default::default());
-            // Copy the data
-            let dest_start = if page_index == 0 {
-                segment.p_vaddr % segment.p_align
-            } else {
-                0
-            };
-            let already_copied = match page_index {
-                0 => 0,
-                n => Size4KiB::SIZE * n as u64 - (segment.p_vaddr % segment.p_align),
-            };
-            let dest_end =
-                (dest_start + (segment.p_filesz - already_copied)).min(slice.len() as u64);
+            // Unused memory before the used memory must be zeroed for security
+            slice[0..virtual_chunk.start % 0x1000].fill(Default::default());
+            let start_index = virtual_chunk.start - virtual_range.start;
+            let end_index = virtual_chunk.end - virtual_range.start;
+            let copy_len = end_index
+                .min(segment.p_filesz as usize)
+                .checked_sub(start_index);
+            // This is the part that we are actually copying from the ELF file
+            if let Some(copy_len) = copy_len {
+                slice[virtual_chunk.start % 0x1000..virtual_chunk.start % 0x1000 + copy_len]
+                    .copy_from_slice(&segment_data[start_index..start_index + copy_len]);
+            }
+            // All extra memz that's not part of filez must be zeroed, according to the ELF spec
+            slice[virtual_chunk.start % 0x1000 + copy_len.unwrap_or_default()
+                ..virtual_chunk.start % 0x1000 + virtual_chunk.len()]
+                .fill(Default::default());
+            // Unused memory must be zeroed for security
+            slice[virtual_chunk.start % 0x1000 + virtual_chunk.len()..].fill(0);
 
-            let src_start = already_copied;
-            let src_end = src_start + (dest_end - dest_start);
-            // log::warn!(
-            //     "Page index: {}, copy bytes: {}, already copied: {}, Copying to frame: {:?} from segment data: {:?}",
-            //     page_index,
-            //     segment.p_filesz,
-            //     already_copied,
-            //     dest_start..dest_end,
-            //     src_start..src_end,
-            // );
-            slice[dest_start as usize..dest_end as usize]
-                .copy_from_slice(&segment_data[src_start as usize..src_end as usize]);
+            elf_end = elf_end.max(page + 1);
         }
-
-        elf_end = elf_end.max(page_range.end);
     }
 
     // Do relocations
@@ -164,21 +147,21 @@ pub fn spawn_task(
     if let Some(section_headers) = elf.section_headers() {
         for section_header in section_headers {
             if section_header.sh_type == 4 {
-                log::error!("Doing relocation. Will page fault.");
-                let relas = elf
-                    .section_data_as_relas(&section_header)
-                    .map_err(|e| SpawnTaskError::ElfParseError(e))?;
-                for rela in relas {
-                    match rela.r_type {
-                        8 => {
-                            // TODO: The offset needs to be added to the base virtual address. The base virtual address may not be 0.
-                            let virt_addr = VirtAddr::new(rela.r_offset);
-                            let mem_to_replace = virt_addr.as_mut_ptr::<u64>();
-                            unsafe { *mem_to_replace = rela.r_addend as u64 };
-                        }
-                        _ => log::warn!("Not applying rela: {:?}", rela),
-                    }
-                }
+                todo!("Relocation is needed");
+                // let relas = elf
+                //     .section_data_as_relas(&section_header)
+                //     .map_err(|e| SpawnTaskError::ElfParseError(e))?;
+                // for rela in relas {
+                //     match rela.r_type {
+                //         8 => {
+                //             // TODO: The offset needs to be added to the base virtual address. The base virtual address may not be 0.
+                //             let virt_addr = VirtAddr::new(rela.r_offset);
+                //             let mem_to_replace = virt_addr.as_mut_ptr::<u64>();
+                //             unsafe { *mem_to_replace = rela.r_addend as u64 };
+                //         }
+                //         _ => log::warn!("Not applying rela: {:?}", rela),
+                //     }
+                // }
             }
         }
     }

@@ -1,17 +1,19 @@
+use core::mem::MaybeUninit;
+
 use linked_list_allocator::LockedHeap;
 
-#[global_allocator]
-static ALLOCATOR: LockedHeap = LockedHeap::empty();
+const GLOBAL_ALLOCATOR_SIZE: usize = 10 * 0x400;
 
-// /// This function should only be called once
-// pub fn init() {
-//     // TODO: Allocate more pages if no pages
-//     let total_pages = 100;
-//     let start = syscall_allocate_pages(total_pages);
-//     let heap_size = Size4KiB::SIZE * total_pages;
-//     unsafe {
-//         ALLOCATOR
-//             .lock()
-//             .init(start.as_mut_ptr(), heap_size as usize)
-//     };
-// }
+static mut GLOBAL_ALLOCATOR_BYTES: [MaybeUninit<u8>; GLOBAL_ALLOCATOR_SIZE] =
+    [MaybeUninit::uninit(); GLOBAL_ALLOCATOR_SIZE];
+
+#[global_allocator]
+static GLOBAL_ALLOCATOR: LockedHeap = LockedHeap::empty();
+
+/// # Safety
+/// This function must be called only once
+pub unsafe fn init() {
+    GLOBAL_ALLOCATOR
+        .lock()
+        .init_from_slice(unsafe { (&raw mut GLOBAL_ALLOCATOR_BYTES).as_mut() }.unwrap());
+}

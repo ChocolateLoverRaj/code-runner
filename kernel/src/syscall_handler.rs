@@ -17,7 +17,7 @@ unsafe extern "sysv64" fn raw_syscall_handler() {
             swapgs
 
             // We need to disable interrupts until we do swapgs to make sure that the gs doesn't get swapped multiple times before here
-            sti
+            // sti
 
             // Save `rsp` to `THREAD_CONTROL_DATA.user_stack_pointer`
             mov gs:[{sp_offset}], rsp

@@ -2,6 +2,7 @@ use core::arch::naked_asm;
 
 use common::syscall_uuids::{serialize_output, SyscallWaitUntilEvent};
 use x86_64::{
+    instructions::interrupts,
     registers::{
         model_specific::{GsBase, KernelGsBase},
         segmentation::GS,
@@ -59,6 +60,7 @@ unsafe extern "sysv64" fn keyboard_interrupt_handler_rust(context: &FullContext)
             log::debug!("Didn't swap GS");
             false
         };
+
     {
         unsafe {
             get_local()

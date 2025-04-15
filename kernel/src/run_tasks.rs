@@ -1,5 +1,5 @@
 use x86_64::{
-    instructions::tlb::flush_all,
+    instructions::{interrupts, tlb::flush_all},
     registers::{control::Cr3, rflags::RFlags},
 };
 
@@ -83,7 +83,8 @@ pub extern "sysv64" fn run_tasks() -> ! {
     match action {
         Action::EnterUserMode(input) => unsafe { enter_user_mode(input) },
         Action::Halt => {
-            log::info!("No tasks to run. Halting.");
+            log::debug!("No tasks to run. Halting.");
+            interrupts::enable();
             hlt_loop();
         }
     }

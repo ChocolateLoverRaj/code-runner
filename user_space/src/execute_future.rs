@@ -7,10 +7,7 @@ use core::{
 use alloc::{sync::Arc, task::Wake};
 use futures::pin_mut;
 
-use crate::syscall::{
-    syscall_disable_and_defer_my_interrupts, syscall_enable_and_catch_up_on_my_interrupts,
-    syscall_enable_my_interrupts_and_wait_until_one_happens,
-};
+use crate::{executor_context::ExecutorContext, syscall::syscall_wait_until_event};
 
 struct SingleWaker {
     woke_up: Arc<AtomicBool>,
@@ -27,8 +24,7 @@ impl Wake for SingleWaker {
 }
 
 /// Execute a single future
-/// Very similar to how the kernel does it
-pub fn execute_future<T>(future: impl Future<Output = T>) -> T {
+pub fn execute_future<T>(future: impl Future<Output = T>, executor_context: &ExecutorContext) -> T {
     pin_mut!(future);
     let woke_up = Arc::new(AtomicBool::new(false));
     let waker = Waker::from(Arc::new(SingleWaker {
@@ -40,15 +36,10 @@ pub fn execute_future<T>(future: impl Future<Output = T>) -> T {
             Poll::Ready(value) => break value,
             Poll::Pending => {}
         }
-        // Disable interrupts here so that an interrupt doesn't happen in between checking if we woke up and getting woken up
-        syscall_disable_and_defer_my_interrupts();
-        if !woke_up.load(Ordering::Relaxed) {
-            // Wait for an interrupt to happen
-            syscall_enable_my_interrupts_and_wait_until_one_happens();
-            woke_up.store(false, Ordering::Relaxed);
-        } else {
-            // We got woken up. Don't forget to enable interrupts again.
-            syscall_enable_and_catch_up_on_my_interrupts();
-        }
+        syscall_wait_until_event();
+        executor_context
+            .keyboard_event_received
+            .store(true, Ordering::Release);
+        executor_context.keyboard_waker.wake();
     }
 }
