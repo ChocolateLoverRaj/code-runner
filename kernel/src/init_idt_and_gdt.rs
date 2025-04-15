@@ -235,7 +235,7 @@ pub fn init_cpu() {
         .unwrap();
 }
 
-pub fn get_iobp() -> &'static Spinlock<&'static mut IoPermissionBitmap<IOPB_SIZE>> {
+pub fn get_iopb() -> &'static Spinlock<&'static mut IoPermissionBitmap<IOPB_SIZE>> {
     unsafe { core::mem::transmute(&get_local().unwrap().static_stuff2.try_get().unwrap().iopb) }
 }
 

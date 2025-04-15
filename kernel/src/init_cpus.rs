@@ -8,8 +8,10 @@ use crate::{
     limine_requests::MP_REQUEST,
     modules::syscall::init_syscalls::init_syscalls,
     run_tasks::run_tasks,
-    syscall_handler::set_syscall_handler_closure,
-    syscall_handler_closure::get_syscall_handlers,
+    syscalls::{
+        raw_syscall_handler::set_syscall_handler_closure,
+        syscall_handler_closure::get_syscall_handlers,
+    },
 };
 
 static RAM_DISK: InitLater<RamDisk<'static>> = InitLater::uninit();

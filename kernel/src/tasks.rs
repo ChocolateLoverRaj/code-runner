@@ -10,7 +10,7 @@ use x86_64::{
     VirtAddr,
 };
 
-use crate::{boxed_stack::BoxedStack, syscall_handler::PushedRegisters};
+use crate::{boxed_stack::BoxedStack, syscalls::raw_syscall_handler::PushedRegisters};
 
 #[derive(Debug)]
 pub struct UserTaskData {

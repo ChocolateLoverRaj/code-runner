@@ -5,11 +5,9 @@
 #![feature(int_roundings)]
 #![feature(naked_functions)]
 #![feature(pointer_is_aligned_to)]
-#![feature(unsigned_is_multiple_of)]
 #![feature(vec_push_within_capacity)]
 #![feature(never_type)]
 #![feature(fn_traits)]
-#![feature(maybe_uninit_uninit_array)]
 #![feature(non_null_from_ref)]
 #![feature(vec_into_raw_parts)]
 #![feature(box_vec_non_null)]
@@ -36,7 +34,6 @@ pub mod hhdm_offset;
 pub mod hlt_loop;
 pub mod hpet_memory;
 pub mod init_cpus;
-// pub mod init_idt_and_gdt;
 pub mod io_permission_bitmap;
 pub mod iopb_size;
 pub mod limine_requests;
@@ -46,6 +43,7 @@ pub mod log_cpu_info;
 pub mod log_frame_buffer_info;
 pub mod log_kernel_address;
 pub mod mutex_without_interrupts;
+pub mod syscalls;
 // pub mod log_memory_usage;
 pub mod log_phys_mem_regions;
 pub mod log_ram_disk;
@@ -70,11 +68,9 @@ pub mod spawn_task;
 pub mod call_stack_iterator;
 pub mod split_draw_target;
 pub mod store_but_borrow_mut;
-pub mod syscall_handler;
 pub mod terminate_current_task;
 // pub mod syscall_enable_hpet;
 // pub mod syscall_get_hpet_main_counter_period;
-pub mod syscall_handler_closure;
 // pub mod syscall_handler_make_me_logger;
 // pub mod syscall_hpet_read_main_counter_value;
 // pub mod syscall_print_handler;

@@ -1,9 +1,9 @@
 use core::arch::asm;
 
 use common::syscall_uuids::{
-    deserialize_output, serialize_to_input_with_uuid, Syscall, SyscallExists, SyscallExit,
-    SyscallListenForKeyboardInterrupts, SyscallLog, SyscallTakeIoPort, SyscallTest,
-    SyscallWaitUntilEvent,
+    deserialize_output, serialize_to_input_with_uuid, ListenAction, Syscall, SyscallExists,
+    SyscallExit, SyscallListenForKeyboardInterrupts, SyscallLog, SyscallTakeIoPort,
+    SyscallTakeIoPortInput, SyscallTest, SyscallWaitUntilEvent,
 };
 use uuid::Uuid;
 
@@ -81,13 +81,16 @@ pub fn syscall_print(message: &str) {
     unsafe { syscall::<SyscallLog>(&message.as_bytes().into()) }
 }
 
-pub fn syscall_take_io_port(port: u16) -> <SyscallTakeIoPort as Syscall>::Output {
-    unsafe { syscall::<SyscallTakeIoPort>(&port) }
+pub fn syscall_take_io_port(
+    input: &SyscallTakeIoPortInput,
+) -> <SyscallTakeIoPort as Syscall>::Output {
+    unsafe { syscall::<SyscallTakeIoPort>(input) }
 }
 
 pub fn syscall_listen_for_keyboard_interrupts(
+    input: &ListenAction,
 ) -> <SyscallListenForKeyboardInterrupts as Syscall>::Output {
-    unsafe { syscall::<SyscallListenForKeyboardInterrupts>(&()) }
+    unsafe { syscall::<SyscallListenForKeyboardInterrupts>(input) }
 }
 
 pub fn syscall_wait_until_event() -> <SyscallWaitUntilEvent as Syscall>::Output {

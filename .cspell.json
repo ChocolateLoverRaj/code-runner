@@ -3,6 +3,7 @@
         "acpi",
         "addrs",
         "Apic",
+        "APICS",
         "bitfield",
         "Chromebox",
         "chrono",

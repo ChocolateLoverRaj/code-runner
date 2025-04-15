@@ -11,7 +11,7 @@ use crate::{
     init_idt_and_gdt::{StaticStuff1, StaticStuff2},
     modules::syscall::init_syscalls::InitializedSyscalls,
     store_but_borrow_mut::StoreButBorrowMut,
-    syscall_handler::SyscallHandlerClosure,
+    syscalls::raw_syscall_handler::SyscallHandlerClosure,
     tasks::CpuTaskData,
 };
 

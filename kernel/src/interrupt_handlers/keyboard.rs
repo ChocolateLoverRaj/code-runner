@@ -2,7 +2,6 @@ use core::arch::naked_asm;
 
 use common::syscall_uuids::{serialize_output, SyscallWaitUntilEvent};
 use x86_64::{
-    instructions::interrupts,
     registers::{
         model_specific::{GsBase, KernelGsBase},
         segmentation::GS,

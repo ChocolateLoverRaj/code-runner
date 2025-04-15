@@ -2,7 +2,7 @@ use core::arch::asm;
 
 use x86_64::{structures::gdt::SegmentSelector, PrivilegeLevel};
 
-use crate::{cpu_local_data::get_local, syscall_handler::PushedRegisters};
+use crate::{cpu_local_data::get_local, syscalls::raw_syscall_handler::PushedRegisters};
 
 pub trait Context {
     /// # Safety

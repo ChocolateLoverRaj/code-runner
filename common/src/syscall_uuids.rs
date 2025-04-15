@@ -80,28 +80,47 @@ impl Syscall for SyscallLog {
 
 // Keyboard
 #[derive(Debug, Serialize, Deserialize)]
+pub enum IoPortAction {
+    Take,
+    Release,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyscallTakeIoPortInput {
+    pub port: u16,
+    pub action: IoPortAction,
+}
+#[derive(Debug, Serialize, Deserialize)]
 pub enum SyscallTakeIoPortOutputError {
     /// The kernel is unable to give the user mode process access to the port because the I/O permission bitmap does not contain the port number
     OutOfIopb,
     /// The port is being used by another process
     InUse,
+    /// You tried to release an I/O port that you didn't even take
+    NotOwned,
 }
 pub struct SyscallTakeIoPort;
 impl Syscall for SyscallTakeIoPort {
     const UUID: Uuid = uuid!("c22449e1-4d8f-44d5-909e-e8dda2e27f8d");
-    type Input = u16;
+    type Input = SyscallTakeIoPortInput;
     type Output = Result<(), SyscallTakeIoPortOutputError>;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub enum ListenAction {
+    StartListening,
+    StopListening,
+}
+#[derive(Debug, Serialize, Deserialize)]
 pub enum SyscallListenForKeyboardInterruptsOutputError {
     /// A different task is currently listening for keyboard interrupts
     InUse,
+    /// Tried to stop listening when you aren't currently listening
+    NotListening,
 }
 pub struct SyscallListenForKeyboardInterrupts;
 impl Syscall for SyscallListenForKeyboardInterrupts {
     const UUID: Uuid = uuid!("4e1a4a2d-1b44-4374-9531-5ccf00f5c782");
-    type Input = ();
+    type Input = ListenAction;
     type Output = Result<(), SyscallListenForKeyboardInterruptsOutputError>;
 }
 

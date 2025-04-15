@@ -1,5 +1,6 @@
 use core::{sync::atomic::Ordering, task::Poll};
 
+use common::syscall_uuids::{IoPortAction, ListenAction, SyscallTakeIoPortInput};
 use futures::Stream;
 use x86_64::instructions::port::Port;
 
@@ -14,15 +15,24 @@ pub struct AsyncKeyboard<'a> {
 
 impl<'a> AsyncKeyboard<'a> {
     pub fn init(executor_context: &'a ExecutorContext) -> Self {
-        syscall_take_io_port(0x60).unwrap();
-        syscall_listen_for_keyboard_interrupts();
+        syscall_take_io_port(&SyscallTakeIoPortInput {
+            port: 0x60,
+            action: IoPortAction::Take,
+        })
+        .unwrap();
+        syscall_listen_for_keyboard_interrupts(&ListenAction::StartListening).unwrap();
         Self { executor_context }
     }
 }
 
 impl Drop for AsyncKeyboard<'_> {
     fn drop(&mut self) {
-        todo!("Tell kernel to stop recording keyboard");
+        syscall_take_io_port(&SyscallTakeIoPortInput {
+            port: 0x60,
+            action: IoPortAction::Release,
+        })
+        .unwrap();
+        syscall_listen_for_keyboard_interrupts(&ListenAction::StopListening).unwrap();
     }
 }
 

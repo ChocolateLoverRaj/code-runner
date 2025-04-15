@@ -7,7 +7,7 @@ use crate::{
     cpu_local_data,
     get_offset_page_table::get_offset_page_table_with_l4,
     hlt_loop::hlt_loop,
-    init_idt_and_gdt::get_iobp,
+    init_idt_and_gdt::get_iopb,
     io_permission_bitmap::IoPermissionBitmap,
     limine_requests::HHDM_REQUEST,
     modules::syscall::enter_user_mode::{enter_user_mode, EnterUserModeInput},
@@ -60,7 +60,7 @@ pub extern "sysv64" fn run_tasks() -> ! {
                                         .get()
                                         .write(kernel_stack_pointer)
                                 };
-                                **get_iobp().lock() = IoPermissionBitmap::new_deny_all();
+                                **get_iopb().lock() = IoPermissionBitmap::new_deny_all();
                                 cpu_task_data.current_task = Some(task.id);
                                 Some(Action::EnterUserMode(EnterUserModeInput {
                                     initialized_syscalls: *cpu_local_data
