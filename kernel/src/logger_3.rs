@@ -17,7 +17,6 @@ use embedded_graphics::{
 use limine::response::FramebufferResponse;
 use log::{Level, LevelFilter, Log};
 use owo_colors::OwoColorize;
-use spinning_top::Spinlock;
 use uart_16550::{
     mmio::MemoryMappedRegister,
     port::PortAccessedRegister,
@@ -25,7 +24,6 @@ use uart_16550::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use x86_64::{
-    instructions::interrupts::without_interrupts,
     registers::control::Cr3,
     structures::paging::{FrameAllocator, Mapper, PageTableFlags, PhysFrame, Size4KiB},
     PhysAddr,
@@ -38,6 +36,7 @@ use crate::{
     get_offset_page_table::get_offset_page_table,
     hhdm_offset::HhdmOffset,
     limine_frame_buffer_embedded_graphics::LimineFrameBufferEmbeddedGraphics,
+    mutex_without_interrupts::LockWithoutInterrupts,
     page_tables_recursive_iterator::PageTablesRecursiveIterator,
 };
 
@@ -76,13 +75,13 @@ struct Logger3Data {
 }
 
 struct Logger3 {
-    data: Spinlock<Logger3Data>,
+    data: LockWithoutInterrupts<Logger3Data>,
 }
 
 impl Logger3 {
     const fn initial_logger() -> Self {
         Self {
-            data: Spinlock::new(Logger3Data {
+            data: LockWithoutInterrupts::new(Logger3Data {
                 frame_buffer: None,
                 serial_port: None,
             }),
@@ -229,8 +228,7 @@ impl Log for Logger3 {
     }
 
     fn log(&self, record: &log::Record) {
-        without_interrupts(|| {
-            let mut data = self.data.lock();
+        self.data.lock_without_interrupts(|data| {
             if let Some(serial_port) = &mut data.serial_port {
                 let log_serial_config = CONFIG.kernel_log_serial.unwrap();
                 if record.level() <= log_serial_config.level_filter {
@@ -252,34 +250,35 @@ impl Log for Logger3 {
 }
 
 pub fn init(frame_buffer_response: Option<&'static FramebufferResponse>) {
-    let mut data = LOGGER.data.lock();
-    if let Some(serial) = CONFIG.kernel_log_serial {
-        if serial.always_log_com1 {
-            data.serial_port = Some(SerialPort::new_com1());
+    LOGGER.data.lock_without_interrupts(|data| {
+        if let Some(serial) = CONFIG.kernel_log_serial {
+            if serial.always_log_com1 {
+                data.serial_port = Some(SerialPort::new_com1());
+            }
         }
-    }
-    if CONFIG.kernel_log_screen.is_some() {
-        if let Some(frame_buffer_response) = frame_buffer_response {
-            if let Some(frame_buffer) = frame_buffer_response.framebuffers().next() {
-                data.frame_buffer = Some(FrameBufferData {
-                    frame_buffer: LimineFrameBufferEmbeddedGraphics::try_from(frame_buffer)
-                        .unwrap(),
-                    position: Default::default(),
-                });
-            };
+        if CONFIG.kernel_log_screen.is_some() {
+            if let Some(frame_buffer_response) = frame_buffer_response {
+                if let Some(frame_buffer) = frame_buffer_response.framebuffers().next() {
+                    data.frame_buffer = Some(FrameBufferData {
+                        frame_buffer: LimineFrameBufferEmbeddedGraphics::try_from(frame_buffer)
+                            .unwrap(),
+                        position: Default::default(),
+                    });
+                };
+            }
         }
-    }
 
-    log::set_logger(&LOGGER).unwrap();
-    log::set_max_level({
-        let mut level_filter = LevelFilter::Off;
-        if let Some(config) = CONFIG.kernel_log_serial {
-            level_filter = level_filter.max(config.level_filter);
-        }
-        if let Some(config) = CONFIG.kernel_log_screen {
-            level_filter = level_filter.max(config.level_filter);
-        }
-        level_filter
+        log::set_logger(&LOGGER).unwrap();
+        log::set_max_level({
+            let mut level_filter = LevelFilter::Off;
+            if let Some(config) = CONFIG.kernel_log_serial {
+                level_filter = level_filter.max(config.level_filter);
+            }
+            if let Some(config) = CONFIG.kernel_log_screen {
+                level_filter = level_filter.max(config.level_filter);
+            }
+            level_filter
+        });
     });
 }
 
@@ -312,50 +311,53 @@ pub fn init_spcr(
     hhdm_offset: HhdmOffset,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) {
-    if let Some(spcr) = spcr {
-        if let Some((base_address, stride)) = get_16550_compatible_mmio(spcr) {
-            // Map the page
-            // Assume that the base address is aligned
-            if stride * 8 > 0x1000 {
-                todo!();
-            }
-            let physical_frame = PhysFrame::<Size4KiB>::from_start_address(base_address).unwrap();
-            let mut offset_page_table = get_offset_page_table(hhdm_offset);
-            let page = find_contiguous_unused_virtual_memory(
-                unsafe { PageTablesRecursiveIterator::new(hhdm_offset, Cr3::read().0, 256) },
-                1,
-            )
-            .unwrap()
-            .start;
-            unsafe {
-                offset_page_table.map_to(
-                    page,
-                    physical_frame,
-                    PageTableFlags::PRESENT
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::NO_CACHE
-                        | PageTableFlags::WRITE_THROUGH,
-                    frame_allocator,
+    LOGGER.data.lock_without_interrupts(|data| {
+        if let Some(spcr) = spcr {
+            if let Some((base_address, stride)) = get_16550_compatible_mmio(spcr) {
+                // Map the page
+                // Assume that the base address is aligned
+                if stride * 8 > 0x1000 {
+                    todo!();
+                }
+                let physical_frame =
+                    PhysFrame::<Size4KiB>::from_start_address(base_address).unwrap();
+                let mut offset_page_table = get_offset_page_table(hhdm_offset);
+                let page = find_contiguous_unused_virtual_memory(
+                    unsafe { PageTablesRecursiveIterator::new(hhdm_offset, Cr3::read().0, 256) },
+                    1,
                 )
-            }
-            .unwrap()
-            .flush();
-            let mut uart = unsafe {
-                uart_16550::mmio::new(
-                    NonNull::new(page.start_address().as_mut_ptr()).unwrap(),
-                    stride,
-                )
+                .unwrap()
+                .start;
+                unsafe {
+                    offset_page_table.map_to(
+                        page,
+                        physical_frame,
+                        PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::NO_CACHE
+                            | PageTableFlags::WRITE_THROUGH,
+                        frame_allocator,
+                    )
+                }
+                .unwrap()
+                .flush();
+                let mut uart = unsafe {
+                    uart_16550::mmio::new(
+                        NonNull::new(page.start_address().as_mut_ptr()).unwrap(),
+                        stride,
+                    )
+                };
+                // Baud rate for Chromebooks: 115200
+                // TODO: Determine baud rate for computers that are not Chromebooks
+                uart.init_with_dl(0x01, 0x00);
+                data.serial_port = Some(SerialPort::Mmio(uart));
+                return;
             };
-            // Baud rate for Chromebooks: 115200
-            // TODO: Determine baud rate for computers that are not Chromebooks
-            uart.init_with_dl(0x01, 0x00);
-            LOGGER.data.lock().serial_port = Some(SerialPort::Mmio(uart));
-            return;
-        };
-    }
-    if !log_serial_config.always_log_com1 {
-        LOGGER.data.lock().serial_port = Some(SerialPort::new_com1());
-    }
+        }
+        if !log_serial_config.always_log_com1 {
+            data.serial_port = Some(SerialPort::new_com1());
+        }
+    });
 }
 
 /// # Safety
@@ -366,12 +368,13 @@ pub unsafe fn force_unlock() {
 
 /// Writes to all log outputs
 pub fn write_all(args: Arguments) -> core::fmt::Result {
-    let mut data = LOGGER.data.lock();
-    if let Some(serial_port) = &mut data.serial_port {
-        serial_port.write_colored(args, LoggerColor::Message)?;
-    }
-    if let Some(frame_buffer_data) = &mut data.frame_buffer {
-        frame_buffer_data.write_colored(args, LoggerColor::Message)?;
-    }
-    Ok(())
+    LOGGER.data.lock_without_interrupts(|data| {
+        if let Some(serial_port) = &mut data.serial_port {
+            serial_port.write_colored(args, LoggerColor::Message)?;
+        }
+        if let Some(frame_buffer_data) = &mut data.frame_buffer {
+            frame_buffer_data.write_colored(args, LoggerColor::Message)?;
+        }
+        Ok(())
+    })
 }

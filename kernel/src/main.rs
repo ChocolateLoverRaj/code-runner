@@ -45,6 +45,7 @@ pub mod log_bootloader_info;
 pub mod log_cpu_info;
 pub mod log_frame_buffer_info;
 pub mod log_kernel_address;
+pub mod mutex_without_interrupts;
 // pub mod log_memory_usage;
 pub mod log_phys_mem_regions;
 pub mod log_ram_disk;
