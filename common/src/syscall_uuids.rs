@@ -93,11 +93,16 @@ impl Syscall for SyscallTakeIoPort {
     type Output = Result<(), SyscallTakeIoPortOutputError>;
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub enum SyscallListenForKeyboardInterruptsOutputError {
+    /// A different task is currently listening for keyboard interrupts
+    InUse,
+}
 pub struct SyscallListenForKeyboardInterrupts;
 impl Syscall for SyscallListenForKeyboardInterrupts {
     const UUID: Uuid = uuid!("4e1a4a2d-1b44-4374-9531-5ccf00f5c782");
     type Input = ();
-    type Output = ();
+    type Output = Result<(), SyscallListenForKeyboardInterruptsOutputError>;
 }
 
 pub struct SyscallWaitUntilEvent;

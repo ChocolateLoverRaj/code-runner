@@ -96,6 +96,7 @@ pub fn spawn_task(
 
         let virtual_range =
             segment.p_vaddr as usize..segment.p_vaddr as usize + segment.p_memsz as usize;
+        log::info!("Segment: {:?}. Virtual Range: {:?}", segment, virtual_range);
         for virtual_chunk in virtual_range.clone().aligned_chunks(0x1000) {
             let page =
                 Page::<Size4KiB>::containing_address(VirtAddr::new(virtual_chunk.start as u64));

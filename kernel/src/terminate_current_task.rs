@@ -16,7 +16,7 @@ use crate::{
 pub fn terminate_current_task() -> ! {
     {
         let mut cpu_task_data = get_local().unwrap().task_data.lock();
-        let process_id = cpu_task_data.current_task.unwrap();
+        let process_id = cpu_task_data.current_task.take().unwrap();
         // Switch Cr3 back to the kernel's Cr3 cuz we will be "deleting" the process's Cr3
         let mut tasks = TASKS.try_get().unwrap().lock();
         {

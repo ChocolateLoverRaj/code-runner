@@ -3,8 +3,8 @@ use core::fmt::Debug;
 use alloc::{boxed::Box, collections::btree_map::BTreeMap};
 use common::syscall_uuids::{
     from_input_without_uuid, get_uuid, serialize_output, Syscall, SyscallExists, SyscallExit,
-    SyscallListenForKeyboardInterrupts, SyscallLog, SyscallTakeIoPort,
-    SyscallTakeIoPortOutputError, SyscallTest, SyscallWaitUntilEvent,
+    SyscallListenForKeyboardInterrupts, SyscallListenForKeyboardInterruptsOutputError, SyscallLog,
+    SyscallTakeIoPort, SyscallTakeIoPortOutputError, SyscallTest, SyscallWaitUntilEvent,
 };
 use spinning_top::Spinlock;
 use uuid::Uuid;
@@ -171,6 +171,7 @@ pub fn get_syscall_handlers() -> impl SyscallHandlerClosure {
         }
         let action = {
             let mut tasks = TASKS.try_get().unwrap().lock();
+            if tasks.keyboard_listener.is_some() {
             let current_task_id = get_local().unwrap().task_data.lock().current_task.unwrap();
             let current_task = tasks
                 .tasks
@@ -193,12 +194,15 @@ pub fn get_syscall_handlers() -> impl SyscallHandlerClosure {
                         log::info!("Enabled interrupts and set IO APIC entry: {:?}", entry);
                         unsafe {  io_apic.set_table_entry(Pic8259Interrupts::Keyboard.into(), entry) };
                         unsafe { io_apic.enable_irq(Pic8259Interrupts::Keyboard.into()) };
-                        Action::Return(())
+                        Action::Return(Ok(()))
                     } else {
                         log::warn!("Task {} tried to listen for keyboard interrupts when it is not allowed to. Terminating.", current_task_id);
                         Action::Terminate
                     }
                 }
+            }
+            } else {
+Action::Return(Err(SyscallListenForKeyboardInterruptsOutputError::InUse))
             }
         };
         match action {
