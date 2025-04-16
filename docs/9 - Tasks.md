@@ -46,3 +46,6 @@ We can start off with a single async event: keyboard input. All you have to do t
 Does it make sense for multiple processes to have access to the keyboard at the same time? I don't think so. It could lead to a mismatch between the number of interrupts and the number of bytes read from the port. So our kernel needs to keep track of which process, if any, "owns" the keyboard. A process that doesn't own the keyboard is not allowed to read from the keyboard port or do the "Wait until keyboard input" syscall.
 
 Now in addition to tasks that continuously use the CPU until they exit, we can now demo up to 1 (active at a time) task which can run for a long time without using 100% of a CPU.
+
+## Take the Frame Buffer
+We want to let programs use the screen. The logger can stop logging to the screen when this happens.

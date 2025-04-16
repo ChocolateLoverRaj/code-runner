@@ -1,11 +1,12 @@
 use common::syscall_uuids::{
     ListenAction, Syscall, SyscallExists, SyscallListenForKeyboardInterrupts,
-    SyscallListenForKeyboardInterruptsOutputError, SyscallLog, SyscallTest, SyscallWaitUntilEvent,
+    SyscallListenForKeyboardInterruptsOutputError, SyscallTest, SyscallWaitUntilEvent,
 };
 use x2apic::ioapic::{IrqMode, RedirectionTableEntry};
 
 use crate::{
     cpu_local_data::get_local,
+    hhdm_offset::HhdmOffset,
     init_idt_and_gdt::MAPPED_APICS,
     pic8259_interrupts::Pic8259Interrupts,
     run_tasks::run_tasks,
@@ -14,11 +15,11 @@ use crate::{
 };
 
 use super::{
-    exit::SyscallExitHandler, raw_syscall_handler::SyscallHandlerClosure,
+    exit::SyscallExitHandler, log::SyscallLogHandler, raw_syscall_handler::SyscallHandlerClosure,
     syscall_handlers::SyscallHandlers, take_io_port::setup_take_io_port,
 };
 
-pub fn get_syscall_handlers() -> impl SyscallHandlerClosure {
+pub fn get_syscall_handlers(hhdm_offset: HhdmOffset) -> impl SyscallHandlerClosure {
     let mut syscall_handlers = SyscallHandlers::default();
     syscall_handlers.insert::<SyscallTest>(|input, _, _| {
         if input == SyscallTest::TEST_INPUT {
@@ -31,11 +32,7 @@ pub fn get_syscall_handlers() -> impl SyscallHandlerClosure {
     syscall_handlers.insert_2(SyscallExitHandler);
     syscall_handlers
         .insert::<SyscallExists>(|uuid, _, syscall_handlers| syscall_handlers.contains_key(&uuid));
-    syscall_handlers.insert::<SyscallLog>(|message, _, _| {
-        // FIXME: Check pointer
-        let message = core::str::from_utf8(unsafe { message.to_slice() }).unwrap();
-        log::info!("User space says {:?}", message);
-    });
+    syscall_handlers.insert_2(SyscallLogHandler { hhdm_offset });
     setup_take_io_port(&mut syscall_handlers);
     syscall_handlers.insert::<SyscallListenForKeyboardInterrupts>(|listen_action, _, _| {
         enum Action {

@@ -73,6 +73,7 @@ fn main() {
                     allowed_ports
                 }),
                 keyboard_interrupts: true,
+                screen: true,
             },
         },
         elf: Cow::Owned(fs::read(&user_space_elf_path).unwrap()),

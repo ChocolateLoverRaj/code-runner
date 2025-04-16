@@ -66,6 +66,7 @@ pub mod set_color;
 pub mod spawn_task;
 // pub mod spcr;
 pub mod call_stack_iterator;
+pub mod screen_lock;
 pub mod split_draw_target;
 pub mod store_but_borrow_mut;
 pub mod terminate_current_task;

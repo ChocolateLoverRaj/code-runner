@@ -378,3 +378,10 @@ pub fn write_all(args: Arguments) -> core::fmt::Result {
         Ok(())
     })
 }
+
+/// Stops using the frame buffer for logging so that you can use it in other code
+pub fn stop_using_frame_buffer() {
+    LOGGER.data.lock_without_interrupts(|data| {
+        data.frame_buffer = None;
+    });
+}

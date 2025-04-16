@@ -16,4 +16,6 @@ pub struct Permissions<'a> {
     #[serde(borrow)]
     pub ports: Cow<'a, [u16]>,
     pub keyboard_interrupts: bool,
+    /// If the process is allowed access to the entire screen
+    pub screen: bool,
 }

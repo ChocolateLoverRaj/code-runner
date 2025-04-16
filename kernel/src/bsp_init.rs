@@ -33,6 +33,7 @@ use crate::{
     parse_ram_disk::parse_ram_disk,
     physical_memory::{self},
     rsdp_addr::RsdpAddr,
+    screen_lock::{WhoIsUsingScreen, SCREEN_LOCK},
     spawn_task::spawn_task,
     tasks::{try_init_tasks, TASKS},
 };
@@ -48,6 +49,7 @@ pub unsafe fn init() -> ! {
     let frame_buffer_response = FRAME_BUFFER_REQUEST.get_response();
     logger_3::init(frame_buffer_response);
     log::info!("Initialized logger to log on COM1 and the screen (if applicable)");
+    *SCREEN_LOCK.lock() = Some(WhoIsUsingScreen::KernelLogger);
 
     let rsdp_addr = RsdpAddr::try_from(&RSDP_REQUEST).unwrap();
 
@@ -59,6 +61,7 @@ pub unsafe fn init() -> ! {
         unsafe { AvailablePhysicalFrameIteratorFrameAllocator::new(iterator) }
     });
     let hhdm_offset = HhdmOffset::try_from(&HHDM_REQUEST).unwrap();
+    log::debug!("HHDM offset: {:?}", hhdm_offset);
     let acpi_tables = unsafe {
         acpi::AcpiTables::from_rsdp(
             AcpiHandlerImpl::new(hhdm_offset, &frame_allocator),

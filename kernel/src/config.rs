@@ -25,7 +25,7 @@ pub const CONFIG: Config = Config {
     kernel_log_serial: Some(LogSerialConfig {
         always_log_com1: true,
         colors: true,
-        level_filter: LevelFilter::Info,
+        level_filter: LevelFilter::Debug,
     }),
     kernel_log_screen: Some(LogScreenConfig {
         font: embedded_graphics::mono_font::iso_8859_16::FONT_10X20,

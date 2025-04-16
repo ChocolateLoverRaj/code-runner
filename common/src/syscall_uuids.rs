@@ -130,3 +130,44 @@ impl Syscall for SyscallWaitUntilEvent {
     type Input = ();
     type Output = ();
 }
+
+// Screen
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ScreenInfo {
+    pub address: usize,
+    pub width: u64,
+    pub height: u64,
+    pub stride: u64,
+    pub bits_per_pixel: u16,
+    pub red_mask_size: u8,
+    pub red_mask_shift: u8,
+    pub green_mask_size: u8,
+    pub green_mask_shift: u8,
+    pub blue_mask_size: u8,
+    pub blue_mask_shift: u8,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub enum SyscallTakeScreenError {
+    /// The screen is being used
+    InUse,
+    /// There is no screen available
+    NoScreenAvailable,
+}
+pub struct SyscallTakeScreen;
+impl Syscall for SyscallTakeScreen {
+    const UUID: Uuid = uuid!("d5997323-ab9f-49f4-8927-6bdaf0948894");
+    type Input = ();
+    type Output = Result<ScreenInfo, SyscallTakeScreenError>;
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum SyscallReleaseScreenError {
+    /// You do not currently own access to the screen
+    NotOwned,
+}
+pub struct SyscallReleaseScreen;
+impl Syscall for SyscallReleaseScreen {
+    const UUID: Uuid = uuid!("86b7e3bc-7516-4242-bbab-1dcd92f68826");
+    type Input = ();
+    type Output = Result<ScreenInfo, SyscallReleaseScreenError>;
+}

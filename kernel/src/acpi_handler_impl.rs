@@ -38,11 +38,11 @@ impl AcpiHandler for AcpiHandlerImpl<'_> {
         physical_address: usize,
         size: usize,
     ) -> acpi::PhysicalMapping<Self, T> {
-        // log::debug!(
-        //     "Mapping phys: 0x{:X} with len 0x{:X}",
-        //     physical_address,
-        //     size
-        // );
+        log::debug!(
+            "Mapping phys: 0x{:X} with len 0x{:X}",
+            physical_address,
+            size
+        );
         let page_count =
             (physical_address + size).div_ceil(0x1000) - physical_address.div_floor(0x1000);
         let pages = find_contiguous_unused_virtual_memory(
@@ -50,6 +50,7 @@ impl AcpiHandler for AcpiHandlerImpl<'_> {
             page_count as u64,
         )
         .unwrap();
+        // FIXME: we can't assume it's page aligned
         let first_phys_frame =
             PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(physical_address as u64));
         let mut offset_page_table = get_offset_page_table(self.hhdm_offset.into());
@@ -70,6 +71,7 @@ impl AcpiHandler for AcpiHandlerImpl<'_> {
         unsafe {
             acpi::PhysicalMapping::new(
                 physical_address,
+                // FIXME: we can't assume it's page aligned
                 NonNull::new(pages.start.start_address().as_mut_ptr()).unwrap(),
                 size,
                 // TODO: Actual mapped len may be more than this, could improve performance to give actual mapped len
