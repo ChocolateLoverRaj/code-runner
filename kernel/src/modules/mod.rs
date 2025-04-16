@@ -7,7 +7,6 @@ pub mod panicking_double_fault_handler;
 pub mod panicking_invalid_opcode_handler;
 pub mod panicking_invalid_tss_fault_handler;
 pub mod panicking_local_apic_error_interrupt_handler;
-pub mod panicking_page_fault_handler;
 pub mod panicking_security_exception_fault_handler;
 pub mod panicking_segment_not_present_handler;
 pub mod panicking_spurious_interrupt_handler;

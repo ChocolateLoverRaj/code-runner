@@ -23,6 +23,7 @@ pub mod apic;
 pub mod combined_logger;
 pub mod config;
 pub mod context;
+pub mod io_ports_lock;
 // pub mod cpu_local;
 pub mod check_pointer;
 pub mod cpu_local_data;
@@ -55,6 +56,7 @@ pub mod map_local_xapic;
 pub mod modules;
 pub mod nmi_handler;
 pub mod not_const_allocator;
+#[cfg(not(test))]
 pub mod panic_handler;
 pub mod parse_ram_disk;
 pub mod pic8259_interrupts;

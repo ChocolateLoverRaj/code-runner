@@ -3,6 +3,7 @@ use core::arch::naked_asm;
 use common::syscall_uuids::{serialize_output, SyscallWaitUntilEvent};
 use x86_64::{
     registers::{
+        control::Cr3,
         model_specific::{GsBase, KernelGsBase},
         segmentation::GS,
     },
@@ -13,7 +14,10 @@ use x86_64::{
 use crate::{
     context::{AnyContext, FullContext, SyscallContext},
     cpu_local_data::get_local,
-    tasks::{TaskState, TASKS},
+    init_idt_and_gdt::get_iopb,
+    io_permission_bitmap::IoPermissionBitmap,
+    io_ports_lock::IO_PORT_USAGE,
+    tasks::{TaskState, TaskType, TASKS},
 };
 
 #[naked]
@@ -60,18 +64,16 @@ unsafe extern "sysv64" fn keyboard_interrupt_handler_rust(context: &FullContext)
             false
         };
 
-    {
+    let context = {
+        let cpu_local_data = get_local().unwrap();
         unsafe {
-            get_local()
-                .unwrap()
+            cpu_local_data
                 .local_apic
                 .try_get()
                 .unwrap()
                 .lock()
                 .end_of_interrupt()
         };
-    }
-    let context = {
         let mut tasks = TASKS.try_get().unwrap().lock();
         let keyboard_listener_task_id = tasks.keyboard_listener.as_ref().unwrap().task_id;
         let task = tasks
@@ -79,20 +81,55 @@ unsafe extern "sysv64" fn keyboard_interrupt_handler_rust(context: &FullContext)
             .iter_mut()
             .find(|task| task.id == keyboard_listener_task_id)
             .unwrap();
-        if let TaskState::WaitingUntilEvent(pushed_registers) = &task.state {
+        if let TaskState::WaitingUntilEvent(state) = &task.state {
             let s = SyscallContext::from_syscall_output(
-                pushed_registers,
+                state,
                 serialize_output::<SyscallWaitUntilEvent>(&()).unwrap(),
             );
             task.state = TaskState::Running;
+            match &task.task_type {
+                TaskType::User(data) => {
+                    let cr3_flags = Cr3::read().1;
+                    unsafe { Cr3::write(data.cr3, cr3_flags) };
+                    let kernel_stack_pointer = data.kernel_stack.top().as_u64();
+                    unsafe {
+                        cpu_local_data
+                            .kernel_stack_pointer
+                            .get()
+                            .write(kernel_stack_pointer)
+                    };
+                    cpu_local_data.task_data.lock().current_task = Some(task.id);
+                    let mut iopb = get_iopb().lock();
+                    **iopb = IoPermissionBitmap::new_deny_all();
+                    let io_ports_usage = IO_PORT_USAGE.lock();
+                    io_ports_usage
+                        .iter()
+                        .filter_map(|(port, id)| {
+                            if id == &keyboard_listener_task_id {
+                                Some(*port)
+                            } else {
+                                None
+                            }
+                        })
+                        .for_each(|port| {
+                            log::debug!("setting port allowed: {}", port);
+                            iopb.set_port_allowed(port, true);
+                        });
+                }
+            }
             tasks
                 .keyboard_listener
                 .as_mut()
                 .unwrap()
                 .pending_interrupt_received = false;
-            log::debug!("Restoring context with GS.Base: {:?}", KernelGsBase::read());
+            log::debug!(
+                "Restoring context with GS.Base: {:?}. Context: {:?}",
+                KernelGsBase::read(),
+                s
+            );
             // Make sure that when we enter user mode it is with user mode's gs base
             unsafe { GS::swap() };
+
             AnyContext::Syscall(s)
         } else {
             tasks

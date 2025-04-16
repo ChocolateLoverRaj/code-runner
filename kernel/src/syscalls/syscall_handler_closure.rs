@@ -10,7 +10,7 @@ use crate::{
     init_idt_and_gdt::MAPPED_APICS,
     pic8259_interrupts::Pic8259Interrupts,
     run_tasks::run_tasks,
-    tasks::{KeyboardEventListener, TaskState, TaskType, TASKS},
+    tasks::{KeyboardEventListener, SavedSyscallState, TaskState, TaskType, TASKS},
     terminate_current_task::terminate_current_task,
 };
 
@@ -102,7 +102,8 @@ pub fn get_syscall_handlers(hhdm_offset: HhdmOffset) -> impl SyscallHandlerClosu
         }
         let action = {
             let mut tasks = TASKS.try_get().unwrap().lock();
-            let current_task_id = get_local().unwrap().task_data.lock().current_task.unwrap();
+            let cpu_local_data = get_local().unwrap();
+            let current_task_id = cpu_local_data.task_data.lock().current_task.unwrap();
             match &mut tasks.keyboard_listener {
                 Some(keyboard_event_listener) => {
                     if keyboard_event_listener.task_id == current_task_id {
@@ -115,7 +116,12 @@ pub fn get_syscall_handlers(hhdm_offset: HhdmOffset) -> impl SyscallHandlerClosu
                                 .iter_mut()
                                 .find(|task| task.id == current_task_id)
                                 .unwrap();
-                            current_task.state = TaskState::WaitingUntilEvent(*pushed_registers);
+                            current_task.state = TaskState::WaitingUntilEvent(SavedSyscallState {
+                                pushed_registers: *pushed_registers,
+                                stack_pointer: unsafe {
+                                    cpu_local_data.user_stack_pointer.get().read()
+                                },
+                            });
                             Action::RunTasks
                         }
                     } else {

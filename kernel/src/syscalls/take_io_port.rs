@@ -1,12 +1,11 @@
-use alloc::collections::btree_map::BTreeMap;
 use common::syscall_uuids::{
-    IoPortAction, Syscall, SyscallTakeIoPort, SyscallTakeIoPortInput, SyscallTakeIoPortOutputError
+    IoPortAction, Syscall, SyscallTakeIoPort, SyscallTakeIoPortInput, SyscallTakeIoPortOutputError,
 };
-use spinning_top::Spinlock;
 
 use crate::{
     cpu_local_data::get_local,
     init_idt_and_gdt::get_iopb,
+    io_ports_lock::IO_PORT_USAGE,
     tasks::{TaskType, TASKS},
     terminate_current_task::terminate_current_task,
 };
@@ -15,7 +14,6 @@ use super::syscall_handlers::SyscallHandlers;
 
 pub fn setup_take_io_port(syscall_handlers: &mut SyscallHandlers) {
     // TODO: We are going to run into lock problems later
-    static IO_PORT_USAGE: Spinlock<BTreeMap<u16, usize>> = Spinlock::new(BTreeMap::new());
     syscall_handlers.insert::<SyscallTakeIoPort>(
         |SyscallTakeIoPortInput { action, port }, _, _| {
             enum Action {
@@ -60,13 +58,13 @@ pub fn setup_take_io_port(syscall_handlers: &mut SyscallHandlers) {
                                                 Action::Return(Err(SyscallTakeIoPortOutputError::NotOwned))
                                             }
                                         },
-                                        None => { 
+                                        None => {
                                             Action::Return(Err(SyscallTakeIoPortOutputError::NotOwned))
                                         }
                                     }
                                 }
                             }
-                           
+
                         } else {
                             Action::Return(Err(SyscallTakeIoPortOutputError::OutOfIopb))
                         }

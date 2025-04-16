@@ -32,10 +32,16 @@ pub struct ReadyToStartState {
 }
 
 #[derive(Debug)]
+pub struct SavedSyscallState {
+    pub pushed_registers: PushedRegisters,
+    pub stack_pointer: u64,
+}
+
+#[derive(Debug)]
 pub enum TaskState {
     ReadyToStart(ReadyToStartState),
     Running,
-    WaitingUntilEvent(PushedRegisters),
+    WaitingUntilEvent(SavedSyscallState),
 }
 
 #[derive(Debug)]

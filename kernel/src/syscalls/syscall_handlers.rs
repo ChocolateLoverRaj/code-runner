@@ -7,6 +7,8 @@ use x86_64::registers::segmentation::GS;
 
 use crate::{
     context::{Context, SyscallContext},
+    cpu_local_data::get_local,
+    tasks::SavedSyscallState,
     terminate_current_task::terminate_current_task,
 };
 
@@ -104,7 +106,15 @@ unsafe impl SyscallHandlerClosure for SyscallHandlers {
             }
             Some(syscall_handler) => {
                 let output = syscall_handler(&input, pushed_registers, &self.handlers);
-                let s = SyscallContext::from_syscall_output(pushed_registers, output);
+                let s = SyscallContext::from_syscall_output(
+                    &SavedSyscallState {
+                        pushed_registers: *pushed_registers,
+                        stack_pointer: unsafe {
+                            get_local().unwrap().user_stack_pointer.get().read()
+                        },
+                    },
+                    output,
+                );
                 unsafe { GS::swap() };
                 unsafe { s.restore() }
             }
