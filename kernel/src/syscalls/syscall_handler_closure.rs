@@ -1,5 +1,5 @@
 use common::syscall_uuids::{
-    ListenAction, Syscall, SyscallExists, SyscallExit, SyscallListenForKeyboardInterrupts,
+    ListenAction, Syscall, SyscallExists, SyscallListenForKeyboardInterrupts,
     SyscallListenForKeyboardInterruptsOutputError, SyscallLog, SyscallTest, SyscallWaitUntilEvent,
 };
 use x2apic::ioapic::{IrqMode, RedirectionTableEntry};
@@ -14,8 +14,8 @@ use crate::{
 };
 
 use super::{
-    raw_syscall_handler::SyscallHandlerClosure, syscall_handlers::SyscallHandlers,
-    take_io_port::setup_take_io_port,
+    exit::SyscallExitHandler, raw_syscall_handler::SyscallHandlerClosure,
+    syscall_handlers::SyscallHandlers, take_io_port::setup_take_io_port,
 };
 
 pub fn get_syscall_handlers() -> impl SyscallHandlerClosure {
@@ -28,10 +28,7 @@ pub fn get_syscall_handlers() -> impl SyscallHandlerClosure {
         }
         SyscallTest::TEST_OUTPUT
     });
-    syscall_handlers.insert::<SyscallExit>(|_, _, _| {
-        log::info!("Syscall exit called");
-        terminate_current_task()
-    });
+    syscall_handlers.insert_2(SyscallExitHandler);
     syscall_handlers
         .insert::<SyscallExists>(|uuid, _, syscall_handlers| syscall_handlers.contains_key(&uuid));
     syscall_handlers.insert::<SyscallLog>(|message, _, _| {

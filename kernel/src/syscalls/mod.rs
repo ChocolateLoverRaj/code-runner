@@ -1,3 +1,4 @@
+pub mod exit;
 pub mod raw_syscall_handler;
 pub mod syscall_handler_closure;
 pub mod syscall_handlers;

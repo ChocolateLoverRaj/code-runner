@@ -35,6 +35,17 @@ fn make_syscall_handler<T: Syscall>(
     }
 }
 
+pub trait SyscallHandler2: Send + Sync {
+    type Syscall: Syscall;
+
+    fn handle_syscall(
+        &self,
+        input: <Self::Syscall as Syscall>::Input,
+        pushed_registers: &mut PushedRegisters,
+        syscalls: &dyn Includes<Uuid>,
+    ) -> <Self::Syscall as Syscall>::Output;
+}
+
 #[derive(Default)]
 pub struct SyscallHandlers {
     handlers: BTreeMap<Uuid, Box<SyscallHandler>>,
@@ -49,6 +60,17 @@ impl SyscallHandlers {
     ) {
         self.handlers
             .insert(T::UUID, Box::new(make_syscall_handler::<T>(handler)));
+    }
+
+    pub fn insert_2<T: SyscallHandler2 + 'static>(&mut self, handler: T) {
+        self.handlers.insert(
+            T::Syscall::UUID,
+            Box::new(move |input, pushed_registers, syscalls| {
+                let input = from_input_without_uuid::<T::Syscall>(input).unwrap();
+                let output = handler.handle_syscall(input, pushed_registers, syscalls);
+                serialize_output::<T::Syscall>(&output).unwrap()
+            }),
+        );
     }
 }
 
