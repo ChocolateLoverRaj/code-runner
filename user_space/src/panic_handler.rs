@@ -3,6 +3,7 @@ use core::panic::PanicInfo;
 
 use crate::syscall::{syscall_exit, syscall_print};
 
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(panic_info: &PanicInfo) -> ! {
     // TODO: Nicer error display

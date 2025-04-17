@@ -21,6 +21,7 @@ pub enum CheckPointerError {
 }
 
 /// Checks if a pointer will cause a page fault
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn check_pointer<T>(
     ptr: *const T,
     hhdm_offset: HhdmOffset,

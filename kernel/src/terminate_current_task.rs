@@ -35,13 +35,12 @@ pub fn terminate_current_task() -> ! {
         physical_memory
             .clone()
             .into_iter()
-            .for_each(|(range, state)| match state {
-                PhysicalMemoryState::Used(UsedBy::UserSpace(task_id)) => {
+            .for_each(|(range, state)| {
+                if let PhysicalMemoryState::Used(UsedBy::UserSpace(task_id)) = state {
                     if task.id == task_id {
                         physical_memory.insert(range, PhysicalMemoryState::Available);
                     }
                 }
-                _ => {}
             });
 
         match tasks.tasks.remove(task_index).task_type {

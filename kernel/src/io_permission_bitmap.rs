@@ -28,7 +28,7 @@ impl<const N: usize> IoPermissionBitmap<N> {
         let bit_index = port % 8;
 
         // Check if the specific bit is 0 (allowed) or 1 (denied)
-        !((self.bitmap[byte_index] >> bit_index) & 1 == 0)
+        (self.bitmap[byte_index] >> bit_index) & 1 != 0
     }
 
     pub fn set_port_allowed(&mut self, port: u16, is_allowed: bool) {

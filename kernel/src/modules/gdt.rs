@@ -18,8 +18,7 @@ impl Gdt {
     /// Returns the value of the CS selector that will be set once the GDT is loaded
     pub const fn cs() -> SegmentSelector {
         let mut gdt = GlobalDescriptorTable::new();
-        let kernel_code_selector = gdt.append(Descriptor::kernel_code_segment());
-        kernel_code_selector
+        gdt.append(Descriptor::kernel_code_segment())
     }
 
     pub fn new<const N: usize>(tss: ReadyTssPointer<N>) -> Self {

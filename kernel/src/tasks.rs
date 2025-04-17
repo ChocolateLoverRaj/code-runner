@@ -79,13 +79,6 @@ pub static TASKS: InitLater<Spinlock<Tasks>> = InitLater::uninit();
 
 pub static NEXT_TASK_ID: AtomicUsize = AtomicUsize::new(0);
 
-pub fn get_running_task(tasks: &mut Vec<Task>) -> Option<&mut Task> {
-    tasks.iter_mut().find(|task| match task.state {
-        TaskState::Running => true,
-        _ => false,
-    })
-}
-
 pub fn try_init_tasks() -> Result<&'static Spinlock<Tasks>, TryInitError> {
     TASKS.try_init(Spinlock::new(Tasks::from_current_cr3()))
 }

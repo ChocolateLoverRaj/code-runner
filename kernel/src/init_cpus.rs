@@ -1,6 +1,4 @@
 use alloc::boxed::Box;
-use common::ram_disk::RamDisk;
-use util::init_later::InitLater;
 
 use crate::{
     cpu_local_data::{self, get_local},
@@ -13,8 +11,6 @@ use crate::{
         syscall_handler_closure::get_syscall_handlers,
     },
 };
-
-static RAM_DISK: InitLater<RamDisk<'static>> = InitLater::uninit();
 
 /// # Safety
 /// Must be called exactly once, after BSP init

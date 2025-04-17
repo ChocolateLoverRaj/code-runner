@@ -13,7 +13,7 @@ pub fn execute_future<T>(future: impl Future<Output = T>, executor_context: &Exe
     pin_mut!(future);
     // We don't care about getting woken up because we will call poll after receiving any event
     let waker = Waker::noop();
-    let mut context = Context::from_waker(&waker);
+    let mut context = Context::from_waker(waker);
     loop {
         match future.as_mut().poll(&mut context) {
             Poll::Ready(value) => break value,

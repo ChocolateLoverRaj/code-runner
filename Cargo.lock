@@ -262,8 +262,11 @@ version = "0.1.0"
 dependencies = [
  "bootloader_api",
  "bytemuck",
+ "embedded-graphics",
+ "limine",
  "postcard",
  "serde",
+ "thiserror 2.0.12",
  "uuid",
  "zerocopy 0.8.23",
 ]

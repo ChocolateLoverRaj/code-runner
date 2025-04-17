@@ -59,8 +59,7 @@ pub unsafe fn raw_syscall(inputs_and_ouputs: &mut [u64; 7]) {
 unsafe fn syscall<T: Syscall>(input: &T::Input) -> T::Output {
     let mut input_and_output = serialize_to_input_with_uuid::<T>(input).unwrap();
     unsafe { raw_syscall(&mut input_and_output) };
-    let output = deserialize_output::<T>(&input_and_output).unwrap();
-    output
+    deserialize_output::<T>(&input_and_output).unwrap()
 }
 
 pub fn syscall_test() {

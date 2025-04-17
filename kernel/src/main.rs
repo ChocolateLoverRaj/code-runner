@@ -56,7 +56,6 @@ pub mod map_local_xapic;
 pub mod modules;
 pub mod nmi_handler;
 pub mod not_const_allocator;
-#[cfg(not(test))]
 pub mod panic_handler;
 pub mod parse_ram_disk;
 pub mod pic8259_interrupts;
@@ -85,7 +84,6 @@ pub mod find_contiguous_unused_virtual_memory;
 pub mod get_offset_page_table;
 pub mod init_idt_and_gdt;
 pub mod interrupt_handlers;
-pub mod limine_frame_buffer_embedded_graphics;
 pub mod logger_3;
 pub mod page_tables_recursive_iterator;
 pub mod tasks;

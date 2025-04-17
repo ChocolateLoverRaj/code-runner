@@ -20,6 +20,8 @@ use crate::{
     tasks::{TaskState, TaskType, TASKS},
 };
 
+/// # Safety
+/// This function should only be called as a keyboard interrupt handler, and not manually.
 #[naked]
 pub unsafe extern "sysv64" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
     unsafe {

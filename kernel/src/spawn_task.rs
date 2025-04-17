@@ -53,7 +53,7 @@ pub fn spawn_task(
     hhdm_offset: HhdmOffset,
 ) -> Result<(), SpawnTaskError> {
     let elf = ElfBytes::<NativeEndian>::minimal_parse(&program.elf)
-        .map_err(|e| SpawnTaskError::ElfParseError(e))?;
+        .map_err(SpawnTaskError::ElfParseError)?;
     let loadable_segments = elf
         .segments()
         .ok_or(SpawnTaskError::NoSegments)?
@@ -62,7 +62,7 @@ pub fn spawn_task(
     let start_symbol = {
         let (symbols_parsing_table, symbols_strings) = elf
             .symbol_table()
-            .map_err(|e| SpawnTaskError::ElfParseError(e))?
+            .map_err(SpawnTaskError::ElfParseError)?
             .ok_or(SpawnTaskError::NoSymbolTable)?;
         symbols_parsing_table
             .into_iter()
@@ -77,7 +77,7 @@ pub fn spawn_task(
                 },
             )
             .ok_or(SpawnTaskError::NoStartSymbol)?
-            .map_err(|e| SpawnTaskError::ElfParseError(e))?
+            .map_err(SpawnTaskError::ElfParseError)?
     };
     let mut elf_end = Page::<Size4KiB>::from_start_address(VirtAddr::zero()).unwrap();
     let id = NEXT_TASK_ID.fetch_add(1, Ordering::Relaxed);
@@ -92,7 +92,7 @@ pub fn spawn_task(
     for segment in loadable_segments {
         let segment_data = elf
             .segment_data(&segment)
-            .map_err(|e| SpawnTaskError::ElfParseError(e))?;
+            .map_err(SpawnTaskError::ElfParseError)?;
 
         let virtual_range =
             segment.p_vaddr as usize..segment.p_vaddr as usize + segment.p_memsz as usize;
@@ -113,7 +113,7 @@ pub fn spawn_task(
                     &mut frame_allocator,
                 )
             }
-            .map_err(|e| SpawnTaskError::MapPageError(e))?
+            .map_err(SpawnTaskError::MapPageError)?
             // No need to flush because it's not active yet
             .ignore();
             let offset_mapped_addr =
@@ -198,7 +198,7 @@ pub fn spawn_task(
                 &mut frame_allocator,
             )
         }
-        .map_err(|e| SpawnTaskError::MapPageError(e))?
+        .map_err(SpawnTaskError::MapPageError)?
         .ignore();
     }
 

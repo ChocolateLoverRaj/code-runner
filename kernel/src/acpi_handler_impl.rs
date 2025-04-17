@@ -52,7 +52,7 @@ impl AcpiHandler for AcpiHandlerImpl<'_> {
         .unwrap();
         let first_phys_frame =
             PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(physical_address as u64));
-        let mut offset_page_table = get_offset_page_table(self.hhdm_offset.into());
+        let mut offset_page_table = get_offset_page_table(self.hhdm_offset);
 
         for i in 0..page_count {
             unsafe {
@@ -88,7 +88,7 @@ impl AcpiHandler for AcpiHandlerImpl<'_> {
         let end_addr_exclusive = start_addr + region.mapped_length() as u64;
         let start_page = Page::<Size4KiB>::containing_address(start_addr);
         let end_page = Page::<Size4KiB>::containing_address(end_addr_exclusive - 1);
-        let mut offset_page_table = get_offset_page_table(region.handler().hhdm_offset.into());
+        let mut offset_page_table = get_offset_page_table(region.handler().hhdm_offset);
         for page in start_page..=end_page {
             offset_page_table.unmap(page).unwrap().1.flush();
         }

@@ -1,3 +1,4 @@
+use alloc::collections::btree_map;
 use common::syscall_uuids::{
     IoPortAction, Syscall, SyscallTakeIoPort, SyscallTakeIoPortInput, SyscallTakeIoPortOutputError,
 };
@@ -36,8 +37,8 @@ pub fn setup_take_io_port(syscall_handlers: &mut SyscallHandlers) {
                             match action {
                                 IoPortAction::Take => {
                                     if task_data.permissions.ports.contains(&port) {
-                                        if !m.contains_key(&port) {
-                                            m.insert(port, current_task_id);
+                                        if let btree_map::Entry::Vacant(e) = m.entry(port) {
+                                            e.insert(current_task_id);
                                             iopb.set_port_allowed(port, true);
                                             Action::Return(Ok(()))
                                         } else {

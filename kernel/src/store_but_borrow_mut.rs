@@ -24,9 +24,10 @@ impl<T> StoreButBorrowMut<T> {
 
     /// You can only call this function once (and it checks in runtime). If this function was called for the first time, it returns `Ok` with a mut ref to the data you just stored. If this function was already back, it returns `Err` and gives you back the data.
     pub fn store_but_borrow_mut(&self, data: T) -> Result<&mut T, T> {
-        if let Ok(_) =
-            self.did_store
-                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        if self
+            .did_store
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
         {
             // SAFETY: We have exclusive access to the data, and we do initialize it
             Ok(unsafe {

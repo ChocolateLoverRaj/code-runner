@@ -54,8 +54,8 @@ pub fn test_allocator(max_size: usize) {
             v.capacity()
         );
         v.push(2);
-        for i in 0..original_capacity {
-            assert_eq!(v[i], 1);
+        for item in &v {
+            assert_eq!(*item, 1);
         }
         assert_eq!(v[original_capacity], 2);
         drop(v);

@@ -34,12 +34,12 @@ impl BacktraceDisplay {
 
 impl Display for BacktraceDisplay {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        writeln!(f, "stack backtrace:");
+        writeln!(f, "stack backtrace:")?;
         self.entries
             .iter()
             .enumerate()
-            .map(|(index, entry)| {
-                write!(f, "   {}: ", index);
+            .try_for_each(|(index, entry)| {
+                write!(f, "   {}: ", index)?;
                 if let Some(function_name) = &entry.function_name {
                     write!(f, "{}", function_name)?;
                 } else {
@@ -48,7 +48,7 @@ impl Display for BacktraceDisplay {
                 writeln!(f)?;
                 write!(f, "          at ")?;
                 if let Some(file) = &entry.file {
-                    write!(f, "{}", file.name);
+                    write!(f, "{}", file.name)?;
                     if let Some(line) = &file.line_number {
                         write!(f, ":{}", line.line_number)?;
                         if let Some(column) = line.column_number {
@@ -60,8 +60,7 @@ impl Display for BacktraceDisplay {
                 }
                 writeln!(f)?;
                 Ok::<_, core::fmt::Error>(())
-            })
-            .collect::<core::fmt::Result>()?;
+            })?;
         Ok(())
     }
 }

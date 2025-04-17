@@ -1,7 +1,4 @@
-use core::{
-    cell::RefCell,
-    ops::{Deref, DerefMut},
-};
+use core::{cell::RefCell, ops::DerefMut};
 
 use acpi::spcr::Spcr;
 
@@ -72,7 +69,7 @@ pub unsafe fn init() -> ! {
     if let Some(log_serial_config) = &CONFIG.kernel_log_serial {
         let spcr = acpi_tables.find_table::<Spcr>().ok();
         logger_3::init_spcr(
-            spcr.as_ref().map(|spcr| spcr.deref()),
+            spcr.as_deref(),
             log_serial_config,
             hhdm_offset,
             frame_allocator.borrow_mut().deref_mut(),

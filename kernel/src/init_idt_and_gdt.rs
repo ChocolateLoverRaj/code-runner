@@ -58,8 +58,10 @@ pub struct StaticStuff2 {
     gdt: Gdt,
     iopb: Spinlock<&'static mut [u8; IOPB_SIZE]>,
     /// The that the CPU uses for the double fault handler
+    #[allow(unused)]
     double_fault_handler_stack: BoxedStack,
     /// The stack that the CPU uses for other fault handlers
+    #[allow(unused)]
     other_fault_handler_stack: BoxedStack,
     /// The stack that the CPU uses when transitioning from user mode to kernel mode to call an interrupt handler
     priv_tss_stack: BoxedStack,

@@ -7,6 +7,9 @@ use acpi::{
     address::AddressSpace,
     spcr::{Spcr, SpcrInterfaceType},
 };
+use common::{
+    frame_buffer_embedded_graphics::FrameBufferEmbeddedGraphics, screen_info::ScreenInfoWithAddress,
+};
 use embedded_graphics::{
     mono_font::{MonoFont, MonoTextStyleBuilder},
     pixelcolor::Rgb888,
@@ -35,7 +38,6 @@ use crate::{
     find_contiguous_unused_virtual_memory::find_contiguous_unused_virtual_memory,
     get_offset_page_table::get_offset_page_table,
     hhdm_offset::HhdmOffset,
-    limine_frame_buffer_embedded_graphics::LimineFrameBufferEmbeddedGraphics,
     mutex_without_interrupts::LockWithoutInterrupts,
     page_tables_recursive_iterator::PageTablesRecursiveIterator,
 };
@@ -65,7 +67,7 @@ impl SerialPort {
 }
 
 struct FrameBufferData {
-    frame_buffer: LimineFrameBufferEmbeddedGraphics<'static>,
+    frame_buffer: ScreenInfoWithAddress,
     position: Point,
 }
 
@@ -123,10 +125,10 @@ impl WriteColored for FrameBufferData {
         // The only way to iter &str from format args is to implement `Writer` and use `write!` macro.
         struct Writer<'a, 'b> {
             font: &'a MonoFont<'a>,
-            display: &'a mut LimineFrameBufferEmbeddedGraphics<'b>,
+            display: &'a mut FrameBufferEmbeddedGraphics<'b>,
             position: &'a mut Point,
-            text_color: <LimineFrameBufferEmbeddedGraphics<'a> as DrawTarget>::Color,
-            background_color: <LimineFrameBufferEmbeddedGraphics<'a> as DrawTarget>::Color,
+            text_color: <FrameBufferEmbeddedGraphics<'a> as DrawTarget>::Color,
+            background_color: <FrameBufferEmbeddedGraphics<'a> as DrawTarget>::Color,
         }
         impl Write for Writer<'_, '_> {
             fn write_str(&mut self, s: &str) -> core::fmt::Result {
@@ -182,7 +184,7 @@ impl WriteColored for FrameBufferData {
 
         let mut writer = Writer {
             font: &font,
-            display: &mut self.frame_buffer,
+            display: &mut FrameBufferEmbeddedGraphics::new(&mut self.frame_buffer).unwrap(),
             position: &mut self.position,
             text_color: match color {
                 LoggerColor::Message => Rgb888::WHITE,
@@ -260,8 +262,7 @@ pub fn init(frame_buffer_response: Option<&'static FramebufferResponse>) {
             if let Some(frame_buffer_response) = frame_buffer_response {
                 if let Some(frame_buffer) = frame_buffer_response.framebuffers().next() {
                     data.frame_buffer = Some(FrameBufferData {
-                        frame_buffer: LimineFrameBufferEmbeddedGraphics::try_from(frame_buffer)
-                            .unwrap(),
+                        frame_buffer: (&frame_buffer).into(),
                         position: Default::default(),
                     });
                 };

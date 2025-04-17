@@ -17,7 +17,6 @@ pub fn parse_ram_disk(module_response: &ModuleResponse) -> Result<RamDisk<'_>, P
         .ok_or(ParseRamDiskError::NoModule)?;
     let ram_disk_slice =
         unsafe { core::slice::from_raw_parts(ram_disk.addr(), ram_disk.size() as usize) };
-    let ram_disk =
-        postcard::from_bytes(ram_disk_slice).map_err(|e| ParseRamDiskError::ParseError(e))?;
+    let ram_disk = postcard::from_bytes(ram_disk_slice).map_err(ParseRamDiskError::ParseError)?;
     Ok(ram_disk)
 }

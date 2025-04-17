@@ -28,7 +28,7 @@ impl<T: Debug + DerefMut<Target = [usize]> + Insert<usize> + Remove<usize>> Cont
                     range.start = current_segment_start_pos;
                     // Use saturating sub and don't convert to isize cuz that messes things up with big numbers
                     let extend_by = range.end.saturating_sub(current_segment_end_pos);
-                    if extend_by <= 0 {
+                    if extend_by == 0 {
                         // No change
                         break;
                     } else {

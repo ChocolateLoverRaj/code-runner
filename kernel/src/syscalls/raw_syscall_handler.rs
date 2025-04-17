@@ -68,8 +68,10 @@ pub struct PushedRegisters {
     pub rcx: u64,
 }
 
+/// # Safety
 /// You must set `GS.Base` to the syscall handler's stack before the first syscall. You must do `swapgs` before entering user mode.
 pub unsafe trait SyscallHandlerClosure: Send + Sync + Debug {
+    #[allow(clippy::too_many_arguments)]
     fn handle_syscall(
         &self,
         input0: u64,

@@ -3,9 +3,11 @@
 
 extern crate alloc;
 
+pub mod frame_buffer_embedded_graphics;
 pub mod mem;
 pub mod permissions;
 pub mod ram_disk;
+pub mod screen_info;
 pub mod syscall_output;
 pub mod syscall_pointer;
 pub mod syscall_print;

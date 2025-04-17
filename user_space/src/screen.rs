@@ -1,15 +1,15 @@
-use common::syscall_uuids::{ScreenInfo, SyscallTakeScreenError, SyscallTakeScreenOutput};
+use common::{screen_info::ScreenInfoWithAddress, syscall_uuids::SyscallTakeScreenError};
 
 use crate::syscall::{syscall_release_screen, syscall_take_screen};
 
 pub struct Screen {
-    o: SyscallTakeScreenOutput,
+    screen: ScreenInfoWithAddress,
 }
 
 impl Screen {
     pub fn take() -> Result<Self, SyscallTakeScreenError> {
         Ok(Self {
-            o: syscall_take_screen()?,
+            screen: syscall_take_screen()?,
         })
     }
 
@@ -17,19 +17,19 @@ impl Screen {
         // Safety: The kernel mapped this process's memory to the frame buffer and nothing else is referencing it
         unsafe {
             core::slice::from_raw_parts_mut(
-                self.o.address as *mut u8,
-                (self.o.info.pitch * self.o.info.height) as usize,
+                self.screen.address as *mut u8,
+                (self.screen.info.pitch * self.screen.info.height) as usize,
             )
         }
     }
 
-    pub fn info(&self) -> &ScreenInfo {
-        &self.o.info
+    pub fn screen_mut(&mut self) -> &mut ScreenInfoWithAddress {
+        &mut self.screen
     }
 }
 
 impl Drop for Screen {
     fn drop(&mut self) {
-        syscall_release_screen();
+        syscall_release_screen().unwrap();
     }
 }

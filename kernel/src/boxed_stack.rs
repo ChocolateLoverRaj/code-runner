@@ -21,6 +21,7 @@ impl BoxedStack {
         VirtAddr::from_ptr(self.b.as_ptr_range().end)
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.b.len() * size_of::<StackChunk>()
     }

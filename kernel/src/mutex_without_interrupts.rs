@@ -21,6 +21,11 @@ impl<T> LockWithoutInterrupts<T> {
         })
     }
 
+    /// # Safety
+    ///
+    /// This method must only be called if the current thread logically owns a
+    /// `MutexGuard` but that guard has been discarded using `mem::forget`.
+    /// Behavior is undefined if a mutex is unlocked when not locked.
     pub unsafe fn force_unlock(&self) {
         unsafe { self.lock.force_unlock() };
     }

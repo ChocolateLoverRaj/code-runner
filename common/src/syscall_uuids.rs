@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use uuid::{Uuid, uuid};
 
-use crate::syscall_slice::SyscallSlice;
+use crate::{screen_info::ScreenInfoWithAddress, syscall_slice::SyscallSlice};
 
 pub trait Syscall {
     const UUID: Uuid;
@@ -132,24 +132,6 @@ impl Syscall for SyscallWaitUntilEvent {
 }
 
 // Screen
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
-pub struct ScreenInfo {
-    pub width: u64,
-    pub height: u64,
-    pub pitch: u64,
-    pub bits_per_pixel: u16,
-    pub red_mask_size: u8,
-    pub red_mask_shift: u8,
-    pub green_mask_size: u8,
-    pub green_mask_shift: u8,
-    pub blue_mask_size: u8,
-    pub blue_mask_shift: u8,
-}
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SyscallTakeScreenOutput {
-    pub address: usize,
-    pub info: ScreenInfo,
-}
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SyscallTakeScreenError {
     /// The screen is being used
@@ -165,7 +147,7 @@ pub struct SyscallTakeScreen;
 impl Syscall for SyscallTakeScreen {
     const UUID: Uuid = uuid!("d5997323-ab9f-49f4-8927-6bdaf0948894");
     type Input = ();
-    type Output = Result<SyscallTakeScreenOutput, SyscallTakeScreenError>;
+    type Output = Result<ScreenInfoWithAddress, SyscallTakeScreenError>;
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,6 +1,9 @@
-use common::syscall_uuids::{
-    ScreenInfo, Syscall, SyscallReleaseScreen, SyscallReleaseScreenError, SyscallTakeScreen,
-    SyscallTakeScreenError, SyscallTakeScreenOutput,
+use common::{
+    screen_info::ScreenInfoWithAddress,
+    syscall_uuids::{
+        Syscall, SyscallReleaseScreen, SyscallReleaseScreenError, SyscallTakeScreen,
+        SyscallTakeScreenError,
+    },
 };
 use limine::{framebuffer::Framebuffer, response::FramebufferResponse};
 use x86_64::{
@@ -112,20 +115,11 @@ impl SyscallHandler2 for SyscallTakeScreenHandler {
                                             .flush();
                                         }
                                     }
-                                    Action::Return(Ok(SyscallTakeScreenOutput {
-                                        address: page_range.start.start_address().as_u64() as usize,
-                                        info: ScreenInfo {
-                                            width: frame_buffer.width(),
-                                            height: frame_buffer.height(),
-                                            pitch: frame_buffer.pitch(),
-                                            bits_per_pixel: frame_buffer.bpp(),
-                                            red_mask_size: frame_buffer.red_mask_size(),
-                                            red_mask_shift: frame_buffer.red_mask_shift(),
-                                            green_mask_size: frame_buffer.green_mask_size(),
-                                            green_mask_shift: frame_buffer.green_mask_shift(),
-                                            blue_mask_size: frame_buffer.blue_mask_size(),
-                                            blue_mask_shift: frame_buffer.blue_mask_shift(),
-                                        },
+                                    Action::Return(Ok(unsafe {
+                                        ScreenInfoWithAddress::new(
+                                            page_range.start.start_address().as_u64() as usize,
+                                            frame_buffer.into(),
+                                        )
                                     }))
                                 };
                                 match &*screen_lock {

@@ -17,6 +17,7 @@ use thiserror::Error;
 use x2apic::lapic::IpiAllShorthand;
 use x86_64::instructions::interrupts;
 
+#[cfg(not(test))]
 #[panic_handler]
 fn kernel_panic_handler(info: &PanicInfo) -> ! {
     // If we don't disable interrupts, code could run while we are in an invalid state. We are in an invalid state from now until reboot because of the panic.
@@ -65,7 +66,7 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
                 unsafe { slice::from_raw_parts(ptr, len) }
             })
         })
-        .and_then(|result| result.map_err(|e| GetLineError::ParseElfError(e)))
+        .and_then(|result| result.map_err(GetLineError::ParseElfError))
         .and_then(|elf| {
             Dwarf::load(|section| {
                 Ok::<_, ParseError>(EndianSlice::new(
@@ -78,11 +79,11 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
                     LittleEndian,
                 ))
             })
-            .map_err(|e| GetLineError::ParseElfError(e))
+            .map_err(GetLineError::ParseElfError)
         })
         .and_then(|mut dwarf| {
             dwarf.file_type = DwarfFileType::Main;
-            addr2line::Context::from_dwarf(dwarf).map_err(|e| GetLineError::Addr2LineError(e))
+            addr2line::Context::from_dwarf(dwarf).map_err(GetLineError::Addr2LineError)
         });
     if let Err(e) = &context {
         log::error!("Error getting function lines: {:?}", e);
@@ -94,18 +95,16 @@ fn kernel_panic_handler(info: &PanicInfo) -> ! {
         unsafe { CallStackIterator::new((&HHDM_REQUEST).try_into().unwrap()) }
             .map(|instruction_pointer| {
                 let frame = context.as_ref().ok().and_then(|context| {
-                    Some(
-                        context
-                            .find_frames({
-                                // To get the `call` instruction
-                                // https://stackoverflow.com/a/59014431/11145447
-                                instruction_pointer.get() - 1
-                            })
-                            .skip_all_loads()
-                            .ok()?
-                            .last()
-                            .ok()??,
-                    )
+                    context
+                        .find_frames({
+                            // To get the `call` instruction
+                            // https://stackoverflow.com/a/59014431/11145447
+                            instruction_pointer.get() - 1
+                        })
+                        .skip_all_loads()
+                        .ok()?
+                        .last()
+                        .ok()?
                 });
                 BacktraceEntry {
                     address: instruction_pointer.get(),
