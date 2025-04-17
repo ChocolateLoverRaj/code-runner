@@ -1,7 +1,11 @@
 use core::{sync::atomic::Ordering, task::Poll};
 
-use common::syscall_uuids::{IoPortAction, ListenAction, SyscallTakeIoPortInput};
+use common::syscall_uuids::{
+    IoPortAction, ListenAction, SyscallListenForKeyboardInterruptsOutputError,
+    SyscallTakeIoPortInput, SyscallTakeIoPortOutputError,
+};
 use futures::Stream;
+use thiserror::Error;
 use x86_64::instructions::port::Port;
 
 use crate::{
@@ -13,15 +17,24 @@ pub struct AsyncKeyboard<'a> {
     executor_context: &'a ExecutorContext,
 }
 
+#[derive(Debug, Error)]
+pub enum InitError {
+    #[error("Error taking IO port for keyboard")]
+    TakeIoPort(SyscallTakeIoPortOutputError),
+    #[error("Error listening for keyboard events")]
+    ListenForInterrupts(SyscallListenForKeyboardInterruptsOutputError),
+}
+
 impl<'a> AsyncKeyboard<'a> {
-    pub fn init(executor_context: &'a ExecutorContext) -> Self {
+    pub fn init(executor_context: &'a ExecutorContext) -> Result<Self, InitError> {
         syscall_take_io_port(&SyscallTakeIoPortInput {
             port: 0x60,
             action: IoPortAction::Take,
         })
-        .unwrap();
-        syscall_listen_for_keyboard_interrupts(&ListenAction::StartListening).unwrap();
-        Self { executor_context }
+        .map_err(InitError::TakeIoPort)?;
+        syscall_listen_for_keyboard_interrupts(&ListenAction::StartListening)
+            .map_err(InitError::ListenForInterrupts)?;
+        Ok(Self { executor_context })
     }
 }
 

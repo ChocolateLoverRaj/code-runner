@@ -117,7 +117,7 @@ pub unsafe fn init() -> ! {
     try_init_tasks().unwrap();
     let ram_disk = parse_ram_disk(module_response.unwrap()).unwrap();
     spawn_task(&ram_disk, hhdm_offset).unwrap();
-    // spawn_task(&ram_disk, hhdm_offset).unwrap();
+    spawn_task(&ram_disk, hhdm_offset).unwrap();
     // spawn_task(&ram_disk, hhdm_offset).unwrap();
     {
         let tasks = TASKS.try_get().unwrap().lock();
