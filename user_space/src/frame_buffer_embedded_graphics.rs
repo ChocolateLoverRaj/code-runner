@@ -70,6 +70,7 @@ impl DrawTarget for FrameBufferEmbeddedGraphics<'_> {
         Ok(())
     }
 
+    // The advantage of implementing this method is that we can just compute the pixel and then copy it
     fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
         let pixel = self.tranform_pixel(color);
         let info = *self.screen.info();
@@ -88,6 +89,15 @@ impl DrawTarget for FrameBufferEmbeddedGraphics<'_> {
             let row_start =
                 y as usize * info.pitch as usize + area.top_left.x as usize * bytes_per_pixel;
             buffer.copy_within(top_row.clone(), row_start);
+        }
+        Ok(())
+    }
+
+    fn clear(&mut self, color: Self::Color) -> Result<(), Self::Error> {
+        let pixel = self.tranform_pixel(color);
+        for pixel_index in 0..(self.screen.info().width * self.screen.info().height) as usize {
+            self.screen.frame_buffer_mut()[pixel_index * 4..pixel_index * 4 + 4]
+                .copy_from_slice(&pixel);
         }
         Ok(())
     }
