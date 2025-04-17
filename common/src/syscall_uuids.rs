@@ -132,12 +132,11 @@ impl Syscall for SyscallWaitUntilEvent {
 }
 
 // Screen
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct ScreenInfo {
-    pub address: usize,
     pub width: u64,
     pub height: u64,
-    pub stride: u64,
+    pub pitch: u64,
     pub bits_per_pixel: u16,
     pub red_mask_size: u8,
     pub red_mask_shift: u8,
@@ -147,17 +146,26 @@ pub struct ScreenInfo {
     pub blue_mask_shift: u8,
 }
 #[derive(Debug, Serialize, Deserialize)]
+pub struct SyscallTakeScreenOutput {
+    pub address: usize,
+    pub info: ScreenInfo,
+}
+#[derive(Debug, Serialize, Deserialize)]
 pub enum SyscallTakeScreenError {
     /// The screen is being used
     InUse,
     /// There is no screen available
     NoScreenAvailable,
+    /// This error will happen if the frame buffer is not contained in its own 4KiB physical frames.
+    /// In this case, the kernel cannot give user mode access to the entire frame buffer because that would
+    /// also give user space access to other physical memory which could be MMIO.
+    WouldNotBeSecure,
 }
 pub struct SyscallTakeScreen;
 impl Syscall for SyscallTakeScreen {
     const UUID: Uuid = uuid!("d5997323-ab9f-49f4-8927-6bdaf0948894");
     type Input = ();
-    type Output = Result<ScreenInfo, SyscallTakeScreenError>;
+    type Output = Result<SyscallTakeScreenOutput, SyscallTakeScreenError>;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -169,5 +177,5 @@ pub struct SyscallReleaseScreen;
 impl Syscall for SyscallReleaseScreen {
     const UUID: Uuid = uuid!("86b7e3bc-7516-4242-bbab-1dcd92f68826");
     type Input = ();
-    type Output = Result<ScreenInfo, SyscallReleaseScreenError>;
+    type Output = Result<(), SyscallReleaseScreenError>;
 }

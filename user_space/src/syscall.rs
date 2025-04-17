@@ -2,8 +2,9 @@ use core::arch::asm;
 
 use common::syscall_uuids::{
     deserialize_output, serialize_to_input_with_uuid, ListenAction, Syscall, SyscallExists,
-    SyscallExit, SyscallListenForKeyboardInterrupts, SyscallLog, SyscallTakeIoPort,
-    SyscallTakeIoPortInput, SyscallTest, SyscallWaitUntilEvent,
+    SyscallExit, SyscallListenForKeyboardInterrupts, SyscallLog, SyscallReleaseScreen,
+    SyscallTakeIoPort, SyscallTakeIoPortInput, SyscallTakeScreen, SyscallTest,
+    SyscallWaitUntilEvent,
 };
 use uuid::Uuid;
 
@@ -95,4 +96,12 @@ pub fn syscall_listen_for_keyboard_interrupts(
 
 pub fn syscall_wait_until_event() -> <SyscallWaitUntilEvent as Syscall>::Output {
     unsafe { syscall::<SyscallWaitUntilEvent>(&()) }
+}
+
+pub fn syscall_take_screen() -> <SyscallTakeScreen as Syscall>::Output {
+    unsafe { syscall::<SyscallTakeScreen>(&()) }
+}
+
+pub fn syscall_release_screen() -> <SyscallReleaseScreen as Syscall>::Output {
+    unsafe { syscall::<SyscallReleaseScreen>(&()) }
 }

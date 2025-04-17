@@ -8,15 +8,13 @@ use embedded_graphics::{
     text::{Baseline, Text},
 };
 use futures::{pin_mut, Stream, StreamExt};
-// use futures_util::StreamExt;
 use pc_keyboard::{layouts, HandleControl, KeyCode, KeyState, Keyboard, ScancodeSet1};
 
-use crate::embedded_graphics_frame_buffer::Position;
-
-// use crate::{
-//     frame_buffer::{Display, Position},
-//     modules::async_keyboard::AsyncKeyboard,
-// };
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Position {
+    pub x: usize,
+    pub y: usize,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum Cell {

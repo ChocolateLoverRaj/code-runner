@@ -6,27 +6,40 @@ extern crate alloc;
 
 pub mod allocator;
 pub mod async_keyboard;
-// pub mod demo_maze_roller_game;
+pub mod demo_maze_roller_game;
 // pub mod draw_rust;
-// pub mod embedded_graphics_frame_buffer;
 pub mod execute_future;
 pub mod executor_context;
+pub mod frame_buffer_embedded_graphics;
 #[cfg(not(test))]
 pub mod panic_handler;
+pub mod screen;
 pub mod syscall;
 
 use alloc::format;
 use async_keyboard::AsyncKeyboard;
+use demo_maze_roller_game::demo_maze_roller_game;
 use execute_future::execute_future;
 use executor_context::ExecutorContext;
+use frame_buffer_embedded_graphics::FrameBufferEmbeddedGraphics;
 use futures::StreamExt;
 use pc_keyboard::{layouts::Us104Key, HandleControl, KeyCode, KeyState, Keyboard, ScancodeSet1};
+use screen::Screen;
 use syscall::{syscall_exit, syscall_print};
 
 #[unsafe(no_mangle)]
 extern "C" fn _start() -> ! {
     unsafe { allocator::init() };
+    let mut screen = Screen::take().unwrap();
+    let mut frame_buffer_embedded_graphics = FrameBufferEmbeddedGraphics::new(&mut screen).unwrap();
     let executor_context = ExecutorContext::default();
+    execute_future(
+        demo_maze_roller_game(
+            &mut frame_buffer_embedded_graphics,
+            AsyncKeyboard::init(&executor_context),
+        ),
+        &executor_context,
+    );
     execute_future(
         async {
             let mut async_keyboard = AsyncKeyboard::init(&executor_context);

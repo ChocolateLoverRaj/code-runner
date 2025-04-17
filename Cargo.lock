@@ -2252,6 +2252,7 @@ dependencies = [
  "linked_list_allocator",
  "pc-keyboard",
  "pin-utils",
+ "thiserror 2.0.12",
  "tinytga",
  "uuid",
  "x86_64 0.15.2",

@@ -2,6 +2,7 @@ use common::syscall_uuids::{
     ListenAction, Syscall, SyscallExists, SyscallListenForKeyboardInterrupts,
     SyscallListenForKeyboardInterruptsOutputError, SyscallTest, SyscallWaitUntilEvent,
 };
+use limine::response::FramebufferResponse;
 use x2apic::ioapic::{IrqMode, RedirectionTableEntry};
 
 use crate::{
@@ -15,11 +16,18 @@ use crate::{
 };
 
 use super::{
-    exit::SyscallExitHandler, log::SyscallLogHandler, raw_syscall_handler::SyscallHandlerClosure,
-    syscall_handlers::SyscallHandlers, take_io_port::setup_take_io_port,
+    exit::SyscallExitHandler,
+    log::SyscallLogHandler,
+    raw_syscall_handler::SyscallHandlerClosure,
+    screen::{SyscallReleaseScreenHandler, SyscallTakeScreenHandler},
+    syscall_handlers::SyscallHandlers,
+    take_io_port::setup_take_io_port,
 };
 
-pub fn get_syscall_handlers(hhdm_offset: HhdmOffset) -> impl SyscallHandlerClosure {
+pub fn get_syscall_handlers(
+    hhdm_offset: HhdmOffset,
+    frame_buffer: Option<&'static FramebufferResponse>,
+) -> impl SyscallHandlerClosure {
     let mut syscall_handlers = SyscallHandlers::default();
     syscall_handlers.insert::<SyscallTest>(|input, _, _| {
         if input == SyscallTest::TEST_INPUT {
@@ -136,5 +144,7 @@ pub fn get_syscall_handlers(hhdm_offset: HhdmOffset) -> impl SyscallHandlerClosu
             Action::RunTasks => run_tasks(),
         }
     });
+    syscall_handlers.insert_2(SyscallTakeScreenHandler::new(hhdm_offset, frame_buffer));
+    syscall_handlers.insert_2(SyscallReleaseScreenHandler::new(hhdm_offset, frame_buffer));
     syscall_handlers
 }

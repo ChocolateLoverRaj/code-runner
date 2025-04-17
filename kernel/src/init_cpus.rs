@@ -5,7 +5,7 @@ use util::init_later::InitLater;
 use crate::{
     cpu_local_data::{self, get_local},
     init_idt_and_gdt,
-    limine_requests::{HHDM_REQUEST, MP_REQUEST},
+    limine_requests::{FRAME_BUFFER_REQUEST, HHDM_REQUEST, MP_REQUEST},
     modules::syscall::init_syscalls::init_syscalls,
     run_tasks::run_tasks,
     syscalls::{
@@ -51,7 +51,7 @@ unsafe extern "C" fn init_cpu(cpu: &limine::mp::Cpu) -> ! {
         .unwrap()
         .initialized_syscalls
         .try_init(init_syscalls(set_syscall_handler_closure(Box::new(
-            get_syscall_handlers(hhdm_offset),
+            get_syscall_handlers(hhdm_offset, FRAME_BUFFER_REQUEST.get_response()),
         ))))
         .unwrap();
     if cpu.id == 0 {
