@@ -49,3 +49,12 @@ Now in addition to tasks that continuously use the CPU until they exit, we can n
 
 ## Take the Frame Buffer
 We want to let programs use the screen. The logger can stop logging to the screen when this happens.
+
+## Interrupts, priorities, and multiple CPUs
+The goals:
+- Tasks with higher priority should always run first. If the task is waiting for an event, lower priority tasks can run while it waits.
+- Preferrably CPUs which don't have a task to run should handle interrupts
+- If there are tasks to be done, all CPUs should be utilized
+
+## Storing a list of tasks
+Tasks can be identified by id, and they are ordered based on priority level, with higher priority tasks first.

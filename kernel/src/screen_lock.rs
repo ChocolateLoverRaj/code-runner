@@ -1,8 +1,10 @@
 use spinning_top::Spinlock;
 use x86_64::structures::paging::{Page, Size4KiB};
 
+use crate::tasks::TaskId;
+
 pub struct TaskUsingScreen {
-    pub id: usize,
+    pub id: TaskId,
     pub mapped_start: Page<Size4KiB>,
 }
 

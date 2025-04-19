@@ -21,7 +21,7 @@ use crate::{
     page_tables_recursive_iterator::PageTablesRecursiveIterator,
     physical_memory::{PhysicalMemoryFrameAllocator, UsedBy, PHYSICAL_MEMORY},
     screen_lock::{TaskUsingScreen, WhoIsUsingScreen, SCREEN_LOCK},
-    tasks::{TaskType, TASKS},
+    tasks::TASKS,
     terminate_current_task::terminate_current_task,
 };
 
@@ -57,92 +57,85 @@ impl SyscallHandler2 for SyscallTakeScreenHandler {
         }
         let action = {
             let task_id = get_local().unwrap().task_data.lock().current_task.unwrap();
-            let tasks = TASKS.try_get().unwrap().lock();
-            let task = tasks.tasks.iter().find(|task| task.id == task_id).unwrap();
-            match &task.task_type {
-                TaskType::User(data) => {
-                    if data.permissions.screen {
-                        if let Some(frame_buffer) = &self.frame_buffer {
-                            let start = PhysAddr::new(
-                                frame_buffer.addr() as u64 - u64::from(self.hhdm_offset),
-                            );
-                            let byte_len = frame_buffer.pitch() * frame_buffer.height();
-                            if start.is_aligned(Size4KiB::SIZE)
-                                && byte_len.is_multiple_of(Size4KiB::SIZE)
-                            {
-                                let mut screen_lock = SCREEN_LOCK.lock();
-                                let setup_frame_buffer = |screen_lock: &mut Option<
-                                    WhoIsUsingScreen,
-                                >| {
-                                    let page_count = byte_len / 0x1000;
-                                    let mut o = get_offset_page_table(self.hhdm_offset);
-                                    let page_range = find_contiguous_unused_virtual_memory(
-                                        unsafe {
-                                            PageTablesRecursiveIterator::new(
-                                                self.hhdm_offset,
-                                                Cr3::read().0,
-                                                0,
-                                            )
-                                        },
-                                        page_count,
+            let tasks = TASKS.lock();
+            let task = tasks.get(&task_id).unwrap();
+            if task.permissions.screen {
+                if let Some(frame_buffer) = &self.frame_buffer {
+                    let start =
+                        PhysAddr::new(frame_buffer.addr() as u64 - u64::from(self.hhdm_offset));
+                    let byte_len = frame_buffer.pitch() * frame_buffer.height();
+                    if start.is_aligned(Size4KiB::SIZE) && byte_len.is_multiple_of(Size4KiB::SIZE) {
+                        let mut screen_lock = SCREEN_LOCK.lock();
+                        let setup_frame_buffer = |screen_lock: &mut Option<WhoIsUsingScreen>| {
+                            let page_count = byte_len / 0x1000;
+                            let mut o = get_offset_page_table(self.hhdm_offset);
+                            let page_range = find_contiguous_unused_virtual_memory(
+                                unsafe {
+                                    PageTablesRecursiveIterator::new(
+                                        self.hhdm_offset,
+                                        Cr3::read().0,
+                                        0,
                                     )
-                                    .unwrap();
-                                    *screen_lock = Some(WhoIsUsingScreen::Task(TaskUsingScreen {
-                                        id: task.id,
-                                        mapped_start: page_range.start,
-                                    }));
-                                    let starting_frame =
-                                        PhysFrame::<Size4KiB>::from_start_address(start).unwrap();
-                                    let mut physical_memory =
-                                        PHYSICAL_MEMORY.try_get().unwrap().lock();
-                                    let mut frame_allocator = PhysicalMemoryFrameAllocator::new(
-                                        &mut physical_memory,
-                                        UsedBy::UserSpace(task_id),
-                                    );
-                                    for (i, page) in page_range.clone().enumerate() {
-                                        unsafe {
-                                            o.map_to(
-                                                page,
-                                                starting_frame + i as u64,
-                                                PageTableFlags::PRESENT
-                                                    | PageTableFlags::WRITABLE
-                                                    | PageTableFlags::USER_ACCESSIBLE
-                                                    | PageTableFlags::NO_EXECUTE
-                                                    | PageTableFlags::WRITE_THROUGH,
-                                                &mut frame_allocator,
-                                            )
-                                            .unwrap()
-                                            .flush();
-                                        }
-                                    }
-                                    Action::Return(Ok(unsafe {
-                                        ScreenInfoWithAddress::new(
-                                            page_range.start.start_address().as_u64() as usize,
-                                            frame_buffer.into(),
-                                        )
-                                    }))
-                                };
-                                match &*screen_lock {
-                                    Some(WhoIsUsingScreen::KernelLogger) => {
-                                        logger_3::stop_using_frame_buffer();
-                                        setup_frame_buffer(&mut screen_lock)
-                                    }
-                                    Some(WhoIsUsingScreen::Task(_)) => {
-                                        Action::Return(Err(SyscallTakeScreenError::InUse))
-                                    }
-                                    None => setup_frame_buffer(&mut screen_lock),
+                                },
+                                page_count,
+                            )
+                            .unwrap();
+                            *screen_lock = Some(WhoIsUsingScreen::Task(TaskUsingScreen {
+                                id: task_id,
+                                mapped_start: page_range.start,
+                            }));
+                            let starting_frame =
+                                PhysFrame::<Size4KiB>::from_start_address(start).unwrap();
+                            let mut physical_memory = PHYSICAL_MEMORY.try_get().unwrap().lock();
+                            let mut frame_allocator = PhysicalMemoryFrameAllocator::new(
+                                &mut physical_memory,
+                                UsedBy::UserSpace(task_id),
+                            );
+                            for (i, page) in page_range.clone().enumerate() {
+                                unsafe {
+                                    o.map_to(
+                                        page,
+                                        starting_frame + i as u64,
+                                        PageTableFlags::PRESENT
+                                            | PageTableFlags::WRITABLE
+                                            | PageTableFlags::USER_ACCESSIBLE
+                                            | PageTableFlags::NO_EXECUTE
+                                            | PageTableFlags::WRITE_THROUGH,
+                                        &mut frame_allocator,
+                                    )
+                                    .unwrap()
+                                    .flush();
                                 }
-                            } else {
-                                Action::Return(Err(SyscallTakeScreenError::WouldNotBeSecure))
                             }
-                        } else {
-                            Action::Return(Err(SyscallTakeScreenError::NoScreenAvailable))
+                            Action::Return(Ok(unsafe {
+                                ScreenInfoWithAddress::new(
+                                    page_range.start.start_address().as_u64() as usize,
+                                    frame_buffer.into(),
+                                )
+                            }))
+                        };
+                        match &*screen_lock {
+                            Some(WhoIsUsingScreen::KernelLogger) => {
+                                logger_3::stop_using_frame_buffer();
+                                setup_frame_buffer(&mut screen_lock)
+                            }
+                            Some(WhoIsUsingScreen::Task(_)) => {
+                                Action::Return(Err(SyscallTakeScreenError::InUse))
+                            }
+                            None => setup_frame_buffer(&mut screen_lock),
                         }
                     } else {
-                        log::warn!("Task {} tried to take screen when it doesn't have permission. Terminating.", task_id);
-                        Action::Terminate
+                        Action::Return(Err(SyscallTakeScreenError::WouldNotBeSecure))
                     }
+                } else {
+                    Action::Return(Err(SyscallTakeScreenError::NoScreenAvailable))
                 }
+            } else {
+                log::warn!(
+                    "Task {:?} tried to take screen when it doesn't have permission. Terminating.",
+                    task_id
+                );
+                Action::Terminate
             }
         };
         match action {

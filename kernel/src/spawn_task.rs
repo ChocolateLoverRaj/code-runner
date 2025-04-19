@@ -1,4 +1,4 @@
-use core::{slice, sync::atomic::Ordering};
+use core::slice;
 
 use common::ram_disk::RamDisk;
 use elf::{endian::NativeEndian, ElfBytes};
@@ -17,7 +17,7 @@ use crate::{
     get_offset_page_table::get_offset_page_table_with_new_l4,
     hhdm_offset::HhdmOffset,
     physical_memory::{PhysicalMemoryFrameAllocator, UsedBy, PHYSICAL_MEMORY},
-    tasks::{ReadyToStartState, Task, TaskState, TaskType, UserTaskData, NEXT_TASK_ID, TASKS},
+    tasks::{ReadyToStartState, Task, TaskId, TaskState, TASKS, TASK_QUEUE},
 };
 
 /// Only specifies `WRITABLE` and `NO_EXECUTE` if needed. Other flags such as `PRESENT` and `USER_ACCESSIBLE` must be added.
@@ -80,10 +80,10 @@ pub fn spawn_task(
             .map_err(SpawnTaskError::ElfParseError)?
     };
     let mut elf_end = Page::<Size4KiB>::from_start_address(VirtAddr::zero()).unwrap();
-    let id = NEXT_TASK_ID.fetch_add(1, Ordering::Relaxed);
     let mut physical_memory_lock = PHYSICAL_MEMORY.try_get().unwrap().lock();
+    let task_id = TaskId::new_unique();
     let mut frame_allocator =
-        PhysicalMemoryFrameAllocator::new(&mut physical_memory_lock, UsedBy::UserSpace(id));
+        PhysicalMemoryFrameAllocator::new(&mut physical_memory_lock, UsedBy::UserSpace(task_id));
     // Because the task will have a different Cr3 value, we create a new L4 page table
     let l4 = frame_allocator
         .allocate_frame()
@@ -204,19 +204,20 @@ pub fn spawn_task(
 
     let start_addr = VirtAddr::new(start_symbol.st_value);
 
-    let task = Task {
-        id,
-        task_type: TaskType::User(UserTaskData {
+    TASKS.lock().insert(
+        task_id,
+        Task {
+            id: task_id,
             cr3: l4,
             kernel_stack: BoxedStack::new_uninit(SYSCALL_HANDLER_STACK_SIZE),
             permissions: program.meta_data.permissions.clone(),
-        }),
-        state: TaskState::ReadyToStart(ReadyToStartState {
-            instruction_pointer: start_addr,
-            stack_pointer: stack_end.start_address(),
-        }),
-    };
-    TASKS.try_get().unwrap().lock().tasks.push(task);
+            state: TaskState::ReadyToStart(ReadyToStartState {
+                instruction_pointer: start_addr,
+                stack_pointer: stack_end.start_address(),
+            }),
+        },
+    );
+    TASK_QUEUE.lock().push(task_id);
 
     Ok(())
 }

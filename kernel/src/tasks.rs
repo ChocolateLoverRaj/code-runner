@@ -1,29 +1,17 @@
-use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
-use alloc::vec::Vec;
+use alloc::{collections::btree_map::BTreeMap, vec::Vec};
 use common::permissions::Permissions;
 use spinning_top::Spinlock;
-use util::init_later::{InitLater, TryInitError};
+use util::init_later::InitLater;
 use x86_64::{
-    registers::control::Cr3,
     structures::paging::{PhysFrame, Size4KiB},
     VirtAddr,
 };
 
-use crate::{boxed_stack::BoxedStack, syscalls::raw_syscall_handler::PushedRegisters};
-
-#[derive(Debug)]
-pub struct UserTaskData {
-    pub cr3: PhysFrame<Size4KiB>,
-    pub kernel_stack: BoxedStack,
-    pub permissions: Permissions<'static>,
-}
-
-/// Kernel tasks will be added later
-#[derive(Debug)]
-pub enum TaskType {
-    User(UserTaskData),
-}
+use crate::{
+    boxed_stack::BoxedStack, context::FullContext, syscalls::raw_syscall_handler::PushedRegisters,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ReadyToStartState {
@@ -42,49 +30,42 @@ pub enum TaskState {
     ReadyToStart(ReadyToStartState),
     Running,
     WaitingUntilEvent(SavedSyscallState),
+    /// A task's state can be interrupted when the kernel receives an interrupt and switches to a higher priority task.
+    Interrupted(FullContext),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TaskId(usize);
+static NEXT_TASK_ID: AtomicUsize = AtomicUsize::new(0);
+impl TaskId {
+    pub fn new_unique() -> Self {
+        Self(NEXT_TASK_ID.fetch_add(1, Ordering::Relaxed))
+    }
 }
 
 #[derive(Debug)]
 pub struct KeyboardEventListener {
-    pub task_id: usize,
+    pub task_id: TaskId,
     pub pending_interrupt_received: bool,
 }
 
 #[derive(Debug)]
 pub struct Task {
-    pub task_type: TaskType,
     pub state: TaskState,
-    pub id: usize,
-}
-
-#[derive(Debug)]
-pub struct Tasks {
-    pub kernel_cr3: PhysFrame<Size4KiB>,
-    pub tasks: Vec<Task>,
-    pub keyboard_listener: Option<KeyboardEventListener>,
-}
-
-impl Tasks {
-    pub fn from_current_cr3() -> Self {
-        Self {
-            kernel_cr3: Cr3::read().0,
-            tasks: Default::default(),
-            keyboard_listener: None,
-        }
-    }
+    pub id: TaskId,
+    pub cr3: PhysFrame<Size4KiB>,
+    pub kernel_stack: BoxedStack,
+    pub permissions: Permissions<'static>,
 }
 
 /// Tasks are arranged from highest priority first to lowest priority
-pub static TASKS: InitLater<Spinlock<Tasks>> = InitLater::uninit();
-
-pub static NEXT_TASK_ID: AtomicUsize = AtomicUsize::new(0);
-
-pub fn try_init_tasks() -> Result<&'static Spinlock<Tasks>, TryInitError> {
-    TASKS.try_init(Spinlock::new(Tasks::from_current_cr3()))
-}
+pub static TASKS: Spinlock<BTreeMap<TaskId, Task>> = Spinlock::new(BTreeMap::new());
+pub static TASK_QUEUE: Spinlock<Vec<TaskId>> = Spinlock::new(Vec::new());
+pub static KERNEL_CR3: InitLater<PhysFrame<Size4KiB>> = InitLater::uninit();
+pub static KEYBOARD_LISTENER: Spinlock<Option<KeyboardEventListener>> = Spinlock::new(None);
 
 #[derive(Debug, Default)]
 pub struct CpuTaskData {
-    pub current_task: Option<usize>,
+    pub current_task: Option<TaskId>,
     pub stack_to_delete: Option<BoxedStack>,
 }

@@ -7,14 +7,17 @@ use x86_64::{
     PhysAddr,
 };
 
-use crate::available_physical_frame_iterator::{
-    AvailablePhysicalFrameIterator, AvailablePhysicalRegionsIterator,
+use crate::{
+    available_physical_frame_iterator::{
+        AvailablePhysicalFrameIterator, AvailablePhysicalRegionsIterator,
+    },
+    tasks::TaskId,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UsedBy {
     Kernel,
-    UserSpace(usize),
+    UserSpace(TaskId),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

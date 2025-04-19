@@ -117,8 +117,8 @@ pub enum SyscallListenForKeyboardInterruptsOutputError {
     /// Tried to stop listening when you aren't currently listening
     NotListening,
 }
-pub struct SyscallListenForKeyboardInterrupts;
-impl Syscall for SyscallListenForKeyboardInterrupts {
+pub struct SyscallListenForKeyboard;
+impl Syscall for SyscallListenForKeyboard {
     const UUID: Uuid = uuid!("4e1a4a2d-1b44-4374-9531-5ccf00f5c782");
     type Input = ListenAction;
     type Output = Result<(), SyscallListenForKeyboardInterruptsOutputError>;

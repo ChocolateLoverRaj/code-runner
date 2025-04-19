@@ -30,6 +30,7 @@ pub fn run_qemu(boot_type: BootType) {
                 "b mutex_without_interrupts.rs:27".into(),
                 "b mutex_without_interrupts.rs:41".into(),
                 "b mutex_without_interrupts.rs:51".into(),
+                "b keyboard_interrupt_handler_rust".into(),
                 "gdb-remote localhost:1234".into(),
             ]
             .join("\n"),

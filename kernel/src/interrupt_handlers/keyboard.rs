@@ -1,23 +1,17 @@
-use core::arch::naked_asm;
+use core::{arch::naked_asm, cmp::Ordering, mem};
 
 use common::syscall_uuids::{serialize_output, SyscallWaitUntilEvent};
 use x86_64::{
-    registers::{
-        control::Cr3,
-        model_specific::{GsBase, KernelGsBase},
-        segmentation::GS,
-    },
+    registers::{control::Cr3, model_specific::GsBase, segmentation::GS},
     structures::{gdt::SegmentSelector, idt::InterruptStackFrame},
     PrivilegeLevel,
 };
 
 use crate::{
-    context::{AnyContext, FullContext, SyscallContext},
+    context::{Context, FullContext, SyscallContext},
     cpu_local_data::get_local,
-    init_idt_and_gdt::get_iopb,
-    io_permission_bitmap::IoPermissionBitmap,
-    io_ports_lock::IO_PORT_USAGE,
-    tasks::{TaskState, TaskType, TASKS},
+    run_tasks::update_iobp,
+    tasks::{TaskState, KEYBOARD_LISTENER, TASKS, TASK_QUEUE},
 };
 
 /// # Safety
@@ -66,7 +60,11 @@ unsafe extern "sysv64" fn keyboard_interrupt_handler_rust(context: &FullContext)
             false
         };
 
-    let context = {
+    enum Action {
+        RestoreSaved(SyscallContext),
+        RestoreFull,
+    }
+    let action = {
         let cpu_local_data = get_local().unwrap();
         unsafe {
             cpu_local_data
@@ -76,76 +74,112 @@ unsafe extern "sysv64" fn keyboard_interrupt_handler_rust(context: &FullContext)
                 .lock()
                 .end_of_interrupt()
         };
-        let mut tasks = TASKS.try_get().unwrap().lock();
-        let keyboard_listener_task_id = tasks.keyboard_listener.as_ref().unwrap().task_id;
-        let task = tasks
-            .tasks
-            .iter_mut()
-            .find(|task| task.id == keyboard_listener_task_id)
+        let mut tasks = TASKS.lock();
+        let mut cpu_task_data = cpu_local_data.task_data.lock();
+        let task_queue = TASK_QUEUE.lock();
+        let current_task_index = cpu_task_data.current_task.map(|current_task_id| {
+            (
+                current_task_id,
+                task_queue
+                    .iter()
+                    .position(|id| id == &current_task_id)
+                    .unwrap(),
+            )
+        });
+        let mut keyboard_listener = KEYBOARD_LISTENER.lock();
+        let keyboard_listener_task_id = keyboard_listener.as_ref().unwrap().task_id;
+        let keyboard_listener_task_index = task_queue
+            .iter()
+            .position(|id| id == &keyboard_listener_task_id)
             .unwrap();
-        if let TaskState::WaitingUntilEvent(state) = &task.state {
-            let s = SyscallContext::from_syscall_output(
-                state,
-                serialize_output::<SyscallWaitUntilEvent>(&()).unwrap(),
-            );
-            task.state = TaskState::Running;
-            match &task.task_type {
-                TaskType::User(data) => {
+        log::debug!(
+            "Current task id: {:?}. Keyboard listener task id: {:?}",
+            cpu_task_data.current_task,
+            keyboard_listener_task_id
+        );
+        match current_task_index {
+            Some((current_task_id, current_task_index)) => match keyboard_listener_task_index
+                .cmp(&current_task_index)
+            {
+                Ordering::Less => {
+                    // Keyboard listener task is higher priority than the current task
+                    // Interrupt the current task and switch to the keyboard listener task
+                    let current_task = tasks.get_mut(&current_task_id).unwrap();
+                    current_task.state = TaskState::Interrupted(*context);
+                    let keyboard_listener_task = tasks.get_mut(&keyboard_listener_task_id).unwrap();
+                    let saved_state =
+                        match mem::replace(&mut keyboard_listener_task.state, TaskState::Running) {
+                            TaskState::WaitingUntilEvent(saved_state) => saved_state,
+                            state => unreachable!("Unexpected state: {:#?}", state),
+                        };
                     let cr3_flags = Cr3::read().1;
-                    unsafe { Cr3::write(data.cr3, cr3_flags) };
-                    let kernel_stack_pointer = data.kernel_stack.top().as_u64();
+                    unsafe { Cr3::write(keyboard_listener_task.cr3, cr3_flags) };
+                    cpu_task_data.current_task = Some(keyboard_listener_task_id);
+                    let kernel_stack_pointer = keyboard_listener_task.kernel_stack.top().as_u64();
                     unsafe {
                         cpu_local_data
                             .kernel_stack_pointer
                             .get()
                             .write(kernel_stack_pointer)
                     };
-                    cpu_local_data.task_data.lock().current_task = Some(task.id);
-                    let mut iopb = get_iopb().lock();
-                    **iopb = IoPermissionBitmap::new_deny_all();
-                    let io_ports_usage = IO_PORT_USAGE.lock();
-                    io_ports_usage
-                        .iter()
-                        .filter_map(|(port, id)| {
-                            if id == &keyboard_listener_task_id {
-                                Some(*port)
-                            } else {
-                                None
-                            }
-                        })
-                        .for_each(|port| {
-                            log::debug!("setting port allowed: {}", port);
-                            iopb.set_port_allowed(port, true);
-                        });
+                    keyboard_listener_task.state = TaskState::Running;
+                    update_iobp(keyboard_listener_task_id);
+                    Action::RestoreSaved(SyscallContext::from_syscall_output(
+                        &saved_state,
+                        serialize_output::<SyscallWaitUntilEvent>(&()).unwrap(),
+                    ))
                 }
+                Ordering::Equal | Ordering::Greater => {
+                    // The task is already running, or it's less priority
+                    // Mark the keyboard event as happened
+                    // Continue executing the current task
+                    keyboard_listener
+                        .as_mut()
+                        .unwrap()
+                        .pending_interrupt_received = true;
+                    Action::RestoreFull
+                }
+            },
+            None => {
+                let keyboard_listener_task = tasks.get_mut(&keyboard_listener_task_id).unwrap();
+                let saved_state =
+                    match mem::replace(&mut keyboard_listener_task.state, TaskState::Running) {
+                        TaskState::WaitingUntilEvent(saved_state) => saved_state,
+                        state => unreachable!("Unexpected state: {:#?}", state),
+                    };
+                let cr3_flags = Cr3::read().1;
+                unsafe { Cr3::write(keyboard_listener_task.cr3, cr3_flags) };
+                cpu_task_data.current_task = Some(keyboard_listener_task_id);
+                let kernel_stack_pointer = keyboard_listener_task.kernel_stack.top().as_u64();
+                unsafe {
+                    cpu_local_data
+                        .kernel_stack_pointer
+                        .get()
+                        .write(kernel_stack_pointer)
+                };
+                keyboard_listener_task.state = TaskState::Running;
+                update_iobp(keyboard_listener_task_id);
+                Action::RestoreSaved(SyscallContext::from_syscall_output(
+                    &saved_state,
+                    serialize_output::<SyscallWaitUntilEvent>(&()).unwrap(),
+                ))
             }
-            tasks
-                .keyboard_listener
-                .as_mut()
-                .unwrap()
-                .pending_interrupt_received = false;
-            log::debug!(
-                "Restoring context with GS.Base: {:?}. Context: {:?}",
-                KernelGsBase::read(),
-                s
-            );
-            // Make sure that when we enter user mode it is with user mode's gs base
-            unsafe { GS::swap() };
+        }
+    };
 
-            AnyContext::Syscall(s)
-        } else {
-            tasks
-                .keyboard_listener
-                .as_mut()
-                .unwrap()
-                .pending_interrupt_received = true;
-            log::debug!("Restoring full context. GS.Base is: {:?}", GsBase::read());
-            // Make sure that GS.Base is not different than what it was before this interrupt handler
+    match action {
+        Action::RestoreSaved(context) => {
+            log::debug!("Restoring saved. GsBase now: {:?}", GsBase::read());
+            // GS must be set to user mode's GS
+            unsafe { GS::swap() };
+            unsafe { context.restore() }
+        }
+        Action::RestoreFull => {
+            log::debug!("Restoring full: {:#?}", context);
             if swapped_gs {
                 unsafe { GS::swap() };
             }
-            AnyContext::Full(*context)
+            unsafe { context.restore() }
         }
-    };
-    unsafe { context.context().restore() }
+    }
 }

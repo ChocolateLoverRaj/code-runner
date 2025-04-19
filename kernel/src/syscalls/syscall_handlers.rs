@@ -27,16 +27,6 @@ impl<K: Ord, V> Includes<K> for BTreeMap<K, V> {
 pub type SyscallHandler =
     dyn Fn(&[u64; 5], &mut PushedRegisters, &dyn Includes<Uuid>) -> [u64; 7] + Send + Sync;
 
-fn make_syscall_handler<T: Syscall>(
-    f: impl Fn(T::Input, &PushedRegisters, &dyn Includes<Uuid>) -> T::Output + Send + Sync,
-) -> impl Fn(&[u64; 5], &mut PushedRegisters, &dyn Includes<Uuid>) -> [u64; 7] + Send + Sync {
-    move |input, pushed_registers, syscalls| {
-        let input = from_input_without_uuid::<T>(input).unwrap();
-        let output = f(input, pushed_registers, syscalls);
-        serialize_output::<T>(&output).unwrap()
-    }
-}
-
 pub trait SyscallHandler2: Send + Sync {
     type Syscall: Syscall;
 
@@ -53,17 +43,6 @@ pub struct SyscallHandlers {
     handlers: BTreeMap<Uuid, Box<SyscallHandler>>,
 }
 impl SyscallHandlers {
-    pub fn insert<T: Syscall + 'static>(
-        &mut self,
-        handler: impl Fn(T::Input, &PushedRegisters, &dyn Includes<Uuid>) -> T::Output
-            + Send
-            + Sync
-            + 'static,
-    ) {
-        self.handlers
-            .insert(T::UUID, Box::new(make_syscall_handler::<T>(handler)));
-    }
-
     pub fn insert_2<T: SyscallHandler2 + 'static>(&mut self, handler: T) {
         self.handlers.insert(
             T::Syscall::UUID,

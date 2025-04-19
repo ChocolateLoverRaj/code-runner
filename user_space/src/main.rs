@@ -37,6 +37,7 @@ extern "C" fn _start() -> ! {
     } else {
         loop {
             syscall_print("Keyboard unvailable. Looping...");
+            for _ in 0..50_000_000 {}
         }
     }
     // execute_future(

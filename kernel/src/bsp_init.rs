@@ -1,6 +1,7 @@
 use core::{cell::RefCell, ops::DerefMut};
 
 use acpi::spcr::Spcr;
+use x86_64::registers::control::Cr3;
 
 use crate::{
     acpi_handler_impl::AcpiHandlerImpl,
@@ -32,7 +33,7 @@ use crate::{
     rsdp_addr::RsdpAddr,
     screen_lock::{WhoIsUsingScreen, SCREEN_LOCK},
     spawn_task::spawn_task,
-    tasks::{try_init_tasks, TASKS},
+    tasks::{KERNEL_CR3, TASKS},
 };
 
 /// The initialization of things that just need to be run on one CPU (the BSP) before running the every-CPU init
@@ -114,14 +115,14 @@ pub unsafe fn init() -> ! {
     physical_memory::init(frame_allocator.into_inner().into(), memory_map_response).unwrap();
 
     log::info!("Spawning task");
-    try_init_tasks().unwrap();
+    KERNEL_CR3.try_init(Cr3::read().0).unwrap();
     let ram_disk = parse_ram_disk(module_response.unwrap()).unwrap();
     spawn_task(&ram_disk, hhdm_offset).unwrap();
     spawn_task(&ram_disk, hhdm_offset).unwrap();
-    // spawn_task(&ram_disk, hhdm_offset).unwrap();
+    spawn_task(&ram_disk, hhdm_offset).unwrap();
     {
-        let tasks = TASKS.try_get().unwrap().lock();
-        log::info!("Spawned task. {:#?}", tasks.tasks);
+        let tasks = TASKS.lock();
+        log::info!("Spawned task. {:#?}", tasks);
     }
 
     // Safety: Only being called once, after BSP init
