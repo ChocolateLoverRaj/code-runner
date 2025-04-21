@@ -83,23 +83,26 @@ I only support this cuz the bootloader supports it and all of the code just work
 ## Goals / Progress
 The not yet done stuff is in the order that I plan on doing things
 
+- Boot from UEFI ✅
+- Boot from Legacy BIOS ✅
+- Write to the serial console ✅
+- Write to a SPCR ✅
 - Draw to screen ✅
 - Handle keyboard input ✅
-- Write to the serial console ✅
 - Implement user space and syscalls ✅
-- Get time from RTC ✅
-- Implement multiple threads and processes 🚧
-- Add HPET support 🚧
-- Get input from the serial console ❌
-- Create a text editor program ❌
-- Create a program launcher ❌
-- Create a compositor ❌
-- Shut down and restart the computer from the OS ❌
-- List PCI devices ❌
-- Implement USB driver ❌
-- Implement user space network driver ❌
-- Implement a ping *app* (not command) ❌
-- DNS ❌
-- TCP ❌
-- HTTP ❌
-- Load programs on demand through HTTP ❌
+- Implement having multiple processes ✅
+- Implement running processes on multiple CPUs in parallel ✅
+- Add HPET support (get `Instant`, unlimited async events from user space, like `setTimeout` in JavaScript) 🚧
+- Implement having multiple threads in a process ❎
+- Create a text editor program ❎
+- Create a program launcher ❎
+- Create a compositor ❎
+- Shut down and restart the computer from the OS ❎
+- List PCI devices ❎
+- Implement USB driver ❎
+- Implement user space network driver ❎
+- Implement a ping *app* (not command) ❎
+- DNS ❎
+- TCP ❎
+- HTTP ❎
+- Load programs on demand through HTTP ❎
