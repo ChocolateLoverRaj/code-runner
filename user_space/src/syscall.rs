@@ -1,8 +1,9 @@
-use core::arch::asm;
+use core::{arch::asm, mem::MaybeUninit};
 
+use alloc::format;
 use common::syscall_uuids::{
-    deserialize_output, serialize_to_input_with_uuid, ListenAction, Syscall, SyscallExists,
-    SyscallExit, SyscallListenForKeyboard, SyscallLog, SyscallReleaseScreen,
+    deserialize_output, serialize_to_input_with_uuid, EventId, ListenAction, Syscall,
+    SyscallExists, SyscallExit, SyscallListenForKeyboard, SyscallLog, SyscallReleaseScreen,
     SyscallTakeIoPort, SyscallTakeIoPortInput, SyscallTakeScreen, SyscallTest,
     SyscallWaitUntilEvent,
 };
@@ -72,6 +73,22 @@ pub fn syscall_exit() -> ! {
     unreachable!()
 }
 
+pub fn syscall_wait_until_event(
+    events_that_happened_buffer: &mut [MaybeUninit<EventId>],
+) -> &mut [EventId] {
+    syscall_print(&format!(
+        "Waiting until event. buffer: {:?}",
+        events_that_happened_buffer.as_ptr()
+    ));
+    let events_that_happened_len =
+        unsafe { syscall::<SyscallWaitUntilEvent>(&events_that_happened_buffer.into()) };
+    unsafe {
+        MaybeUninit::slice_assume_init_mut(
+            &mut events_that_happened_buffer[..events_that_happened_len],
+        )
+    }
+}
+
 pub fn syscall_exists(uuid: &Uuid) -> bool {
     unsafe { syscall::<SyscallExists>(uuid) }
 }
@@ -91,10 +108,6 @@ pub fn syscall_listen_for_keyboard_interrupts(
     input: &ListenAction,
 ) -> <SyscallListenForKeyboard as Syscall>::Output {
     unsafe { syscall::<SyscallListenForKeyboard>(input) }
-}
-
-pub fn syscall_wait_until_event() -> <SyscallWaitUntilEvent as Syscall>::Output {
-    unsafe { syscall::<SyscallWaitUntilEvent>(&()) }
 }
 
 pub fn syscall_take_screen() -> <SyscallTakeScreen as Syscall>::Output {

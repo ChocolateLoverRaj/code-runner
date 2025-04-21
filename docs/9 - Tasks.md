@@ -58,3 +58,19 @@ The goals:
 
 ## Storing a list of tasks
 Tasks can be identified by id, and they are ordered based on priority level, with higher priority tasks first.
+
+## A proper "Wait until event" syscall
+Right now we only have one async event: a keyboard interrupt. Soon we will add HPET interrupts, and other async events such as inter-process communication. The input for this syscall is just `()`. We don't really need to input anything. But for the output we need to tell the user space process which events happened.
+
+### Uniquely identifying events
+Some events are fixed, such as a keyboard interrupt. There is exactly one kind of keyboard interrupt event. Not more, not less (well, there wouldn't be an interrupt if there was no PS/2 keyboard for some reason). Some events are unlimited, such as timer events or IPC events. An easy way to identify events would be to use an `enum`. Then unlimited events can have an associated id backed by `usize` or something, and fixed-number don't need an id. We can derive impl `Eq`, so ez.
+
+### Which events happened?
+When a process does a "Wait until event" syscall, it needs to know which events happened. That way it knows which `Future`s to `poll`.
+
+We can avoid the problem of the output not fitting in registers by only returning a single event if multiple events happened. Then the user-space process can just call the syscall again after it has processed the first event. This would be a pretty simple solution. However, I can see this being a problem for very high frequency interrupts while the CPU can't keep up. In this scenario, a high-frequency, low-priority event can make it so that higher-priority events are never processed.
+
+For this reason, the kernel will return all events that happened. We can basically have the user space program pass an `&mut [MaybeUninit<EventId>]` to the kernel. Then the kernel can fill the slice with events that happened and return the number of events that happened.
+
+### How is this simple?
+The kernel does need to deal with priorities when there are multiple high-frequency interrupts. In the user-space side of the implementation, it can just store a `RefCell<BTreeMap<EventId, AtomicWaker>`, and then create a `Box<[MaybeUninit<EventId>]>` with the size of the number of events.

@@ -1,7 +1,7 @@
-use core::{sync::atomic::Ordering, task::Poll};
+use core::task::Poll;
 
 use common::syscall_uuids::{
-    IoPortAction, ListenAction, SyscallListenForKeyboardInterruptsOutputError,
+    EventId, IoPortAction, ListenAction, SyscallListenForKeyboardInterruptsOutputError,
     SyscallTakeIoPortInput, SyscallTakeIoPortOutputError,
 };
 use futures::Stream;
@@ -56,14 +56,12 @@ impl Stream for AsyncKeyboard<'_> {
         self: core::pin::Pin<&mut Self>,
         cx: &mut core::task::Context<'_>,
     ) -> core::task::Poll<Option<Self::Item>> {
-        self.executor_context.keyboard_waker.register(cx.waker());
-        match self
-            .executor_context
-            .keyboard_event_received
-            .compare_exchange(true, false, Ordering::Acquire, Ordering::Relaxed)
-        {
-            Ok(_) => Poll::Ready(Some(unsafe { Port::<u8>::new(0x60).read() })),
-            Err(_) => Poll::Pending,
+        self.executor_context
+            .register_waker(EventId::Keyboard, cx.waker());
+        if self.executor_context.take_event(&EventId::Keyboard) {
+            Poll::Ready(Some(unsafe { Port::<u8>::new(0x60).read() }))
+        } else {
+            Poll::Pending
         }
     }
 }

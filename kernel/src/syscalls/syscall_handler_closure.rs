@@ -26,7 +26,7 @@ pub fn get_syscall_handlers(
     syscall_handlers.insert_2(SyscallLogHandler { hhdm_offset });
     syscall_handlers.insert_2(SyscallTakeIoPortHandler);
     syscall_handlers.insert_2(SyscallListenForKeyboardHandler);
-    syscall_handlers.insert_2(SyscallWaitUntilEventHandler);
+    syscall_handlers.insert_2(SyscallWaitUntilEventHandler::new(hhdm_offset));
     syscall_handlers.insert_2(SyscallTakeScreenHandler::new(hhdm_offset, frame_buffer));
     syscall_handlers.insert_2(SyscallReleaseScreenHandler::new(hhdm_offset, frame_buffer));
     syscall_handlers

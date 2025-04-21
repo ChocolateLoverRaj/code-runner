@@ -1,7 +1,10 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use alloc::{collections::btree_map::BTreeMap, vec::Vec};
-use common::permissions::Permissions;
+use common::{
+    permissions::Permissions,
+    syscall_uuids::{Syscall, SyscallWaitUntilEvent},
+};
 use spinning_top::Spinlock;
 use util::init_later::InitLater;
 use x86_64::{
@@ -26,10 +29,16 @@ pub struct SavedSyscallState {
 }
 
 #[derive(Debug)]
+pub struct WaitingUntilEventData {
+    pub state: SavedSyscallState,
+    pub input: <SyscallWaitUntilEvent as Syscall>::Input,
+}
+
+#[derive(Debug)]
 pub enum TaskState {
     ReadyToStart(ReadyToStartState),
     Running,
-    WaitingUntilEvent(SavedSyscallState),
+    WaitingUntilEvent(WaitingUntilEventData),
     /// A task's state can be interrupted when the kernel receives an interrupt and switches to a higher priority task.
     Interrupted(FullContext),
 }

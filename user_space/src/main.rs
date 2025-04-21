@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(int_roundings)]
+#![feature(sync_unsafe_cell)]
 #![feature(maybe_uninit_slice)]
 extern crate alloc;
 

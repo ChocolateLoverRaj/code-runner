@@ -6,10 +6,11 @@ use x86_64::registers::{
 use crate::{
     context::{Context, FullContext},
     cpu_local_data::get_local,
-    init_idt_and_gdt::get_priv_stack,
+    init_idt_and_gdt::{get_priv_stack, MAPPED_APICS},
     physical_memory::{PhysicalMemoryState, UsedBy, PHYSICAL_MEMORY},
+    pic8259_interrupts::Pic8259Interrupts,
     run_tasks::run_tasks,
-    tasks::{KERNEL_CR3, TASKS, TASK_QUEUE},
+    tasks::{KERNEL_CR3, KEYBOARD_LISTENER, TASKS, TASK_QUEUE},
 };
 
 /// Terminate the current task, switches to a different stack, and then runs other tasks
@@ -17,6 +18,21 @@ pub fn terminate_current_task() -> ! {
     {
         let mut cpu_task_data = get_local().unwrap().task_data.lock();
         let task_id = cpu_task_data.current_task.take().unwrap();
+        let mut keyboard_listener = KEYBOARD_LISTENER.lock();
+        if keyboard_listener
+            .as_ref()
+            .is_some_and(|keyboard_listener| keyboard_listener.task_id == task_id)
+        {
+            unsafe {
+                MAPPED_APICS
+                    .try_get()
+                    .unwrap()
+                    .io_apic
+                    .lock()
+                    .disable_irq(Pic8259Interrupts::Keyboard.into())
+            };
+            *keyboard_listener = None;
+        }
         // Switch Cr3 back to the kernel's Cr3 cuz we will be "deleting" the process's Cr3
         let mut tasks = TASKS.lock();
         {

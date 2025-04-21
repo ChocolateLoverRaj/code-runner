@@ -61,6 +61,16 @@ impl Syscall for SyscallExit {
     type Input = ();
     type Output = ();
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EventId {
+    Keyboard,
+}
+pub struct SyscallWaitUntilEvent;
+impl Syscall for SyscallWaitUntilEvent {
+    const UUID: Uuid = uuid!("0018ef0c-e6fc-4531-991e-bc32dee29631");
+    type Input = SyscallSlice;
+    type Output = usize;
+}
 
 // Core, but I'm not sure if we really need this
 pub struct SyscallExists;
@@ -122,13 +132,6 @@ impl Syscall for SyscallListenForKeyboard {
     const UUID: Uuid = uuid!("4e1a4a2d-1b44-4374-9531-5ccf00f5c782");
     type Input = ListenAction;
     type Output = Result<(), SyscallListenForKeyboardInterruptsOutputError>;
-}
-
-pub struct SyscallWaitUntilEvent;
-impl Syscall for SyscallWaitUntilEvent {
-    const UUID: Uuid = uuid!("0018ef0c-e6fc-4531-991e-bc32dee29631");
-    type Input = ();
-    type Output = ();
 }
 
 // Screen

@@ -1,4 +1,4 @@
-use core::slice;
+use core::{ops::Range, slice};
 
 use postcard::experimental::max_size::MaxSize;
 use serde::{Deserialize, Serialize};
