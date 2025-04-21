@@ -1,6 +1,6 @@
 use core::mem::MaybeUninit;
 
-use common::syscall_uuids::{EventId, Syscall, SyscallWaitUntilEvent};
+use common::syscall_uuids::{EventId, SyscallWaitUntilEvent};
 use x86_64::{structures::paging::PageTableFlags, VirtAddr};
 
 use crate::{
@@ -8,7 +8,6 @@ use crate::{
     cpu_local_data::get_local,
     get_offset_page_table::get_offset_page_table,
     hhdm_offset::HhdmOffset,
-    return_wait_until_event::handle_pending_events,
     run_tasks::run_tasks,
     tasks::{SavedSyscallState, TaskState, WaitingUntilEventData, TASKS},
     terminate_current_task::terminate_current_task,
@@ -34,7 +33,7 @@ impl SyscallHandler2 for SyscallWaitUntilEventHandler {
         _syscalls: &dyn super::syscall_handlers::Includes<uuid::Uuid>,
     ) -> <Self::Syscall as common::syscall_uuids::Syscall>::Output {
         enum Action {
-            Return(<SyscallWaitUntilEvent as Syscall>::Output),
+            // Return(<SyscallWaitUntilEvent as Syscall>::Output),
             RunTasks,
             TerminateTask,
         }
@@ -57,25 +56,22 @@ impl SyscallHandler2 for SyscallWaitUntilEventHandler {
                         | PageTableFlags::USER_ACCESSIBLE
                         | PageTableFlags::NO_EXECUTE,
                 ) {
-                    Ok(()) => match unsafe { handle_pending_events(task_id, input) } {
-                        Some(r) => Action::Return(r),
-                        None => {
-                            let current_task = tasks.get_mut(&task_id).unwrap();
-                            log::debug!("Saved task state since it's waiting for event.");
-                            current_task.state =
-                                TaskState::WaitingUntilEvent(WaitingUntilEventData {
-                                    state: SavedSyscallState {
-                                        pushed_registers: *pushed_registers,
-                                        stack_pointer: unsafe {
-                                            cpu_local_data.user_stack_pointer.get().read()
-                                        },
-                                    },
-                                    input,
-                                });
-                            task_data.current_task = None;
-                            Action::RunTasks
-                        }
-                    },
+                    Ok(()) => {
+                        // Even if the event already happened, we can still run tasks.
+                        // The task runner will handle returning from this syscall if the event already happened.
+                        let current_task = tasks.get_mut(&task_id).unwrap();
+                        current_task.state = TaskState::WaitingUntilEvent(WaitingUntilEventData {
+                            state: SavedSyscallState {
+                                pushed_registers: *pushed_registers,
+                                stack_pointer: unsafe {
+                                    cpu_local_data.user_stack_pointer.get().read()
+                                },
+                            },
+                            input,
+                        });
+                        task_data.current_task = None;
+                        Action::RunTasks
+                    }
                     Err(e) => {
                         log::warn!("Task {:?} tried to pass an invalid slice: {:?} as a wait until event argument. Error: {:#?}. Terminating.", task_id, input, e);
                         Action::TerminateTask
@@ -91,7 +87,7 @@ impl SyscallHandler2 for SyscallWaitUntilEventHandler {
             }
         };
         match action {
-            Action::Return(r) => r,
+            // Action::Return(r) => r,
             Action::RunTasks => run_tasks(),
             Action::TerminateTask => terminate_current_task(),
         }

@@ -1,10 +1,11 @@
+use common::syscall_uuids::{serialize_output, SyscallWaitUntilEvent};
 use x86_64::{
     instructions::interrupts,
     registers::{control::Cr3, rflags::RFlags, segmentation::GS},
 };
 
 use crate::{
-    context::{Context, FullContext},
+    context::{Context, FullContext, SyscallContext},
     cpu_local_data,
     get_offset_page_table::get_offset_page_table_with_l4,
     hlt_loop::hlt_loop,
@@ -13,6 +14,7 @@ use crate::{
     io_ports_lock::{IoPortUsedBy, IO_PORT_USAGE},
     limine_requests::HHDM_REQUEST,
     modules::syscall::enter_user_mode::{enter_user_mode, EnterUserModeInput},
+    return_wait_until_event::handle_pending_events,
     tasks::{TaskId, TaskState, KERNEL_CR3, TASKS, TASK_QUEUE},
 };
 
@@ -22,6 +24,7 @@ pub extern "sysv64" fn run_tasks() -> ! {
     let hhdm_offset = (&HHDM_REQUEST).try_into().unwrap();
     enum Action {
         RestoreContext(FullContext),
+        RestoreSyscallContext(SyscallContext),
         EnterUserMode(EnterUserModeInput),
         Halt,
     }
@@ -82,7 +85,35 @@ pub extern "sysv64" fn run_tasks() -> ! {
                         log::debug!("Restoring context");
                         Some(Action::RestoreContext(full_context))
                     }
-                    _ => None,
+                    TaskState::WaitingUntilEvent(wait_until_event_data) => {
+                        let handled_events_len = unsafe {
+                            handle_pending_events(*task_id, wait_until_event_data.input)
+                        }?;
+
+                        let cr3_flags = Cr3::read().1;
+                        unsafe { Cr3::write(task.cr3, cr3_flags) };
+                        cpu_task_data.current_task = Some(*task_id);
+                        let kernel_stack_pointer = task.kernel_stack.top().as_u64();
+                        unsafe {
+                            cpu_local_data
+                                .kernel_stack_pointer
+                                .get()
+                                .write(kernel_stack_pointer)
+                        };
+                        update_iobp(*task_id);
+                        Some(Action::RestoreSyscallContext(
+                            SyscallContext::from_syscall_output(
+                                &wait_until_event_data.state,
+                                // If there were other pending events, they would've already been handled.
+                                serialize_output::<SyscallWaitUntilEvent>(&handled_events_len)
+                                    .unwrap(),
+                            ),
+                        ))
+                    }
+                    TaskState::Running => {
+                        // This means that the task is running on a different CPU. So we let the other CPU cook and do not try to run the task too. That would double cook and burn the OS.
+                        None
+                    }
                 }
             })
             .unwrap_or(Action::Halt)
@@ -93,6 +124,12 @@ pub extern "sysv64" fn run_tasks() -> ! {
                 "Restoring full context: {:?}",
                 RFlags::from_bits_truncate(context.rflags)
             );
+            // Remember that if we implement kernel tasks we should not switch to user space GS probably
+            GS::swap();
+            context.restore()
+        },
+        Action::RestoreSyscallContext(context) => unsafe {
+            // We are switching to a user task so we will swap gs
             GS::swap();
             context.restore()
         },
