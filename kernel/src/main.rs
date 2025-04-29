@@ -23,6 +23,7 @@ pub mod combined_logger;
 pub mod config;
 pub mod context;
 pub mod io_ports_lock;
+pub mod mapped_apics;
 // pub mod cpu_local;
 pub mod check_pointer;
 pub mod cpu_local_data;

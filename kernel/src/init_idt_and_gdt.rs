@@ -1,13 +1,9 @@
-use core::cell::RefCell;
-
-use acpi::{AcpiHandler, AcpiTables};
 use spinning_top::Spinlock;
 use util::init_later::InitLater;
 use x2apic::{ioapic::IoApic, lapic::LocalApicBuilder};
 use x86_64::{
     structures::{
         idt::{self},
-        paging::{FrameAllocator, Size4KiB},
         tss::TaskStateSegment,
     },
     VirtAddr,
@@ -16,7 +12,6 @@ use x86_64::{
 use crate::{
     boxed_stack::BoxedStack,
     cpu_local_data::{self, get_local},
-    hhdm_offset::HhdmOffset,
     interrupt_handlers::{
         breakpoint::breakpoint_handler, double_fault::double_fault_handler,
         gp_fault::gp_fault_handler, hpet::hpet_interrupt_handler,
@@ -25,7 +20,7 @@ use crate::{
     },
     io_permission_bitmap::IoPermissionBitmap,
     iopb_size::IOPB_SIZE,
-    map_local_xapic::{map_apics, LocalXapicVirtAddr, MappedApics},
+    map_local_xapic::LocalXapicVirtAddr,
     modules::{
         gdt::Gdt, idt::IdtBuilder,
         panicking_invalid_tss_fault_handler::panicking_invalid_tss_fault_handler,
@@ -67,23 +62,6 @@ pub struct StaticStuff2 {
     priv_tss_stack: BoxedStack,
     pub keyboard_interrupt_index: u8,
     hpet_interrupt_index: u8,
-}
-
-pub fn init_bsp(
-    acpi_tables: &AcpiTables<impl AcpiHandler>,
-    hhdm_offset: HhdmOffset,
-    frame_allocator: &RefCell<impl FrameAllocator<Size4KiB>>,
-) {
-    let MappedApics {
-        io_apic,
-        local_xapic,
-    } = map_apics(acpi_tables, hhdm_offset, frame_allocator).unwrap();
-    MAPPED_APICS
-        .try_init(ApicData {
-            io_apic: Spinlock::new(unsafe { IoApic::new(VirtAddr::from(io_apic).as_u64()) }),
-            local_xapic,
-        })
-        .unwrap();
 }
 
 pub fn init_cpu() {

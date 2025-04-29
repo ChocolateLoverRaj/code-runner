@@ -14,7 +14,6 @@ use crate::{
     hhdm_offset::HhdmOffset,
     hpet,
     init_cpus::init_cpus,
-    init_idt_and_gdt,
     limine_requests::{
         BASE_REVISION, FRAME_BUFFER_REQUEST, HHDM_REQUEST, KERNEL_ADDRESS_REQUEST,
         MEMORY_MAP_REQUEST, MODULE_REQUEST, MP_REQUEST, RSDP_REQUEST,
@@ -28,7 +27,7 @@ use crate::{
     log_ram_disk::{self},
     log_rsdp_addr::{self},
     log_sample_messages::log_sample_messages,
-    logger_3,
+    logger_3, mapped_apics,
     parse_ram_disk::parse_ram_disk,
     physical_memory::{self},
     rsdp_addr::RsdpAddr,
@@ -109,15 +108,15 @@ pub unsafe fn init() -> ! {
     // Test assuming 400KiB is available for global allocation
     // test_allocator(0x100_000);
 
-    init_idt_and_gdt::init_bsp(&acpi_tables, hhdm_offset, &frame_allocator);
+    mapped_apics::init(&acpi_tables, hhdm_offset, &frame_allocator);
 
     log::debug!("Platform info: {:#?}", acpi_tables.platform_info());
+
+    hpet::init(&acpi_tables, &frame_allocator, hhdm_offset);
 
     drop(acpi_tables);
 
     physical_memory::init(frame_allocator.into_inner().into(), memory_map_response).unwrap();
-
-    hpet::init();
 
     log::info!("Spawning task");
     KERNEL_CR3.try_init(Cr3::read().0).unwrap();
