@@ -12,6 +12,7 @@ use crate::{
     },
     config::CONFIG,
     hhdm_offset::HhdmOffset,
+    hpet,
     init_cpus::init_cpus,
     init_idt_and_gdt,
     limine_requests::{
@@ -110,9 +111,13 @@ pub unsafe fn init() -> ! {
 
     init_idt_and_gdt::init_bsp(&acpi_tables, hhdm_offset, &frame_allocator);
 
+    log::debug!("Platform info: {:#?}", acpi_tables.platform_info());
+
     drop(acpi_tables);
 
     physical_memory::init(frame_allocator.into_inner().into(), memory_map_response).unwrap();
+
+    hpet::init();
 
     log::info!("Spawning task");
     KERNEL_CR3.try_init(Cr3::read().0).unwrap();

@@ -19,9 +19,9 @@ use crate::{
     hhdm_offset::HhdmOffset,
     interrupt_handlers::{
         breakpoint::breakpoint_handler, double_fault::double_fault_handler,
-        gp_fault::gp_fault_handler, invalid_opcode_fault::invalid_opcode_handler,
-        keyboard::keyboard_interrupt_handler, page_fault::page_fault_handler,
-        segment_not_present::segment_not_present_handler,
+        gp_fault::gp_fault_handler, hpet::hpet_interrupt_handler,
+        invalid_opcode_fault::invalid_opcode_handler, keyboard::keyboard_interrupt_handler,
+        page_fault::page_fault_handler, segment_not_present::segment_not_present_handler,
     },
     io_permission_bitmap::IoPermissionBitmap,
     iopb_size::IOPB_SIZE,
@@ -66,6 +66,7 @@ pub struct StaticStuff2 {
     /// The stack that the CPU uses when transitioning from user mode to kernel mode to call an interrupt handler
     priv_tss_stack: BoxedStack,
     pub keyboard_interrupt_index: u8,
+    hpet_interrupt_index: u8,
 }
 
 pub fn init_bsp(
@@ -178,6 +179,12 @@ pub fn init_cpu() {
             idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
         ))
         .unwrap();
+    let hpet_interrupt_index = idt_builder
+        .set_flexible_entry(idt::Entry::from_handler_addr(
+            VirtAddr::from_ptr(hpet_interrupt_handler as *const ()),
+            idt::EntryOptions::present_with_cs_and_ist(Gdt::cs(), other_fault_stack_index),
+        ))
+        .unwrap();
 
     idt_builder
         .set_non_maskable_interrupt_entry(idt::Entry::from_handler_fn(
@@ -213,6 +220,7 @@ pub fn init_cpu() {
                 other_fault_handler_stack,
                 priv_tss_stack,
                 keyboard_interrupt_index,
+                hpet_interrupt_index,
             }
         })
         .unwrap();

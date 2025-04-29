@@ -19,7 +19,6 @@ extern crate alloc;
 
 pub mod acpi_handler_impl;
 pub mod allocator;
-pub mod apic;
 pub mod combined_logger;
 pub mod config;
 pub mod context;
@@ -33,6 +32,7 @@ pub mod ensure_mem_is_higher_half;
 // pub mod get_total_memory;
 pub mod hhdm_offset;
 pub mod hlt_loop;
+pub mod hpet;
 pub mod hpet_memory;
 pub mod init_cpus;
 pub mod io_permission_bitmap;
