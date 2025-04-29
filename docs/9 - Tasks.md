@@ -74,3 +74,16 @@ For this reason, the kernel will return all events that happened. We can basical
 
 ### How is this simple?
 The kernel does need to deal with priorities when there are multiple high-frequency interrupts. In the user-space side of the implementation, it can just store a `RefCell<BTreeMap<EventId, AtomicWaker>`, and then create a `Box<[MaybeUninit<EventId>]>` with the size of the number of events.
+
+## Juggling around tasks and interrupt handlers
+Our scheduler is *preemptive*. It can interrupt a lower-priority task when a higher-priority task's interrupt happens, and switch to the higher priority task. But to utilize all CPUs, we should only preempt a lower-priority task if all other CPUs are busy with higher priority tasks.
+
+When an interrupt happens and we need to pause execution of a task to run the task that received the event, we need to preempt the lowest priority task. So basically we need to tell the CPU that's running the lowest-priority task to switch tasks. We could avoid having to send an IPI if we just made the CPU that's currently running the lowest priority task receive keyboard interrupts.
+
+We can just have a `[Option<TaskId>]` to keep track of which CPUs are running which tasks.
+
+Initial state: The BSP can receive the interrupt.
+
+When a CPU runs a task and it is currently getting keyboard interrupts, it looks for other CPUs which are either not running a task or are running a lower priority task. It finds the CPU that's running the lowest-priority task (or the first CPU that's not running a task), and configures the IO APIC to send interrupts to that CPU.
+
+When a CPU switches (or stops running) tasks and it is not receiving keyboard interrupt, it checks to see if it is now the CPU with the lowest priority task / no task. If it is, then it makes itself receive keyboard interrupts.

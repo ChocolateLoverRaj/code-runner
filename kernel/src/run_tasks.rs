@@ -6,16 +6,17 @@ use x86_64::{
 
 use crate::{
     context::{Context, FullContext, SyscallContext},
-    cpu_local_data,
+    cpu_local_data::{self, CpuLocalData, CPU_LAPIC_IDS},
     get_offset_page_table::get_offset_page_table_with_l4,
     hlt_loop::hlt_loop,
-    init_idt_and_gdt::get_iopb,
+    init_idt_and_gdt::{get_iopb, MAPPED_APICS},
     io_permission_bitmap::IoPermissionBitmap,
     io_ports_lock::{IoPortUsedBy, IO_PORT_USAGE},
     limine_requests::HHDM_REQUEST,
     modules::syscall::enter_user_mode::{enter_user_mode, EnterUserModeInput},
+    pic8259_interrupts::Pic8259Interrupts,
     return_wait_until_event::handle_pending_events,
-    tasks::{TaskId, TaskState, KERNEL_CR3, TASKS, TASK_QUEUE},
+    tasks::{TaskId, TaskState, CPU_TASK_STATES, KERNEL_CR3, TASKS, TASK_QUEUE},
 };
 
 /// This function can be called through Rust code, or it can be entered through a iretq instruction
@@ -73,6 +74,7 @@ pub extern "sysv64" fn run_tasks() -> ! {
                         };
                         update_iobp(*task_id);
                         cpu_task_data.current_task = Some(*task_id);
+                        update_current_cpu_task(cpu_local_data, Some(*task_id));
                         Some(Action::EnterUserMode(enter_user_mode_input))
                     }
                     TaskState::Interrupted(full_context) => {
@@ -82,6 +84,7 @@ pub extern "sysv64" fn run_tasks() -> ! {
                         update_iobp(*task_id);
                         task.state = TaskState::Running;
                         cpu_task_data.current_task = Some(*task_id);
+                        update_current_cpu_task(cpu_local_data, Some(*task_id));
                         log::debug!("Restoring context");
                         Some(Action::RestoreContext(full_context))
                     }
@@ -93,6 +96,7 @@ pub extern "sysv64" fn run_tasks() -> ! {
                         let cr3_flags = Cr3::read().1;
                         unsafe { Cr3::write(task.cr3, cr3_flags) };
                         cpu_task_data.current_task = Some(*task_id);
+                        update_current_cpu_task(cpu_local_data, Some(*task_id));
                         let kernel_stack_pointer = task.kernel_stack.top().as_u64();
                         unsafe {
                             cpu_local_data
@@ -112,6 +116,7 @@ pub extern "sysv64" fn run_tasks() -> ! {
                     }
                     TaskState::Running => {
                         // This means that the task is running on a different CPU. So we let the other CPU cook and do not try to run the task too. That would double cook and burn the OS.
+                        update_current_cpu_task(cpu_local_data, None);
                         None
                     }
                 }
@@ -156,4 +161,40 @@ pub fn update_iobp(task_id: TaskId) {
             }
             IoPortUsedBy::Kernel => {}
         });
+}
+
+fn update_current_cpu_task(cpu_local_data: &CpuLocalData, task_id: Option<TaskId>) {
+    let mut cpu_task_states = CPU_TASK_STATES.try_get().unwrap().lock();
+    cpu_task_states[usize::from(cpu_local_data.kernel_cpu_id)] = task_id;
+    let mut io_apic = MAPPED_APICS.try_get().unwrap().io_apic.lock();
+    // Switch to a different CPU if there is a CPU that is not running a task or is running a lower-priority task
+    let least_priority_cpu = {
+        let mut least_priority = None;
+        let mut iter = cpu_task_states.iter().enumerate();
+        loop {
+            match iter.next() {
+                Some((index, task)) => match task {
+                    Some(task_id) => match &least_priority {
+                        Some((_, current)) => {
+                            if task_id > current {
+                                least_priority = Some((index, *task_id));
+                            }
+                        }
+                        None => least_priority = Some((index, *task_id)),
+                    },
+                    None => {
+                        break index;
+                    }
+                },
+                None => break least_priority.unwrap().0,
+            }
+        }
+    };
+    let mut table_entry = unsafe { io_apic.table_entry(Pic8259Interrupts::Keyboard.into()) };
+    table_entry.set_dest(
+        CPU_LAPIC_IDS.try_get().unwrap()[least_priority_cpu]
+            .try_into()
+            .unwrap(),
+    );
+    unsafe { io_apic.set_table_entry(Pic8259Interrupts::Keyboard.into(), table_entry) };
 }

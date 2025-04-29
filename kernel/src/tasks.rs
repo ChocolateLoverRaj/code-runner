@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use alloc::{collections::btree_map::BTreeMap, vec::Vec};
+use alloc::{boxed::Box, collections::btree_map::BTreeMap, vec::Vec};
 use common::{
     permissions::Permissions,
     syscall_uuids::{Syscall, SyscallWaitUntilEvent},
@@ -72,6 +72,8 @@ pub static TASKS: Spinlock<BTreeMap<TaskId, Task>> = Spinlock::new(BTreeMap::new
 pub static TASK_QUEUE: Spinlock<Vec<TaskId>> = Spinlock::new(Vec::new());
 pub static KERNEL_CR3: InitLater<PhysFrame<Size4KiB>> = InitLater::uninit();
 pub static KEYBOARD_LISTENER: Spinlock<Option<KeyboardEventListener>> = Spinlock::new(None);
+/// Which tasks each CPU is running
+pub static CPU_TASK_STATES: InitLater<Spinlock<Box<[Option<TaskId>]>>> = InitLater::uninit();
 
 #[derive(Debug, Default)]
 pub struct CpuTaskData {

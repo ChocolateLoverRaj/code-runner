@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use spinning_top::Spinlock;
 
 use crate::{
     cpu_local_data::{self, get_local},
@@ -10,6 +11,7 @@ use crate::{
         raw_syscall_handler::set_syscall_handler_closure,
         syscall_handler_closure::get_syscall_handlers,
     },
+    tasks::CPU_TASK_STATES,
 };
 
 /// # Safety
@@ -27,6 +29,11 @@ pub unsafe fn init_cpus() -> ! {
         .cpus()
         .iter()
         .find(|cpu| cpu.lapic_id == mp_response.bsp_lapic_id())
+        .unwrap();
+    CPU_TASK_STATES
+        .try_init(Spinlock::new(
+            mp_response.cpus().iter().map(|_| None).collect(),
+        ))
         .unwrap();
     unsafe { init_cpu(current_cpu) }
 }

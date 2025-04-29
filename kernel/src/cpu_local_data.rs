@@ -15,11 +15,22 @@ use crate::{
     tasks::CpuTaskData,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KernelCpuId(usize);
+
+impl From<KernelCpuId> for usize {
+    fn from(value: KernelCpuId) -> Self {
+        value.0
+    }
+}
+
 /// This is what we set `GS.Base` to point to
 #[derive(Debug)]
 pub struct CpuLocalData {
     pub user_stack_pointer: UnsafeCell<u64>,
     pub kernel_stack_pointer: UnsafeCell<u64>,
+    /// This is different from the CPU id because it is guaranteed to start at 0 and increment by 1 for each CPU, making it perfect for storing CPU data in an array.
+    pub kernel_cpu_id: KernelCpuId,
     pub cpu_id: u32,
     pub lapic_id: u32,
     pub static_stuff1: StoreButBorrowMut<StaticStuff1>,
@@ -31,6 +42,7 @@ pub struct CpuLocalData {
 }
 
 static CPU_LOCAL_DATA: InitLater<Box<[SyncWrapper<CpuLocalData>]>> = InitLater::uninit();
+pub static CPU_LAPIC_IDS: InitLater<Box<[u32]>> = InitLater::uninit();
 
 pub fn init_bsp(mp_response: &MpResponse) {
     CPU_LOCAL_DATA
@@ -38,10 +50,12 @@ pub fn init_bsp(mp_response: &MpResponse) {
             mp_response
                 .cpus()
                 .iter()
-                .map(|&cpu| {
+                .enumerate()
+                .map(|(index, cpu)| {
                     SyncWrapper::new(CpuLocalData {
                         kernel_stack_pointer: UnsafeCell::new(0),
                         user_stack_pointer: UnsafeCell::new(0),
+                        kernel_cpu_id: KernelCpuId(index),
                         cpu_id: cpu.id,
                         lapic_id: cpu.lapic_id,
                         static_stuff1: StoreButBorrowMut::uninit(),
@@ -54,6 +68,9 @@ pub fn init_bsp(mp_response: &MpResponse) {
                 })
                 .collect(),
         )
+        .unwrap();
+    CPU_LAPIC_IDS
+        .try_init(mp_response.cpus().iter().map(|cpu| cpu.lapic_id).collect())
         .unwrap();
 }
 
@@ -86,9 +103,3 @@ pub fn get_local() -> Option<&'static CpuLocalData> {
         None
     }
 }
-
-// /// Set the value that `rsp` will be set to when transitioning from user mode to kernel mode through the `syscall` instruction
-// pub fn set_syscall_stack_pointer(stack_pointer: VirtAddr) {
-//     let cpu_local_data = unsafe { &mut *get_local().get() };
-//     cpu_local_data.kernel_stack_pointer = stack_pointer.as_u64();
-// }
