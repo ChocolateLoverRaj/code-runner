@@ -11,7 +11,6 @@ pub mod panicking_security_exception_fault_handler;
 pub mod panicking_segment_not_present_handler;
 pub mod panicking_spurious_interrupt_handler;
 pub mod panicking_stack_segment_fault_handler;
-pub mod spurious_interrupt_handler;
 pub mod syscall;
 pub mod tss;
 pub mod unsafe_local_apic;

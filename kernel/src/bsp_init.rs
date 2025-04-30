@@ -122,8 +122,8 @@ pub unsafe fn init() -> ! {
     KERNEL_CR3.try_init(Cr3::read().0).unwrap();
     let ram_disk = parse_ram_disk(module_response.unwrap()).unwrap();
     spawn_task(&ram_disk, hhdm_offset).unwrap();
-    spawn_task(&ram_disk, hhdm_offset).unwrap();
-    spawn_task(&ram_disk, hhdm_offset).unwrap();
+    // spawn_task(&ram_disk, hhdm_offset).unwrap();
+    // spawn_task(&ram_disk, hhdm_offset).unwrap();
     {
         let tasks = TASKS.lock();
         log::info!("Spawned task. {:#?}", tasks);

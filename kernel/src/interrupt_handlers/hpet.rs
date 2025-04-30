@@ -6,7 +6,15 @@ use x86_64::{
     PrivilegeLevel,
 };
 
-use crate::context::FullContext;
+use crate::{
+    context::{Context, FullContext},
+    cpu_local_data::get_local,
+    hpet::HPET,
+    hpet_memory::{
+        HpetGeneralInterruptStatusRegister, HpetMemoryVolatileFieldAccess,
+        HpetTimerMemoryVolatileFieldAccess,
+    },
+};
 
 /// # Safety
 /// This function should only be called as a HPET interrupt handler, and not manually.
@@ -44,15 +52,58 @@ pub unsafe extern "sysv64" fn hpet_interrupt_handler(_stack_frame: InterruptStac
 
 unsafe extern "sysv64" fn hpet_interrupt_handler_rust(context: &FullContext) -> ! {
     // This is to make sure that GS.Base is set to the kernel's gs base
-    let _swapped_gs =
+    let swapped_gs =
         if SegmentSelector(context.cs.try_into().unwrap()).rpl() == PrivilegeLevel::Ring3 {
             unsafe { GS::swap() };
-            log::trace!("Swapped GS");
             true
         } else {
-            log::trace!("Didn't swap GS");
             false
         };
+    {
+        let mut hpet = HPET.try_get().unwrap().write();
+        let mut interrupt_status_register = hpet.as_ptr().interrupt_status().read();
+        if interrupt_status_register.0 == 0 {
+            log::debug!("Received timer interrupt when no timer actually fired. Assuming it's from PIT and ignoring.");
+        }
+        // log::info!(
+        //     "Interrupt status register before clearing: {:?}",
+        //     hpet.as_ptr().interrupt_status().read()
+        // );
 
-    todo!("HPET interrupt handler")
+        for i in 0..=hpet.as_ptr().capabilities_and_id().read().get_num_tim_cap() {
+            let received_interrupt = interrupt_status_register.get_t_n_int_sts(i as usize) == 1;
+            if received_interrupt {
+                log::info!("Received interrupt from timer: {}", i);
+                // interrupt_status_register.set_t_n_int_sts(i as usize, 0);
+                hpet.as_mut_ptr()
+                    .interrupt_status()
+                    .write(HpetGeneralInterruptStatusRegister(1 << i));
+                hpet.as_mut_ptr()
+                    .timers()
+                    .as_slice()
+                    .index(i as usize)
+                    .configuration_and_capability_register()
+                    .update(|mut r| {
+                        // At this point the counter >= comparator
+                        // Since the interrupt type is level, we will continue receiving interrupts and the interrupt status bit will continue to be set.
+                        // We don't want that, so we can just set the trigger type to edge, and we won't get more interrupts unless we change the comparator value to >counter.
+                        r.set_int_type_cnf(false);
+                        r
+                    });
+            }
+        }
+        // log::info!(
+        //     "Interrupt status register after clearing: {:?}",
+        //     hpet.as_ptr().interrupt_status().read()
+        // );
+    }
+    {
+        let mut local_apic = get_local().unwrap().local_apic.try_get().unwrap().lock();
+        // Safety: This interrupt was dispatched by the local APIC and we are notifying that it's done.
+        unsafe { local_apic.end_of_interrupt() };
+    }
+    if swapped_gs {
+        unsafe { GS::swap() };
+    }
+    unsafe { context.restore() }
 }

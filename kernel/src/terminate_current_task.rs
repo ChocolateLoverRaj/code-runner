@@ -6,7 +6,8 @@ use x86_64::registers::{
 use crate::{
     context::{Context, FullContext},
     cpu_local_data::get_local,
-    init_idt_and_gdt::{get_priv_stack, MAPPED_APICS},
+    init_idt_and_gdt::get_priv_stack,
+    mapped_apics::MAPPED_APICS,
     physical_memory::{PhysicalMemoryState, UsedBy, PHYSICAL_MEMORY},
     pic8259_interrupts::Pic8259Interrupts,
     run_tasks::run_tasks,

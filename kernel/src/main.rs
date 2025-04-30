@@ -47,6 +47,7 @@ pub mod log_kernel_address;
 pub mod mutex_without_interrupts;
 pub mod syscalls;
 // pub mod log_memory_usage;
+pub mod interrupt_numbers;
 pub mod log_phys_mem_regions;
 pub mod log_ram_disk;
 pub mod log_rsdp_addr;

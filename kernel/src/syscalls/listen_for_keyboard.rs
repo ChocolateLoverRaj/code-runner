@@ -5,7 +5,8 @@ use x2apic::ioapic::{IrqMode, RedirectionTableEntry};
 
 use crate::{
     cpu_local_data::get_local,
-    init_idt_and_gdt::MAPPED_APICS,
+    interrupt_numbers::InterruptNumbers,
+    mapped_apics::MAPPED_APICS,
     pic8259_interrupts::Pic8259Interrupts,
     tasks::{KeyboardEventListener, KEYBOARD_LISTENER, TASKS},
     terminate_current_task::terminate_current_task,
@@ -43,13 +44,7 @@ impl SyscallHandler2 for SyscallListenForKeyboardHandler {
                             });
                             let cpu_local_data = get_local().unwrap();
                             let mut entry = RedirectionTableEntry::default();
-                            entry.set_vector(
-                                cpu_local_data
-                                    .static_stuff2
-                                    .try_get()
-                                    .unwrap()
-                                    .keyboard_interrupt_index,
-                            );
+                            entry.set_vector(InterruptNumbers::Keyboard.into());
                             entry.set_mode(IrqMode::Fixed);
                             entry.set_dest(cpu_local_data.lapic_id.try_into().unwrap());
                             let mut io_apic = MAPPED_APICS.try_get().unwrap().io_apic.lock();

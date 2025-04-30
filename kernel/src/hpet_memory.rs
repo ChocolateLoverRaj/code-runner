@@ -107,7 +107,7 @@ bitfield! {
     /// If this timer is set to level-triggered mode: This bit will be set to `1` if the timer's interrupt is active. You can set this bit to `0` by writing `1` to it.
     ///
     /// If set to edge-triggered mode: Ignore this. Always write `0` to it if you write to it.
-    pub get_t_n_int_sts, set_t_n_int_sts: 31, 0, 32;
+    pub get_t_n_int_sts, set_t_n_int_sts: 0, 0, 32;
 }
 
 #[repr(C)]
