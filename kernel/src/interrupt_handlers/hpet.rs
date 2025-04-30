@@ -61,7 +61,7 @@ unsafe extern "sysv64" fn hpet_interrupt_handler_rust(context: &FullContext) -> 
         };
     {
         let mut hpet = HPET.try_get().unwrap().write();
-        let mut interrupt_status_register = hpet.as_ptr().interrupt_status().read();
+        let interrupt_status_register = hpet.as_ptr().interrupt_status().read();
         if interrupt_status_register.0 == 0 {
             log::debug!("Received timer interrupt when no timer actually fired. Assuming it's from PIT and ignoring.");
         }
@@ -88,6 +88,7 @@ unsafe extern "sysv64" fn hpet_interrupt_handler_rust(context: &FullContext) -> 
                         // Since the interrupt type is level, we will continue receiving interrupts and the interrupt status bit will continue to be set.
                         // We don't want that, so we can just set the trigger type to edge, and we won't get more interrupts unless we change the comparator value to >counter.
                         r.set_int_type_cnf(false);
+                        r.set_int_enb_cnf(false);
                         r
                     });
             }
