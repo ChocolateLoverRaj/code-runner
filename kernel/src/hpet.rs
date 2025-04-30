@@ -90,6 +90,54 @@ pub fn init(
         panic!("HPET doesn't have any timers for some reason");
     }
 
+    for timer_index in 0..timer_count {
+        let timer = hpet_volatile_ref
+            .as_mut_ptr()
+            .timers()
+            .as_slice()
+            .index(timer_index as usize);
+        timer
+            .comparator_register()
+            .write((2 + timer_index as u64) * 1_000_000_000_000_000 / period_femto_seconds as u64);
+        let mut timer_conf = timer.configuration_and_capability_register().read();
+        let first_route = {
+            let mut i = 0_u8;
+            loop {
+                if i == 32 {
+                    break None;
+                }
+                if i != Pic8259Interrupts::Keyboard.into()
+                    && timer_conf.get_int_route_cap(i as usize)
+                {
+                    break Some(i);
+                }
+                i += 1;
+            }
+        }
+        .expect("Timer 0 is not capable of sending any interrupts apparently");
+        // let first_route = 20;
+        log::info!("HPET timer route: {}", first_route);
+        timer_conf.set_int_route_cnf(first_route);
+        timer_conf.set_int_enb_cnf(true);
+        timer_conf.set_int_type_cnf(true);
+        timer_conf.set_type_cnf(false);
+        timer
+            .configuration_and_capability_register()
+            .write(timer_conf);
+
+        let entry = {
+            let mut entry = RedirectionTableEntry::default();
+            // entry.set_dest(0);
+            entry.set_vector(InterruptNumbers::Hpet.into());
+            entry
+        };
+        let mut io_apic = MAPPED_APICS.try_get().unwrap().io_apic.lock();
+        unsafe {
+            io_apic.set_table_entry(first_route, entry);
+            io_apic.enable_irq(first_route);
+        };
+    }
+
     hpet_volatile_ref
         .as_mut_ptr()
         .main_counter_value_register()
@@ -101,58 +149,6 @@ pub fn init(
             config.set_enable_cnf(true);
             config
         });
-
-    let timer0 = hpet_volatile_ref.as_mut_ptr().timers().as_slice().index(0);
-    timer0
-        .comparator_register()
-        .write(3_000_000_000_000_000 / period_femto_seconds as u64);
-    let mut timer0_conf = timer0.configuration_and_capability_register().read();
-    let first_route = {
-        let mut i = 0_u8;
-        loop {
-            if i == 32 {
-                break None;
-            }
-            if timer0_conf.get_int_route_cap(i as usize) {
-                break Some(i);
-            }
-            i += 1;
-        }
-    }
-    .expect("Timer 0 is not capable of sending any interrupts apparently");
-    // let first_route = 20;
-    log::info!("HPET timer route: {}", first_route);
-    if first_route == Pic8259Interrupts::Keyboard.into() {
-        panic!("Timer 0 and keyboard I/O APIC interrupt u8 conflict")
-    }
-    timer0_conf.set_int_route_cnf(first_route);
-    timer0_conf.set_int_enb_cnf(true);
-    timer0_conf.set_int_type_cnf(true);
-    timer0_conf.set_type_cnf(false);
-    timer0
-        .configuration_and_capability_register()
-        .write(timer0_conf);
-
-    // loop {
-    //     log::debug!(
-    //         "Counter value: {:#?}",
-    //         hpet_volatile_ref
-    //             .as_ptr()
-    //             .main_counter_value_register()
-    //             .read()
-    //     );
-    // }
-    let entry = {
-        let mut entry = RedirectionTableEntry::default();
-        // entry.set_dest(0);
-        entry.set_vector(InterruptNumbers::Hpet.into());
-        entry
-    };
-    let mut io_apic = MAPPED_APICS.try_get().unwrap().io_apic.lock();
-    unsafe {
-        io_apic.set_table_entry(first_route, entry);
-        io_apic.enable_irq(first_route);
-    };
 
     HPET.try_init(RwSpinlock::new(hpet_volatile_ref)).unwrap();
 }
