@@ -1,5 +1,7 @@
 This document is not really specific to a custom OS. It is programming-related in general.
 
+This is heavily inspired by [Merkle-CRDTs Merkle-DAGs meet CRDTs](https://arxiv.org/pdf/2004.00107).
+
 There are apps backed by data. Examples:
 - List App
 - Text Editor
@@ -95,6 +97,39 @@ If you want to delete edits it's easy. Since the signature of each commit can id
 
 If you want to keep edits made until now but not allow future edits, it's complicated.
 
+## Sharing without Viewing
+We may want to share edits with anyone which can only be viewed by certain people. For this, we need to encrypt commits when sending them, and give all viewers and editors access to encrypt/decrypt these.
+```rs
+struct Commits {
+  commits: Encrypted<Vec<Commit>>
+}
+```
+This way, people without read access don't even know exactly how many commits there are.
+
+## Removing viewers
+We can't stop viewers from viewing commits that they've already received before they were removed as a viewer. But we can stop them from receiving and viewing future commits. The simplest way to do this is to encrypt the data for every viewer.
+```rs
+struct Data {
+  has_r_access: HashSet<Signature>,
+  has_w_access: HashSet<Signature>,
+  commits: HashSet<Signed<Commit>>
+}
+
+struct Commits {
+  commits: HashMap<Signature, Encrypted<Vec<Commit>>>
+}
+```
+However, this is obviously not practicle because the size of `Commits` scales by `number of viewers` * `size of commits`.
+
+So we can encrypt the commits with a cipher and only give viewers access to decrypt the cipher
+```rs
+struct Commits {
+  key: HashSet<Signature, AsymmetricEncrypted<Key>>,
+  commits: SymmetricEncrypted<Vec<Commit>>
+}
+```
+Now it scales so that the size of `Commits` scales by `number of viewers` * `size of key`.
+
 ## Online Sync Service
 With what we have right now, it should be ez pez making an online sync service for our app. It would be useful for this scenario:
 - A and B have edit access
@@ -126,3 +161,48 @@ struct Commit {
   edit: Edit
 }
 ```
+or we could just do
+```rs
+struct Commit {
+  id: u64,
+  edit: isize
+}
+```
+
+## Editing a non-atomic `T`
+Let's say we have any type that's not a number, and we don't want to combine edits (such as `+= 1` and `+= 1` resulting in `+= 1`). One examples is a `String` which we don't want to edit simultaneously in multiple places.
+
+The most obvious issue is conflicts:
+- A and B are RW
+- The string is originally "Greps"
+- A changes the string to "Grapes"
+- B changes the string to "Green Grapes" before it received edits made by A
+
+Now A and B are not synchronized and there is a conflict if they try to synchronize. Unless we want to show a UI about conflicts, we need an automatic, consistent "merge strategy" (it cannot be "ours" or "theirs" because then A and B would not agree on which one to keep). The easiest merge strategy is just based on date. We can do "first" or "last". This would require putting a timestamp on every commit.
+
+## Editing a HashSet (adding only)
+An edit can just be `T`, the value to add to the set. Conflicts can't happen because if the same `T` is added multiple times, then only 1 of it is added because every item has to be unique. We can just ignore duplicates.
+
+## Editing a HashSet (adding and removing)
+An edit can just be
+```rs
+enum EditType {
+  Adding
+  Removing
+}
+
+struct EditData {
+  edit_type: EditType,
+  data: T
+}
+```
+and now it's possible for conflicts to happen:
+- A and B are editors
+- A adds `t`
+- A removes `t`
+- B adds `t`
+- Then A and B synchronize with each other
+
+In this case, should `t` be in the set or not? We can do what the Merkle thing does and just use the difference between the number of additions and the number of removes. If the value is added more than it is removed, then it exists in the set.
+
+## Editing a Vec (a list which has a specific order and can have duplicate items) (adding only)
