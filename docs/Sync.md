@@ -1,6 +1,8 @@
 This document is not really specific to a custom OS. It is programming-related in general.
 
-This is heavily inspired by [Merkle-CRDTs Merkle-DAGs meet CRDTs](https://arxiv.org/pdf/2004.00107).
+References:
+- [Merkle-CRDTs Merkle-DAGs meet CRDTs](https://arxiv.org/pdf/2004.00107).
+- https://josephg.com/blog/crdts-go-brrr/
 
 There are apps backed by data. Examples:
 - List App
@@ -205,4 +207,94 @@ and now it's possible for conflicts to happen:
 
 In this case, should `t` be in the set or not? We can do what the Merkle thing does and just use the difference between the number of additions and the number of removes. If the value is added more than it is removed, then it exists in the set.
 
-## Editing a Vec (a list which has a specific order and can have duplicate items) (adding only)
+## Editing an unordered list which can have duplicate items
+When adding an item, a random id is created for the item, which is referenced when editing or removing the item.
+
+## Editing an ordered list which can have duplicate items
+In this scenario, order matters (which means having some sort of drag-and-drop UI for rearranging). And order is synchronized. The operations we can have:
+- Inserting a new item at a certain position
+- Editing an existing item
+- Removing an existing item
+- Moving the position of an existing item
+
+### Multiple inserts in the same position conflict
+- A and B are RW
+- A inserts an item at index 0
+- B inserts an item at index 0
+
+Now which item should be first? We can just do it based on time-stamp.
+
+### Order of commits matters?
+Up until now, the order didn't matter. Every state was represented by multiple edits, and changing the order of the edits did not change the final state. For example,
+- The number 10 can be made up of +5, +7, -2. The order doesn't matter.
+- The set of "Apple", "Pineapple", "Pen" can be made up of adding "Apple", adding "Pineapple", adding "Pen", Adding "Watermelon", and removing "Watermelon". Order doesn't matter.
+- A value of "Oats" can be made up of the setting the value to "Oatmeal" at 1pm and then "Oats" at 2pm. Regardless of the order, the newest edit will be in effect.
+
+But now, think about these changes:
+- Insert "Potatoes" at index 0
+- Insert "Apple" at index 1
+
+Without the potato edit, the list would have zero elements, making an insert at index 1 out of bounds. So the edits must be applied in order.
+
+Or this scenario:
+- Insert "Potatoes" at index 0
+- Insert "Apple" at index 0
+
+If you made these edits in that order, you would expect the list to be `["Potatoes", "Oranges"]`. But if you apply the commits in reverse order, the list would be `["Oranges", "Potatoes"]`.
+
+Referencing by index can be problematic. Instead, we can do what Yjs and Automerge do and reference the previous element.
+```rs
+enum Edit {
+  Insert {
+    after_id: Id,
+    id: Id,
+    item: T
+  },
+  Edit {
+    id: Id,
+    edit: ItemEdit
+  },
+  Remove {
+    id: Id
+  }
+}
+```
+Now we can represent `["Potatoes", "Oranges"]` as:
+- Insert "Potatoes" (with id: 0) after id `None`
+- Insert "Oranges" (with id: 1) after id `Some(1)`
+
+### Removing Items
+When we remove the items, we need to still remember the removed item's id because other devices could insert items referencing the deleted item.
+
+### Moving items around
+Imagine a grocery list:
+- Bananas, quantity 6
+- Krave Cereal, quantity 2
+- Soy milk, quantity 2
+
+and in the app the user moves soy milk to the top of the list. We can have a move edit type:
+```rs
+struct MoveEdit {
+  item_id: Id,
+  new_after_id: Option<Id> // Where `None` means it's first
+}
+```
+
+### Tuple / `struct`s
+This is really easy since there is a fixed amount of items. All we need to do is reference the index of the tuple / struct field and the edit data of that field.
+
+## Nested Data Structures
+There is nothing stopping us from having nested data structures. Imagine a collaborative shopping list app (which I want):
+- There is an ordered list of items to buy
+  - Each item has multiple fields
+    - The name is just a cell which holds a string
+    - The quantity is a number which can be increased and decreased concurrently
+    - There is a `HashSet` of stores which this item can be found in, with each store represented by its id
+- There is an unordered list of stores
+  - Each store is just a cell which holds a string
+
+Now imagine decreasing the quantity of an item. The edit can be represented as
+- Editing the ordered list of items
+- Editing a specific item in the list
+- Editing the quantity field
+- Change the quantity by -1
